@@ -1,0 +1,766 @@
+package io.github.axon07.channelbox.ui
+
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import io.github.axon07.channelbox.data.AppSettings
+import io.github.axon07.channelbox.data.BackAction
+import io.github.axon07.channelbox.data.ChannelEntity
+import io.github.axon07.channelbox.data.ProgramEntity
+import io.github.axon07.channelbox.data.RecStatus
+import io.github.axon07.channelbox.data.RecordingEntity
+import io.github.axon07.channelbox.data.RefreshState
+import io.github.axon07.channelbox.data.SourceType
+import io.github.axon07.channelbox.player.PlayerStatus
+import kotlinx.coroutines.delay
+import java.io.File
+import kotlin.math.abs
+
+/**
+ * Screens. Back walks: TV → Guide → Groups menu → "Exit?" (configurable in Settings).
+ */
+enum class Mode {
+    PLAYER, CHANNEL_LIST, GUIDE, GROUPS, PROGRAM_MENU,
+    RECORDINGS, RECORDING_MENU, PLAYBACK,
+    SETTINGS, SETUP, EXIT_CONFIRM,
+}
+
+/** Screens where we read the remote ourselves (the others use normal focus). */
+private val OWN_KEY_MODES = setOf(Mode.PLAYER, Mode.CHANNEL_LIST, Mode.GUIDE, Mode.GROUPS, Mode.RECORDINGS, Mode.PLAYBACK)
+
+/** Screens that show the guide with the small live preview. */
+private val GUIDE_MODES = setOf(Mode.GUIDE, Mode.GROUPS, Mode.PROGRAM_MENU)
+
+private class OkKeyTracker {
+    var armed = false
+    var longFired = false
+}
+
+private val OK_KEYS = setOf(
+    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+    AndroidKeyEvent.KEYCODE_ENTER,
+    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
+)
+
+private val RECORD_KEYS = setOf(AndroidKeyEvent.KEYCODE_MEDIA_RECORD, AndroidKeyEvent.KEYCODE_PROG_RED)
+
+/** Every key we act on. Anything else (volume, Home, Back…) is left to the system. */
+private val HANDLED_KEYS = OK_KEYS + RECORD_KEYS + setOf(
+    AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN,
+    AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_DPAD_RIGHT,
+    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_CHANNEL_DOWN,
+    AndroidKeyEvent.KEYCODE_PAGE_UP, AndroidKeyEvent.KEYCODE_PAGE_DOWN,
+    AndroidKeyEvent.KEYCODE_INFO, AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_MENU,
+    AndroidKeyEvent.KEYCODE_LAST_CHANNEL,
+    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AndroidKeyEvent.KEYCODE_MEDIA_PLAY, AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
+    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
+) + (AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9) +
+    (AndroidKeyEvent.KEYCODE_NUMPAD_0..AndroidKeyEvent.KEYCODE_NUMPAD_9)
+
+private fun digitOf(code: Int): Int? = when (code) {
+    in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> code - AndroidKeyEvent.KEYCODE_0
+    in AndroidKeyEvent.KEYCODE_NUMPAD_0..AndroidKeyEvent.KEYCODE_NUMPAD_9 -> code - AndroidKeyEvent.KEYCODE_NUMPAD_0
+    else -> null
+}
+
+@Composable
+fun TvApp(vm: TvViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val s = settings
+    if (s == null) {
+        Box(Modifier.fillMaxSize().background(Color.Black))
+    } else {
+        TvAppContent(vm, s)
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
+    val allChannels by vm.allChannels.collectAsStateWithLifecycle()
+    val visible by vm.visibleChannels.collectAsStateWithLifecycle()
+    val favorites by vm.favorites.collectAsStateWithLifecycle()
+    val filter by vm.filter.collectAsStateWithLifecycle()
+    val filters by vm.filters.collectAsStateWithLifecycle()
+    val current by vm.current.collectAsStateWithLifecycle()
+    val upcoming by vm.upcoming.collectAsStateWithLifecycle()
+    val now by vm.now.collectAsStateWithLifecycle()
+    val guideStart by vm.guideStart.collectAsStateWithLifecycle()
+    val guidePrograms by vm.guidePrograms.collectAsStateWithLifecycle()
+    val refreshState by vm.refreshState.collectAsStateWithLifecycle()
+    val playerStatus by vm.player.status.collectAsStateWithLifecycle()
+    val bannerToken by vm.bannerToken.collectAsStateWithLifecycle()
+    val recordings by vm.recordings.collectAsStateWithLifecycle()
+    val recordingKeys by vm.recordingKeys.collectAsStateWithLifecycle()
+    val recordingChannels by vm.recordingChannels.collectAsStateWithLifecycle()
+    val toast by vm.toast.collectAsStateWithLifecycle()
+    val timeFormat = rememberTimeFormatter()
+
+    var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
+    var digits by remember { mutableStateOf("") }
+    var bannerVisible by remember { mutableStateOf(false) }
+    var touchBar by remember { mutableStateOf(false) }
+    var touchBarToken by remember { mutableIntStateOf(0) }
+    var listIndex by remember { mutableIntStateOf(0) }
+    var groupsIndex by remember { mutableIntStateOf(0) }
+    var recIndex by remember { mutableIntStateOf(0) }
+    var exitReturn by remember { mutableStateOf(Mode.GROUPS) }
+    var menuChannel by remember { mutableStateOf<ChannelEntity?>(null) }
+    var menuProgram by remember { mutableStateOf<ProgramEntity?>(null) }
+    var menuRecording by remember { mutableStateOf<RecordingEntity?>(null) }
+    var playbackTitle by remember { mutableStateOf("") }
+    var playbackToken by remember { mutableIntStateOf(0) }
+    var playbackOverlay by remember { mutableStateOf(true) }
+    var pbPosition by remember { mutableLongStateOf(0L) }
+    var pbDuration by remember { mutableLongStateOf(0L) }
+    var pbPlaying by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val groupsListState = rememberLazyListState()
+    val recListState = rememberLazyListState()
+    val guide = remember { GuideState() }
+    val ok = remember { OkKeyTracker() }
+    val rootFocus = remember { FocusRequester() }
+    val activity = LocalContext.current.findActivity()
+    val swipeThreshold = with(LocalDensity.current) { 60.dp.toPx() }
+
+    val weOwnKeys = mode in OWN_KEY_MODES
+    val groupItemCount = filters.size + 2 // + Recordings + Settings
+
+    // ---- Navigation helpers --------------------------------------------------------------------
+
+    fun exitApp() {
+        vm.player.stop()
+        activity?.finishAndRemoveTask()
+    }
+
+    fun openGuide() {
+        guide.open(visible, current?.id, vm)
+        mode = Mode.GUIDE
+    }
+
+    fun openGroups(index: Int = filters.indexOf(filter).coerceAtLeast(0)) {
+        groupsIndex = index
+        mode = Mode.GROUPS
+    }
+
+    fun openList() {
+        listIndex = visible.indexOfFirst { it.id == current?.id }.coerceAtLeast(0)
+        mode = Mode.CHANNEL_LIST
+    }
+
+    fun askExit(returnTo: Mode) {
+        exitReturn = returnTo
+        mode = Mode.EXIT_CONFIRM
+    }
+
+    /** Back on the groups menu – the last step before leaving. */
+    fun lastBack() {
+        when (settings.backAction) {
+            BackAction.ASK_EXIT -> askExit(Mode.GROUPS)
+            BackAction.OPEN_GUIDE -> mode = Mode.PLAYER // never exit: go round to live TV
+            BackAction.EXIT -> exitApp()
+        }
+    }
+
+    fun selectGroupItem(i: Int) {
+        when {
+            i < filters.size -> {
+                vm.setFilter(filters[i])
+                guide.row = 0
+                mode = Mode.GUIDE
+            }
+            i == filters.size -> {
+                recIndex = 0
+                mode = Mode.RECORDINGS
+            }
+            else -> mode = Mode.SETTINGS
+        }
+    }
+
+    fun openProgramMenu(channel: ChannelEntity, program: ProgramEntity?) {
+        menuChannel = channel
+        menuProgram = program
+        mode = Mode.PROGRAM_MENU
+    }
+
+    fun tuneAndWatch(channel: ChannelEntity) {
+        vm.tune(channel)
+        mode = Mode.PLAYER
+    }
+
+    /** OK / tap on a programme: live → watch it, future → show the record menu. */
+    fun programPressed(channel: ChannelEntity, program: ProgramEntity?) {
+        val t = System.currentTimeMillis()
+        if (program == null || program.start <= t) tuneAndWatch(channel) else openProgramMenu(channel, program)
+    }
+
+    fun openRecording(r: RecordingEntity) {
+        val path = r.filePath
+        if (path != null && File(path).length() > 0) {
+            playbackTitle = r.title
+            vm.playRecording(r)
+            playbackToken++
+            mode = Mode.PLAYBACK
+        } else {
+            menuRecording = r
+            mode = Mode.RECORDING_MENU
+        }
+    }
+
+    fun leavePlayback() {
+        vm.resumeLive()
+        mode = Mode.RECORDINGS
+    }
+
+    fun seekBy(delta: Long) {
+        val exo = vm.player.exo
+        val duration = exo.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
+        exo.seekTo((exo.currentPosition + delta).coerceIn(0L, duration))
+        playbackToken++
+    }
+
+    fun togglePause() {
+        val exo = vm.player.exo
+        if (exo.isPlaying) exo.pause() else exo.play()
+        playbackToken++
+    }
+
+    fun commitDigits() {
+        val n = digits.toIntOrNull()
+        digits = ""
+        if (n == null) return
+        if (mode == Mode.GUIDE) {
+            val i = visible.indexOfFirst { it.number == n }
+            if (i >= 0) guide.row = i
+        } else {
+            vm.tuneNumber(n)
+        }
+    }
+
+    // ---- Remote control ------------------------------------------------------------------------
+
+    fun onShortOk() {
+        when (mode) {
+            Mode.PLAYER -> when {
+                digits.isNotEmpty() -> commitDigits()
+                allChannels.isEmpty() -> mode = Mode.SETTINGS
+                else -> openList()
+            }
+            Mode.CHANNEL_LIST -> visible.getOrNull(listIndex)?.let { tuneAndWatch(it) }
+            Mode.GUIDE -> {
+                if (digits.isNotEmpty()) {
+                    commitDigits()
+                } else {
+                    val ch = visible.getOrNull(guide.row)
+                    if (ch != null) programPressed(ch, guide.programAt(ch, guidePrograms))
+                }
+            }
+            Mode.GROUPS -> selectGroupItem(groupsIndex)
+            Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let { openRecording(it) }
+            Mode.PLAYBACK -> togglePause()
+            else -> Unit
+        }
+    }
+
+    fun onLongOk() {
+        when (mode) {
+            Mode.PLAYER -> openGuide()
+            Mode.CHANNEL_LIST -> visible.getOrNull(listIndex)?.let { vm.toggleFavorite(it) }
+            Mode.GUIDE -> visible.getOrNull(guide.row)?.let { openProgramMenu(it, guide.programAt(it, guidePrograms)) }
+            Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let {
+                menuRecording = it
+                mode = Mode.RECORDING_MENU
+            }
+            else -> Unit
+        }
+    }
+
+    fun onKeyDown(code: Int): Boolean {
+        if (mode == Mode.PLAYER || mode == Mode.CHANNEL_LIST || mode == Mode.GUIDE) {
+            digitOf(code)?.let { d ->
+                if (mode == Mode.CHANNEL_LIST) mode = Mode.PLAYER
+                digits = (digits + d).takeLast(4)
+                return true
+            }
+        }
+        val up = if (settings.invertChannelKeys) -1 else 1
+        when (mode) {
+            Mode.PLAYER -> when (code) {
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> vm.zap(up)
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> vm.zap(-up)
+                AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> vm.zap(1)
+                AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> vm.zap(-1)
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> openList()
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_INFO -> {
+                    if (bannerVisible) bannerVisible = false else vm.showBanner()
+                }
+                AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_MENU -> openGuide()
+                AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> vm.previousChannel()
+                in RECORD_KEYS -> vm.toggleRecordCurrent()
+                else -> return false
+            }
+            Mode.CHANNEL_LIST -> {
+                val size = visible.size
+                when (code) {
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> if (size > 0) listIndex = (listIndex - 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (size > 0) listIndex = (listIndex + 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
+                        listIndex = (listIndex - 8).coerceAtLeast(0)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
+                        listIndex = (listIndex + 8).coerceAtMost((size - 1).coerceAtLeast(0))
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { vm.cycleFilter(-1); listIndex = 0 }
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { vm.cycleFilter(1); listIndex = 0 }
+                    AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_MENU -> openGuide()
+                    AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> { vm.previousChannel(); mode = Mode.PLAYER }
+                    else -> return false
+                }
+            }
+            Mode.GUIDE -> {
+                val channel = visible.getOrNull(guide.row)
+                when (code) {
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> guide.moveVertical(-1, visible.size)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> guide.moveVertical(1, visible.size)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> guide.moveVertical(-7, visible.size)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> guide.moveVertical(7, visible.size)
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> guide.moveHorizontal(-1, channel, guidePrograms, vm)
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> guide.moveHorizontal(1, channel, guidePrograms, vm)
+                    AndroidKeyEvent.KEYCODE_GUIDE -> mode = Mode.PLAYER
+                    AndroidKeyEvent.KEYCODE_MENU -> openGroups()
+                    in RECORD_KEYS -> {
+                        val p = guide.programAt(channel, guidePrograms)
+                        if (channel != null && p != null) vm.toggleRecordProgram(channel, p)
+                    }
+                    else -> return false
+                }
+            }
+            Mode.GROUPS -> when (code) {
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> groupsIndex = (groupsIndex - 1).mod(groupItemCount)
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> groupsIndex = (groupsIndex + 1).mod(groupItemCount)
+                AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
+                    groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
+                AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
+                    groupsIndex = (groupsIndex + 8).coerceAtMost(groupItemCount - 1)
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MENU -> mode = Mode.GUIDE
+                AndroidKeyEvent.KEYCODE_GUIDE -> mode = Mode.PLAYER
+                else -> return false
+            }
+            Mode.RECORDINGS -> {
+                val size = recordings.size
+                when (code) {
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> if (size > 0) recIndex = (recIndex - 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (size > 0) recIndex = (recIndex + 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_MENU -> recordings.getOrNull(recIndex)?.let {
+                        menuRecording = it
+                        mode = Mode.RECORDING_MENU
+                    }
+                    AndroidKeyEvent.KEYCODE_GUIDE -> openGuide()
+                    else -> return false
+                }
+            }
+            Mode.PLAYBACK -> when (code) {
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> togglePause()
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { vm.player.exo.play(); playbackToken++ }
+                AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> { vm.player.exo.pause(); playbackToken++ }
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> seekBy(-10_000L)
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekBy(30_000L)
+                AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_INFO -> playbackToken++
+                else -> return false
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    fun handleKey(event: KeyEvent): Boolean {
+        val native = event.nativeKeyEvent
+        val code = native.keyCode
+        if (code !in HANDLED_KEYS) return false
+        val isDown = native.action == AndroidKeyEvent.ACTION_DOWN
+
+        // OK acts on release so a long press can mean something else.
+        if (code in OK_KEYS) {
+            if (isDown) {
+                if (native.repeatCount == 0) {
+                    ok.armed = true
+                    ok.longFired = false
+                } else if (ok.armed && !ok.longFired && (native.isLongPress || native.repeatCount >= 4)) {
+                    ok.longFired = true
+                    onLongOk()
+                }
+            } else {
+                if (ok.armed && !ok.longFired) onShortOk()
+                ok.armed = false
+            }
+            return true
+        }
+        return if (isDown) onKeyDown(code) else true
+    }
+
+    // ---- Timers --------------------------------------------------------------------------------
+
+    LaunchedEffect(bannerToken) {
+        if (bannerToken > 0) {
+            bannerVisible = true
+            delay(5_000)
+            bannerVisible = false
+        }
+    }
+    LaunchedEffect(touchBarToken) {
+        if (touchBarToken > 0) {
+            touchBar = true
+            delay(6_000)
+            touchBar = false
+        }
+    }
+    LaunchedEffect(digits) {
+        if (digits.isNotEmpty()) {
+            delay(2_000)
+            commitDigits()
+        }
+    }
+    LaunchedEffect(listIndex, mode) {
+        if (mode == Mode.CHANNEL_LIST) listState.scrollToItem((listIndex - 3).coerceAtLeast(0))
+    }
+    LaunchedEffect(mode) {
+        ok.armed = false
+        if (weOwnKeys) {
+            delay(32)
+            runCatching { rootFocus.requestFocus() }
+        }
+    }
+    LaunchedEffect(toast) {
+        val t = toast ?: return@LaunchedEffect
+        delay(3_000)
+        vm.clearToast(t.id)
+    }
+    // Recording playback: poll the position for the progress bar, hide the controls when idle.
+    LaunchedEffect(mode) {
+        while (mode == Mode.PLAYBACK) {
+            val exo = vm.player.exo
+            pbPosition = exo.currentPosition
+            pbDuration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+            pbPlaying = exo.isPlaying
+            delay(500)
+        }
+    }
+    LaunchedEffect(playbackToken) {
+        playbackOverlay = true
+        delay(4_000)
+        if (vm.player.exo.isPlaying) playbackOverlay = false
+    }
+
+    // ---- Touch / mouse -------------------------------------------------------------------------
+
+    fun onScreenTap() {
+        when (mode) {
+            Mode.PLAYER -> if (touchBar) {
+                touchBar = false
+            } else {
+                touchBarToken++
+                if (current != null) vm.showBanner()
+            }
+            Mode.CHANNEL_LIST -> mode = Mode.PLAYER
+            Mode.GROUPS -> mode = Mode.GUIDE
+            Mode.PROGRAM_MENU -> mode = Mode.GUIDE
+            Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
+            Mode.EXIT_CONFIRM -> mode = exitReturn
+            Mode.PLAYBACK -> playbackToken++
+            else -> Unit
+        }
+    }
+
+    // Swipe up = next channel, swipe down = previous (phones/tablets).
+    val onSwipe by rememberUpdatedState<(Float) -> Unit> { total ->
+        if (mode == Mode.PLAYER && abs(total) > swipeThreshold) vm.zap(if (total < 0) 1 else -1)
+    }
+
+    // ---- Back: TV → Guide → Groups → Exit? ----------------------------------------------------
+
+    BackHandler(enabled = !(mode == Mode.SETUP && settings.sourceType == SourceType.NONE)) {
+        when (mode) {
+            Mode.PLAYER -> when {
+                digits.isNotEmpty() -> digits = ""
+                touchBar -> touchBar = false
+                bannerVisible -> bannerVisible = false
+                else -> openGuide()
+            }
+            Mode.CHANNEL_LIST -> mode = Mode.PLAYER
+            Mode.GUIDE -> openGroups()
+            Mode.GROUPS -> lastBack()
+            Mode.EXIT_CONFIRM -> mode = exitReturn
+            Mode.PROGRAM_MENU -> mode = Mode.GUIDE
+            Mode.RECORDINGS -> openGroups(filters.size)
+            Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
+            Mode.PLAYBACK -> leavePlayback()
+            Mode.SETTINGS -> openGroups(filters.size + 1)
+            Mode.SETUP -> mode = Mode.SETTINGS
+        }
+    }
+
+    // ---- Layout --------------------------------------------------------------------------------
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onPreviewKeyEvent { if (weOwnKeys) handleKey(it) else false }
+            .focusRequester(rootFocus)
+            // Only focusable while we handle the remote ourselves, so Settings/dialogs get normal focus.
+            .focusable(enabled = weOwnKeys)
+            .tap { onScreenTap() }
+            .pointerInput(Unit) {
+                var total = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = { onSwipe(total) },
+                    onDragCancel = { total = 0f },
+                ) { change, amount ->
+                    total += amount
+                    change.consume()
+                }
+            }
+    ) {
+        // Always the first child so the view (and its video surface) is never recreated;
+        // in the guide it shrinks into the top-right preview window.
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    player = vm.player.exo
+                    keepScreenOn = true
+                    isFocusable = false
+                    isClickable = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+            },
+            modifier = if (mode in GUIDE_MODES) {
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = PREVIEW_PADDING, end = PREVIEW_PADDING)
+                    .size(PREVIEW_WIDTH, PREVIEW_HEIGHT)
+            } else {
+                Modifier.fillMaxSize()
+            },
+        )
+
+        when (mode) {
+            Mode.GUIDE, Mode.GROUPS, Mode.PROGRAM_MENU -> {
+                GuideScreen(
+                    state = guide,
+                    channels = visible,
+                    programs = guidePrograms,
+                    filterLabel = filter.label,
+                    guideStart = guideStart,
+                    now = now,
+                    playingId = current?.id,
+                    favorites = favorites,
+                    recordingKeys = recordingKeys,
+                    timeFormat = timeFormat,
+                    onTune = { tuneAndWatch(it) },
+                    onProgram = { ch, p -> programPressed(ch, p) },
+                    onMenu = { ch, p -> openProgramMenu(ch, p) },
+                    onGroups = { openGroups() },
+                    onShift = { delta ->
+                        vm.setGuideStart(guideStart + delta)
+                        guide.focusTime = guideStart + delta
+                    },
+                    onNow = {
+                        val t = System.currentTimeMillis()
+                        vm.setGuideStart(t)
+                        guide.focusTime = t
+                    },
+                    onClose = { mode = Mode.PLAYER },
+                )
+                if (mode == Mode.GROUPS) {
+                    GroupsPanel(
+                        filters = filters,
+                        active = filter,
+                        selected = groupsIndex,
+                        listState = groupsListState,
+                        recordingCount = recordings.count { it.status != RecStatus.CANCELLED },
+                        onSelect = { selectGroupItem(it) },
+                    )
+                }
+                val ch = menuChannel
+                if (mode == Mode.PROGRAM_MENU && ch != null) {
+                    val p = menuProgram
+                    val t = System.currentTimeMillis()
+                    val actions = mutableListOf(DialogAction("Watch ${ch.name}") { tuneAndWatch(ch) })
+                    if (p != null && p.stop > t) {
+                        val scheduled = TvViewModel.recordingKey(ch.id, p.start) in recordingKeys
+                        actions += DialogAction(if (scheduled) "Cancel recording" else "● Record") {
+                            vm.toggleRecordProgram(ch, p)
+                            mode = Mode.GUIDE
+                        }
+                    }
+                    actions += DialogAction(if (ch.id in favorites) "★ Remove favourite" else "☆ Add favourite") {
+                        vm.toggleFavorite(ch)
+                        mode = Mode.GUIDE
+                    }
+                    actions += DialogAction("Close") { mode = Mode.GUIDE }
+                    ActionDialog(
+                        title = p?.title ?: ch.name,
+                        subtitle = p?.let { "${ch.name}  ·  ${timeFormat(it.start)} – ${timeFormat(it.stop)}" },
+                        actions = actions,
+                    )
+                }
+            }
+            Mode.RECORDINGS, Mode.RECORDING_MENU -> {
+                RecordingsScreen(
+                    recordings = recordings,
+                    selected = recIndex.coerceAtMost((recordings.size - 1).coerceAtLeast(0)),
+                    listState = recListState,
+                    onPlay = { openRecording(it) },
+                    onMenu = {
+                        menuRecording = it
+                        mode = Mode.RECORDING_MENU
+                    },
+                )
+                val r = menuRecording?.let { m -> recordings.firstOrNull { it.id == m.id } }
+                if (mode == Mode.RECORDING_MENU && r != null) {
+                    val actions = mutableListOf<DialogAction>()
+                    if (r.filePath != null && r.sizeBytes > 0) actions += DialogAction("▶ Play") { openRecording(r) }
+                    if (r.status == RecStatus.RECORDING) actions += DialogAction("■ Stop recording") {
+                        vm.stopRecording(r)
+                        mode = Mode.RECORDINGS
+                    }
+                    if (r.status == RecStatus.SCHEDULED) actions += DialogAction("Cancel") {
+                        vm.stopRecording(r)
+                        mode = Mode.RECORDINGS
+                    }
+                    actions += DialogAction("Delete") {
+                        vm.deleteRecording(r)
+                        mode = Mode.RECORDINGS
+                    }
+                    actions += DialogAction("Close") { mode = Mode.RECORDINGS }
+                    ActionDialog(title = r.title, subtitle = r.channelName, actions = actions)
+                } else if (mode == Mode.RECORDING_MENU) {
+                    mode = Mode.RECORDINGS // the recording was deleted meanwhile
+                }
+            }
+            Mode.PLAYBACK -> {
+                (playerStatus as? PlayerStatus.Error)?.let { StatusMessage(it, null, it.message) }
+                if (playbackOverlay || !pbPlaying) {
+                    PlaybackOverlay(
+                        title = playbackTitle,
+                        position = pbPosition,
+                        duration = pbDuration,
+                        playing = pbPlaying,
+                        onToggle = { togglePause() },
+                        onSeek = { seekBy(it) },
+                        onClose = { leavePlayback() },
+                    )
+                }
+            }
+            Mode.SETTINGS -> SettingsScreen(
+                settings = settings,
+                refreshState = refreshState,
+                channelCount = allChannels.size,
+                vm = vm,
+                onEditSource = { mode = Mode.SETUP },
+                onExit = { exitApp() },
+            )
+            Mode.SETUP -> SetupScreen(
+                initial = settings,
+                refreshState = refreshState,
+                vm = vm,
+                onDone = { mode = Mode.PLAYER },
+            )
+            Mode.EXIT_CONFIRM -> ActionDialog(
+                title = "Exit Channelbox?",
+                subtitle = null,
+                actions = listOf(
+                    DialogAction("Keep watching") { mode = Mode.PLAYER },
+                    DialogAction("TV Guide") { openGuide() },
+                    DialogAction("Exit") { exitApp() },
+                ),
+            )
+            Mode.PLAYER, Mode.CHANNEL_LIST -> {
+                val fallback = when (val r = refreshState) {
+                    is RefreshState.Running -> r.message
+                    is RefreshState.Failed -> "Couldn't load channels: ${r.message}\nPress OK for settings"
+                    else -> if (allChannels.isEmpty()) "No channels yet – press OK for settings" else null
+                }
+                StatusMessage(playerStatus, current, fallback)
+                val cur = current
+                if (cur != null && cur.id in recordingChannels) RecIndicator()
+                if (mode == Mode.PLAYER && bannerVisible && cur != null) {
+                    InfoBanner(cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat)
+                }
+                if (mode == Mode.PLAYER && touchBar) {
+                    TouchBar(
+                        favorite = cur != null && cur.id in favorites,
+                        recording = cur != null && cur.id in recordingChannels,
+                        onChannels = { touchBar = false; openList() },
+                        onGuide = { touchBar = false; openGuide() },
+                        onChannelUp = { touchBarToken++; vm.zap(1) },
+                        onChannelDown = { touchBarToken++; vm.zap(-1) },
+                        onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
+                        onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
+                        onSettings = { touchBar = false; mode = Mode.SETTINGS },
+                        onExit = { touchBar = false; askExit(Mode.PLAYER) },
+                    )
+                }
+                if (mode == Mode.CHANNEL_LIST) {
+                    ChannelListPanel(
+                        channels = visible,
+                        selected = listIndex,
+                        listState = listState,
+                        filterLabel = filter.label,
+                        favorites = favorites,
+                        playingId = cur?.id,
+                        upcoming = upcoming,
+                        now = now,
+                        onSelect = { i -> visible.getOrNull(i)?.let { tuneAndWatch(it) } },
+                        onFavorite = { i -> visible.getOrNull(i)?.let { vm.toggleFavorite(it) } },
+                        onGroup = { d ->
+                            vm.cycleFilter(d)
+                            listIndex = 0
+                        },
+                    )
+                }
+            }
+        }
+        if (digits.isNotEmpty()) {
+            NumberEntry(digits, digits.toIntOrNull()?.let { n -> allChannels.firstOrNull { it.number == n } })
+        }
+        toast?.let { ToastMessage(it.text) }
+    }
+}
