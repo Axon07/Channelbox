@@ -39,9 +39,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +60,7 @@ import io.github.axon07.channelbox.BuildConfig
 import io.github.axon07.channelbox.data.AppSettings
 import io.github.axon07.channelbox.data.BackAction
 import io.github.axon07.channelbox.data.DNS_LABELS
+import io.github.axon07.channelbox.data.REFRESH_CHOICES
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType
 import io.github.axon07.channelbox.data.UserAgent
@@ -90,7 +94,13 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
 }
 
 /** Sub-pages with text fields, opened from a setting card. */
-private enum class Page { VPN, PROXY, DNS, USER_AGENT, SMB, WEBDAV }
+private enum class Page(val title: String) {
+    VPN("WireGuard VPN"), PROXY("Proxy"), DNS("Encrypted DNS"), USER_AGENT("User agent"),
+    SMB("Network share (SMB)"), WEBDAV("WebDAV folder"),
+    // Pick-one lists
+    SCALE("Picture size"), QUALITY("Maximum quality"), REFRESH("Reload automatically"),
+    BACK("Back button on the groups menu"), STORAGE("Save recordings to"),
+}
 
 /**
  * Two panes: categories on the left, that category's settings on the right.
@@ -109,9 +119,13 @@ fun SettingsScreen(
     var category by rememberSaveable { mutableStateOf(SettingsCategory.SOURCE) }
     var page by remember { mutableStateOf<Page?>(null) }
     val firstCategory = remember { FocusRequester() }
+    // With a remote, start on the first category. With touch/mouse nothing needs focus.
+    val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
     LaunchedEffect(Unit) {
-        delay(50)
-        runCatching { firstCategory.requestFocus() }
+        if (!touch) {
+            delay(50)
+            runCatching { firstCategory.requestFocus() }
+        }
     }
     // Back on a sub-page returns to the category instead of leaving Settings.
     BackHandler(enabled = page != null) { page = null }
@@ -120,18 +134,19 @@ fun SettingsScreen(
         // ---- Categories ----
         Column(
             Modifier
-                .width(280.dp)
+                .width(290.dp)
                 .fillMaxHeight()
-                .background(Color(0xFF0E131A))
-                .padding(top = 30.dp, start = 18.dp, end = 18.dp, bottom = 18.dp)
+                .background(Brush.verticalGradient(listOf(Color(0xFF111821), Color(0xFF0B1016))))
+                .verticalScroll(rememberScrollState())
+                .padding(top = 26.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
         ) {
             Text(
-                "Settings", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
-                modifier = Modifier.padding(start = 10.dp),
+                "Settings", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
+                modifier = Modifier.padding(start = 8.dp),
             )
             Text(
                 "Channelbox ${vm.appVersion}", fontSize = 12.sp, color = Palette.TextDim,
-                modifier = Modifier.padding(start = 10.dp, top = 2.dp, bottom = 18.dp),
+                modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 14.dp),
             )
             SettingsCategory.entries.forEachIndexed { i, c ->
                 CategoryRow(
@@ -139,6 +154,10 @@ fun SettingsScreen(
                     selected = c == category,
                     modifier = if (i == 0) Modifier.focusRequester(firstCategory) else Modifier,
                     onFocus = { if (page == null) category = c },
+                    onTap = {
+                        page = null
+                        category = c
+                    },
                 )
             }
         }
@@ -153,17 +172,18 @@ fun SettingsScreen(
         ) {
             val current = page
             if (current != null) {
-                SubPage(current, settings, vm, onClose = { page = null })
+                BackLink(category.title) { page = null }
+                SubPage(current, settings, vm, onClose = { page = null }, onOpen = { page = it })
             } else {
                 Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
                 Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (category) {
-                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource)
-                        SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm)
+                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource) { page = it }
+                        SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { page = it }
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { page = it }
                         SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { page = it }
-                        SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit)
+                        SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit) { page = it }
                         SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
                         SettingsCategory.ABOUT -> AboutSettings(vm)
                     }
@@ -182,6 +202,7 @@ private fun SourceSettings(
     channelCount: Int,
     vm: TvViewModel,
     onEditSource: () -> Unit,
+    openPage: (Page) -> Unit,
 ) {
     SettingCard(
         title = "TV service",
@@ -210,29 +231,26 @@ private fun SourceSettings(
         title = "Reload automatically",
         description = "Fetch the latest channels and guide in the background",
         value = refreshLabel(settings.refreshHours).substringBefore(" ("),
-        onClick = { vm.cycleRefreshHours(settings.refreshHours) },
+        onClick = { openPage(Page.REFRESH) },
     )
 }
 
 private val QUALITY_CHOICES = listOf(0 to "Best available", 1080 to "Up to 1080p", 720 to "Up to 720p", 480 to "Up to 480p")
 
 @Composable
-private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel) {
+private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (Page) -> Unit) {
     val context = LocalContext.current
     SettingCard(
         title = "Picture size",
         description = "How the picture fills the screen. Also while watching: hold OK.",
         value = SCALE_LABELS.getOrElse(settings.videoScale) { SCALE_LABELS[0] },
-        onClick = { vm.setVideoScale((settings.videoScale + 1) % SCALE_LABELS.size) },
+        onClick = { openPage(Page.SCALE) },
     )
     SettingCard(
         title = "Maximum quality",
         description = "Lower it on a slow connection to avoid buffering",
         value = QUALITY_CHOICES.firstOrNull { it.first == settings.maxQuality }?.second ?: "Best available",
-        onClick = {
-            val i = QUALITY_CHOICES.indexOfFirst { it.first == settings.maxQuality }
-            vm.setMaxQuality(QUALITY_CHOICES[(i + 1).mod(QUALITY_CHOICES.size)].first)
-        },
+        onClick = { openPage(Page.QUALITY) },
     )
     SettingCard(
         title = "Decode all audio in software",
@@ -305,11 +323,7 @@ private fun NetworkSettingsList(settings: AppSettings, vm: TvViewModel, openPage
         title = "Encrypted DNS",
         description = "Look up server names privately – gets around ISP DNS blocking",
         value = DNS_LABELS[net.dns] ?: "System",
-        onClick = {
-            val keys = DNS_LABELS.keys.toList()
-            val next = keys[(keys.indexOf(net.dns) + 1).mod(keys.size)]
-            if (next == "custom") openPage(Page.DNS) else vm.saveNetwork(net.copy(dns = next))
-        },
+        onClick = { openPage(Page.DNS) },
     )
     SettingCard(
         title = "Proxy",
@@ -325,12 +339,7 @@ private fun NetworkSettingsList(settings: AppSettings, vm: TvViewModel, openPage
         title = "User agent",
         description = "How Channelbox identifies itself. Some providers only allow certain players.",
         value = UserAgent.presetName(net.userAgent),
-        onClick = {
-            val presets = UserAgent.PRESETS.values.toList()
-            val i = presets.indexOf(net.userAgent)
-            if (i < 0 || i == presets.lastIndex) openPage(Page.USER_AGENT)
-            else vm.saveNetwork(net.copy(userAgent = presets[i + 1]))
-        },
+        onClick = { openPage(Page.USER_AGENT) },
     )
 }
 
@@ -355,11 +364,7 @@ private fun RecordingSettings(settings: AppSettings, vm: TvViewModel, onOpenReco
             "webdav" -> "WebDAV"
             else -> "This box"
         },
-        onClick = {
-            val types = listOf("local", "removable", "smb", "webdav")
-            val next = types[(types.indexOf(st.type) + 1).mod(types.size)]
-            vm.saveStorage(st.copy(type = next))
-        },
+        onClick = { openPage(Page.STORAGE) },
     )
     if (st.type == "removable" && drives > 1) {
         SettingCard(
@@ -389,7 +394,7 @@ private fun RecordingSettings(settings: AppSettings, vm: TvViewModel, onOpenReco
 }
 
 @Composable
-private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -> Unit) {
+private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -> Unit, openPage: (Page) -> Unit) {
     val context = LocalContext.current
     // Re-read system state (permissions, launcher) whenever we come back to the screen.
     var resumeTick by remember { mutableIntStateOf(0) }
@@ -432,10 +437,7 @@ private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -
         title = "Back button on the groups menu",
         description = "What happens on the last Back press (TV → guide → groups → …)",
         value = settings.backAction.label,
-        onClick = {
-            val all = BackAction.entries
-            vm.setBackAction(all[(all.indexOf(settings.backAction) + 1) % all.size])
-        },
+        onClick = { openPage(Page.BACK) },
     )
     SettingCard(
         title = "Exit Channelbox",
@@ -483,7 +485,7 @@ private fun AboutSettings(vm: TvViewModel) {
 // ---- Sub-pages with text fields ---------------------------------------------------------------------
 
 @Composable
-private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose: () -> Unit) {
+private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose: () -> Unit, onOpen: (Page) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val net = settings.network
@@ -556,20 +558,10 @@ private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose:
             var user by remember { mutableStateOf(net.proxyUser) }
             var pass by remember { mutableStateOf(net.proxyPass) }
             PageHeader("Proxy", "All of Channelbox's traffic (playlists, guide, streams) goes through the proxy. Restart to apply.")
-            SettingCard(
-                title = "Type",
-                value = when (type) {
-                    "http" -> "HTTP"
-                    "socks5" -> "SOCKS5"
-                    else -> "Off"
-                },
-                onClick = {
-                    type = when (type) {
-                        "none" -> "http"
-                        "http" -> "socks5"
-                        else -> "none"
-                    }
-                },
+            ChoiceList(
+                options = listOf("none" to "Off", "http" to "HTTP proxy", "socks5" to "SOCKS5 proxy"),
+                selected = type,
+                onSelect = { type = it },
             )
             if (type != "none") {
                 Spacer(Modifier.height(8.dp))
@@ -594,40 +586,120 @@ private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose:
         }
         Page.DNS -> {
             var url by remember { mutableStateOf(net.dnsCustomUrl) }
-            PageHeader("Custom encrypted DNS", "Enter a DNS-over-HTTPS address, e.g. https://dns.nextdns.io/abc123")
-            TvTextField("DNS-over-HTTPS URL", url, { url = it }, keyboardType = KeyboardType.Uri)
-            Spacer(Modifier.height(12.dp))
-            ButtonRow(
-                "Save" to {
-                    if (!url.trim().startsWith("https://")) {
-                        toast("It needs to start with https://")
+            PageHeader(
+                "Encrypted DNS",
+                "Looks up server names over an encrypted connection, so your ISP can't block or redirect them. Restart to apply.",
+            )
+            ChoiceList(
+                options = DNS_LABELS.toList(),
+                selected = net.dns,
+                onSelect = { key ->
+                    if (key == "custom") {
+                        vm.saveNetwork(net.copy(dns = "custom"))
                     } else {
-                        vm.saveNetwork(net.copy(dns = "custom", dnsCustomUrl = url))
+                        vm.saveNetwork(net.copy(dns = key))
                         onClose()
                     }
                 },
-                "Use system DNS" to {
-                    vm.saveNetwork(net.copy(dns = "system"))
-                    onClose()
-                },
-                "Cancel" to onClose,
             )
+            if (net.dns == "custom") {
+                Spacer(Modifier.height(12.dp))
+                TvTextField("DNS-over-HTTPS address (e.g. https://dns.nextdns.io/abc123)", url, { url = it }, keyboardType = KeyboardType.Uri)
+                Spacer(Modifier.height(10.dp))
+                ButtonRow(
+                    "Save" to {
+                        if (!url.trim().startsWith("https://")) {
+                            toast("It needs to start with https://")
+                        } else {
+                            vm.saveNetwork(net.copy(dns = "custom", dnsCustomUrl = url))
+                            onClose()
+                        }
+                    },
+                )
+            }
         }
         Page.USER_AGENT -> {
-            var ua by remember { mutableStateOf(net.userAgent) }
-            PageHeader("Custom user agent", "Use this if your provider asks for a specific player. Leave empty for Channelbox's default.")
-            TvTextField("User agent", ua, { ua = it }, lines = 3)
-            Spacer(Modifier.height(12.dp))
-            ButtonRow(
-                "Save" to {
-                    vm.saveNetwork(net.copy(userAgent = ua))
-                    onClose()
+            val presetKeys = UserAgent.PRESETS.values.toList()
+            var custom by remember { mutableStateOf(net.userAgent.takeIf { it !in presetKeys }.orEmpty()) }
+            var showCustom by remember { mutableStateOf(net.userAgent !in presetKeys) }
+            PageHeader("User agent", "How Channelbox introduces itself to servers. Some providers only allow certain players.")
+            ChoiceList(
+                options = UserAgent.PRESETS.map { (name, value) -> value to name } + ("__custom" to "Custom…"),
+                selected = if (showCustom) "__custom" else net.userAgent,
+                onSelect = { key ->
+                    if (key == "__custom") {
+                        showCustom = true
+                    } else {
+                        showCustom = false
+                        vm.saveNetwork(net.copy(userAgent = key))
+                        onClose()
+                    }
                 },
-                "Default" to {
-                    vm.saveNetwork(net.copy(userAgent = ""))
-                    onClose()
+            )
+            if (showCustom) {
+                Spacer(Modifier.height(12.dp))
+                TvTextField("Custom user agent", custom, { custom = it }, lines = 3)
+                Spacer(Modifier.height(10.dp))
+                ButtonRow(
+                    "Save" to {
+                        vm.saveNetwork(net.copy(userAgent = custom))
+                        onClose()
+                    },
+                )
+            }
+        }
+        Page.SCALE -> {
+            PageHeader("Picture size", "How the picture fills the screen. You can also change it while watching (hold OK).")
+            ChoiceList(
+                options = SCALE_LABELS.mapIndexed { i, label -> i.toString() to label },
+                selected = settings.videoScale.toString(),
+                onSelect = { vm.setVideoScale(it.toInt()); onClose() },
+            )
+        }
+        Page.QUALITY -> {
+            PageHeader("Maximum quality", "Channelbox picks the best quality your connection can handle, up to this limit.")
+            ChoiceList(
+                options = QUALITY_CHOICES.map { it.first.toString() to it.second },
+                selected = settings.maxQuality.toString(),
+                onSelect = { vm.setMaxQuality(it.toInt()); onClose() },
+            )
+        }
+        Page.REFRESH -> {
+            PageHeader("Reload automatically", "How often to fetch the latest channels and programme guide in the background.")
+            ChoiceList(
+                options = REFRESH_CHOICES.map { it.toString() to refreshLabel(it).substringBefore(" (") },
+                selected = settings.refreshHours.toString(),
+                onSelect = { vm.setRefreshHours(it.toInt()); onClose() },
+            )
+        }
+        Page.BACK -> {
+            PageHeader("Back button on the groups menu", "Back goes TV → guide → groups menu. This is what the next press does.")
+            ChoiceList(
+                options = BackAction.entries.map { it.name to it.label },
+                selected = settings.backAction.name,
+                onSelect = { vm.setBackAction(BackAction.valueOf(it)); onClose() },
+            )
+        }
+        Page.STORAGE -> {
+            val drives = remember { vm.removableDrives() }
+            PageHeader("Save recordings to", "Choose where new recordings are kept. Existing recordings stay where they are.")
+            ChoiceList(
+                options = listOf(
+                    "local" to "This box",
+                    "removable" to if (drives > 0) "USB drive / SD card" else "USB drive / SD card (none connected)",
+                    "smb" to "Network share (NAS, Windows, Samba)",
+                    "webdav" to "WebDAV (Nextcloud, Synology…)",
+                ),
+                selected = st.type,
+                onSelect = { key ->
+                    vm.saveStorage(st.copy(type = key))
+                    // Network locations need their details the first time.
+                    when {
+                        key == "smb" && st.smbHost.isBlank() -> onOpen(Page.SMB)
+                        key == "webdav" && st.davUrl.isBlank() -> onOpen(Page.WEBDAV)
+                        else -> onClose()
+                    }
                 },
-                "Cancel" to onClose,
             )
         }
         Page.SMB -> {
@@ -714,48 +786,78 @@ private fun ButtonRow(vararg buttons: Pair<String, () -> Unit>) {
 
 // ---- Building blocks -------------------------------------------------------------------------------
 
+private fun SettingsCategory.color(): Color = when (this) {
+    SettingsCategory.SOURCE -> Color(0xFF3D8BFD)
+    SettingsCategory.PLAYBACK -> Color(0xFF22C55E)
+    SettingsCategory.NETWORK -> Color(0xFF8B5CF6)
+    SettingsCategory.RECORDINGS -> Color(0xFFEF4444)
+    SettingsCategory.STARTUP -> Color(0xFFF59E0B)
+    SettingsCategory.UPDATES -> Color(0xFF14B8A6)
+    SettingsCategory.ABOUT -> Color(0xFF64748B)
+}
+
+/** Coloured rounded square with a white icon – the look used in both side menus. */
 @Composable
-private fun CategoryRow(category: SettingsCategory, selected: Boolean, modifier: Modifier, onFocus: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
+fun IconBadge(icon: ImageVector, color: Color, size: androidx.compose.ui.unit.Dp = 30.dp) {
+    Box(
+        Modifier
+            .size(size)
+            .clip(RoundedCornerShape(size / 3.2f))
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        AppIcon(icon, tint = Color.White, size = size * 0.56f)
+    }
+}
+
+@Composable
+private fun CategoryRow(
+    category: SettingsCategory,
+    selected: Boolean,
+    modifier: Modifier,
+    onFocus: () -> Unit,
+    onTap: () -> Unit,
+) {
     Surface(
-        onClick = onFocus,
+        onClick = onTap,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocus()
-            }
-            .tap(onClick = onFocus),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+            .padding(vertical = 3.dp)
+            .onFocusChanged { if (it.isFocused) onFocus() }
+            .tap(onClick = onTap),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) Color(0x1FFFFFFF) else Color.Transparent,
+            containerColor = if (selected) Color(0x1AFFFFFF) else Color.Transparent,
             contentColor = Palette.Text,
-            focusedContainerColor = Palette.Accent,
+            focusedContainerColor = Color(0x29FFFFFF),
             focusedContentColor = Color.White,
-            pressedContainerColor = Palette.Accent,
+            pressedContainerColor = Color(0x33FFFFFF),
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
+                shape = RoundedCornerShape(14.dp),
+            ),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
-            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppIcon(
-                category.icon(),
-                tint = when {
-                    focused -> Color.White
-                    category == SettingsCategory.RECORDINGS -> Palette.Recording
-                    else -> Palette.TextDim
-                },
-                size = 17.dp,
-            )
+            IconBadge(category.icon(), category.color())
             Spacer(Modifier.width(12.dp))
-            Text(
-                category.title, fontSize = 15.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    category.title, fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    category.blurb, fontSize = 11.sp, color = Palette.TextDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -850,5 +952,85 @@ private fun ToggleSwitch(on: Boolean) {
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Box(Modifier.size(18.dp).clip(RoundedCornerShape(9.dp)).background(Color.White))
+    }
+}
+
+/** Pick-one list with a radio dot – used for every multiple-choice setting. */
+@Composable
+private fun ChoiceList(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    val first = remember { FocusRequester() }
+    val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
+    LaunchedEffect(Unit) {
+        if (!touch) {
+            delay(50)
+            runCatching { first.requestFocus() }
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEachIndexed { i, (key, label) ->
+            val isSelected = key == selected
+            Surface(
+                onClick = { onSelect(key) },
+                modifier = (if (isSelected || (i == 0 && options.none { it.first == selected })) Modifier.focusRequester(first) else Modifier)
+                    .fillMaxWidth()
+                    .tap { onSelect(key) },
+                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = Palette.Surface,
+                    contentColor = Palette.Text,
+                    focusedContainerColor = Palette.SurfaceLive,
+                    focusedContentColor = Palette.Text,
+                    pressedContainerColor = Palette.SurfaceLive,
+                ),
+                border = ClickableSurfaceDefaults.border(
+                    focusedBorder = androidx.tv.material3.Border(
+                        border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+                ),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(label, fontSize = 15.sp, color = Palette.Text, modifier = Modifier.weight(1f))
+                    RadioDot(isSelected)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RadioDot(on: Boolean) {
+    Box(
+        Modifier
+            .size(20.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (on) Palette.Accent else Color(0xFF3A4554))
+            .padding(if (on) 6.dp else 2.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (on) Color.White else Palette.Surface)
+        )
+    }
+}
+
+/** "‹ Playback" above a sub-page – tap or press Back to return. */
+@Composable
+private fun BackLink(label: String, onBack: () -> Unit) {
+    Row(
+        Modifier
+            .padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .tap(onClick = onBack)
+            .padding(vertical = 4.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("‹  $label", fontSize = 13.sp, color = Palette.TextDim)
     }
 }

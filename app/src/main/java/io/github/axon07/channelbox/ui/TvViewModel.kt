@@ -589,6 +589,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setInvertChannelKeys(on: Boolean) = viewModelScope.launch { c.settings.setInvertChannelKeys(on) }
     fun setBackAction(action: BackAction) = viewModelScope.launch { c.settings.setBackAction(action) }
 
+    fun setRefreshHours(hours: Int) = viewModelScope.launch {
+        c.settings.setRefreshHours(hours)
+        RefreshWorker.schedule(getApplication<Application>(), hours)
+    }
+
     /** Steps through 6 h → 12 h → 24 h → 48 h → off. */
     fun cycleRefreshHours(currentHours: Int) = viewModelScope.launch {
         val index = REFRESH_CHOICES.indexOf(currentHours)

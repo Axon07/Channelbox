@@ -450,7 +450,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
                     groupsIndex = (groupsIndex + 8).coerceAtMost(groupItemCount - 1)
-                AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MENU -> mode = Mode.GUIDE
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT ->
+                    if (groupsIndex >= filters.size && groupsIndex < filters.size + 2) groupsIndex++ else mode = Mode.GUIDE
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT ->
+                    if (groupsIndex > filters.size) groupsIndex-- else Unit
+                AndroidKeyEvent.KEYCODE_MENU -> mode = Mode.GUIDE
                 AndroidKeyEvent.KEYCODE_GUIDE -> mode = Mode.PLAYER
                 else -> return false
             }
