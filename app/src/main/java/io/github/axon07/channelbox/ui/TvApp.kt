@@ -574,7 +574,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
     // "Update available" prompt: shown over whatever screen is open (but not during first setup).
-    LaunchedEffect(updatePrompt) {
+    // Keyed on setup too, so a prompt that arrived during setup shows as soon as setup is done.
+    LaunchedEffect(updatePrompt, mode == Mode.SETUP) {
         if (updatePrompt && mode != Mode.UPDATE && mode != Mode.SETUP) {
             updateReturn = mode
             mode = Mode.UPDATE
