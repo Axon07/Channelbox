@@ -29,6 +29,10 @@ class TvRepository(
     private val _state = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val state: StateFlow<RefreshState> = _state.asStateFlow()
 
+    /** Result of the last load of each playlist: "" = loaded, otherwise the error. */
+    private val _playlistErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val playlistErrors: StateFlow<Map<String, String>> = _playlistErrors.asStateFlow()
+
     val channels: Flow<List<ChannelEntity>> = db.channels().observeAll()
     val favorites: Flow<Set<String>> = db.channels().observeFavorites().map { it.toSet() }
 
@@ -57,6 +61,7 @@ class TvRepository(
             val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
             val epgUrls = ArrayList<String>()
             val failures = ArrayList<String>()
+            val errors = HashMap<String, String>()
             sources.forEachIndexed { index, p ->
                 _state.value = RefreshState.Running(
                     if (sources.size > 1) "Loading ${p.displayName} (${index + 1} of ${sources.size})…" else "Loading channels…"
@@ -70,11 +75,14 @@ class TvRepository(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    failures += "${p.displayName}: ${e.message ?: e.javaClass.simpleName}"
+                    val why = e.message ?: e.javaClass.simpleName
+                    failures += "${p.displayName}: $why"
+                    errors[p.id] = why
                     kept += db.channels().forPlaylist(p.id).map { it.copy(playlistId = p.id) }
                     epgUrls += splitUrls(p.epgUrl)
                 }
             }
+            _playlistErrors.value = errors
             if (parsed.isEmpty() && kept.isEmpty()) throw IOException(failures.joinToString("\n"))
 
             val entities = toEntities(parsed, kept)
@@ -88,7 +96,10 @@ class TvRepository(
             }
             settings.setLastRefresh(System.currentTimeMillis())
             _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
-            else RefreshState.Failed("Couldn't load " + failures.joinToString("; ") + " – showing its last channels")
+            else RefreshState.Failed(
+                "Couldn't load " + failures.joinToString("; ") +
+                    if (kept.isNotEmpty()) " – showing its channels from last time" else ""
+            )
             true
         } catch (e: CancellationException) {
             throw e
@@ -100,7 +111,7 @@ class TvRepository(
 
     private suspend fun loadPlaylist(p: Playlist): ParsedPlaylist = when (p.type) {
         SourceType.XTREAM -> XtreamClient(http).load(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass))
-        else -> http.download(p.m3uUrl) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
+        else -> http.download(p.m3uUrl, timeoutSeconds = PLAYLIST_TIMEOUT) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
     }
 
     /**
@@ -217,6 +228,8 @@ class TvRepository(
 
     companion object {
         const val HOUR = 3_600_000L
+        /** A playlist that hasn't finished downloading after this long is given up on. */
+        const val PLAYLIST_TIMEOUT = 120L
         private const val BATCH = 2_000
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
     }

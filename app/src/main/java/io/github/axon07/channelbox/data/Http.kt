@@ -1,6 +1,10 @@
 package io.github.axon07.channelbox.data
 
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import okhttp3.Dns
@@ -125,20 +129,47 @@ fun createHttpClient(net: NetworkSettings = NetworkSettings()): OkHttpClient {
     return builder.build()
 }
 
-/** Downloads [url] and hands the body stream to [block] on an IO thread. */
-suspend fun <T> OkHttpClient.download(url: String, block: (InputStream) -> T): T =
+/**
+ * Downloads [url] and hands the body stream to [block] on an IO thread.
+ * Cancelling the coroutine aborts the transfer straight away; [timeoutSeconds] > 0 caps the whole call.
+ */
+suspend fun <T> OkHttpClient.download(url: String, timeoutSeconds: Long = 0, block: (InputStream) -> T): T =
     withContext(Dispatchers.IO) {
         val request = try {
             Request.Builder().url(url).build()
         } catch (e: IllegalArgumentException) {
             throw IOException("Not a valid web address: ${redact(url)}")
         }
-        newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Server answered HTTP ${response.code} for ${redact(url)}")
-            val body = response.body ?: throw IOException("Empty response from ${redact(url)}")
-            block(body.byteStream())
+        val client = if (timeoutSeconds > 0) newBuilder().callTimeout(timeoutSeconds, TimeUnit.SECONDS).build() else this@download
+        val call = client.newCall(request)
+        val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                call.cancel()
+            }
+        }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Server answered HTTP ${response.code}${httpHint(response.code)}")
+                val body = response.body ?: throw IOException("Empty response")
+                block(body.byteStream())
+            }
+        } catch (e: IOException) {
+            ensureActive() // cancelled on purpose: report cancellation, not an error
+            if (e is java.io.InterruptedIOException) throw IOException("The server took too long to answer")
+            throw e
+        } finally {
+            watcher.cancel()
         }
     }
+
+private fun httpHint(code: Int): String = when (code) {
+    401, 403 -> " – the server refused the login (check the username/password, or the account may be in use or expired)"
+    404 -> " – the link wasn't found"
+    in 500..599 -> " – the provider's server has a problem"
+    else -> ""
+}
 
 /** Transparently un-gzips .gz guide files (detected by magic bytes, not file name). */
 fun maybeGunzip(input: InputStream): InputStream {

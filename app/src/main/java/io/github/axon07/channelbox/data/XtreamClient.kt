@@ -72,7 +72,7 @@ class XtreamClient(private val http: OkHttpClient) {
     }
 
     private suspend fun getJson(url: String): JsonElement =
-        http.download(url) { Json.parseToJsonElement(it.bufferedReader().readText()) }
+        http.download(url, timeoutSeconds = TvRepository.PLAYLIST_TIMEOUT) { Json.parseToJsonElement(it.bufferedReader().readText()) }
 
     private fun JsonObject.str(key: String): String? {
         val v = this[key] as? JsonPrimitive ?: return null

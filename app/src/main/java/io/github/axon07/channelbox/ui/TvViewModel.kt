@@ -591,29 +591,28 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Settings -------------------------------------------------------------------------
 
-    fun refreshNow() {
-        viewModelScope.launch { if (repo.refresh()) ensurePlaying() }
+    /** The reload in progress. A newer change cancels it rather than queueing behind it. */
+    private var reloadJob: kotlinx.coroutines.Job? = null
+
+    private fun reload(change: suspend () -> Unit) {
+        reloadJob?.cancel()
+        reloadJob = viewModelScope.launch {
+            change()
+            reloadAfterSourceChange()
+        }
     }
 
-    fun savePlaylist(p: Playlist) = viewModelScope.launch {
-        c.settings.savePlaylist(p)
-        reloadAfterSourceChange()
-    }
+    val playlistErrors: StateFlow<Map<String, String>> get() = repo.playlistErrors
 
-    fun removePlaylist(id: String) = viewModelScope.launch {
-        c.settings.removePlaylist(id)
-        reloadAfterSourceChange()
-    }
+    fun refreshNow() = reload { }
 
-    fun setPlaylistEnabled(id: String, on: Boolean) = viewModelScope.launch {
-        c.settings.setPlaylistEnabled(id, on)
-        reloadAfterSourceChange()
-    }
+    fun savePlaylist(p: Playlist) = reload { c.settings.savePlaylist(p) }
 
-    fun movePlaylist(id: String, delta: Int) = viewModelScope.launch {
-        c.settings.movePlaylist(id, delta)
-        reloadAfterSourceChange()
-    }
+    fun removePlaylist(id: String) = reload { c.settings.removePlaylist(id) }
+
+    fun setPlaylistEnabled(id: String, on: Boolean) = reload { c.settings.setPlaylistEnabled(id, on) }
+
+    fun movePlaylist(id: String, delta: Int) = reload { c.settings.movePlaylist(id, delta) }
 
     private suspend fun reloadAfterSourceChange() {
         val ok = repo.refresh()

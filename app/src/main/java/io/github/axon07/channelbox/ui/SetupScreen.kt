@@ -125,7 +125,8 @@ fun SetupScreen(
         }
         Spacer(Modifier.height(18.dp))
 
-        val busy = refreshState is RefreshState.Running
+        // Only this screen's own save counts as busy; a background reload is cancelled by saving.
+        val busy = submitted && refreshState is RefreshState.Running
         val canSave = !busy && (if (type == SourceType.M3U) m3uUrl.isNotBlank() else server.isNotBlank() && user.isNotBlank())
         val save = {
             if (canSave) {

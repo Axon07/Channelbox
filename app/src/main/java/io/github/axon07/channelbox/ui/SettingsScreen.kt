@@ -236,11 +236,17 @@ private fun SourceSettings(
     openPage: (Page) -> Unit,
 ) {
     val counts by vm.playlistCounts.collectAsStateWithLifecycle()
+    val errors by vm.playlistErrors.collectAsStateWithLifecycle()
     settings.playlists.forEach { p ->
         val n = counts[p.id] ?: if (p.id == SettingsStore.LEGACY_ID) counts[null] else null
+        val error = errors[p.id]
         SettingCard(
             title = p.displayName,
-            description = p.summary + if (p.enabled) (n?.let { " · $it channels" } ?: "") else " · off",
+            description = when {
+                !p.enabled -> p.summary + " · off"
+                error != null -> "Couldn't load: $error" + (n?.let { " · showing $it channels from last time" } ?: "")
+                else -> p.summary + (n?.let { " · $it channels" } ?: "")
+            },
             value = if (p.enabled) "Manage" else "Off",
             onClick = { onPlaylist(p.id) },
         )
