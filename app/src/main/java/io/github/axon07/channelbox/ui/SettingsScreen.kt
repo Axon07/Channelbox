@@ -480,8 +480,15 @@ private fun UpdateSettings(settings: AppSettings, vm: TvViewModel) {
             is TvViewModel.UpdateState.Failed -> "Couldn't check: ${u.message}"
             TvViewModel.UpdateState.Idle -> "Installed: version ${vm.appVersion}"
         },
-        value = if (update is TvViewModel.UpdateState.Available) "Update" else "Check",
-        onClick = { vm.checkForUpdates(manual = true) },
+        value = when (update) {
+            is TvViewModel.UpdateState.Available -> "Update"
+            is TvViewModel.UpdateState.Downloading -> null
+            else -> "Check"
+        },
+        // When a new version is already known, this card installs it straight away.
+        onClick = {
+            if (update is TvViewModel.UpdateState.Available) vm.startUpdate() else vm.checkForUpdates(manual = true)
+        },
     )
     SettingCard(
         title = "Check when the app starts",

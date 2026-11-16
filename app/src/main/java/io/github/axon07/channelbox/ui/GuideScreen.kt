@@ -281,7 +281,11 @@ private fun GuideRow(
                     "No information",
                     Modifier.fillMaxSize().tap(onLongClick = { onMenu(null) }, onClick = onTune),
                     selected = rowSelected,
-                    live = false,
+                    // Shade the elapsed part like a live programme so the "now" line runs through every row.
+                    progress = if (now in guideStart until end) {
+                        ((now - guideStart).toFloat() / (end - guideStart).coerceAtLeast(1)).coerceIn(0f, 1f)
+                    } else 0f,
+                    live = now in guideStart until end,
                     recording = false,
                     catchup = false,
                 )

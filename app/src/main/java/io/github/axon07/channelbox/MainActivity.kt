@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         vm.onForeground()
+        vm.resumePendingUpdate()
     }
 
     override fun onStop() {

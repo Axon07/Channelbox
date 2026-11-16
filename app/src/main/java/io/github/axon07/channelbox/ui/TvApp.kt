@@ -938,9 +938,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 title = "Exit Channelbox?",
                 subtitle = null,
                 actions = listOf(
-                    DialogAction("Keep watching") { mode = Mode.PLAYER },
-                    DialogAction("TV Guide") { openGuide() },
                     DialogAction("Exit") { exitApp() },
+                    DialogAction("Cancel") { mode = exitReturn },
                 ),
             )
             Mode.PLAYER, Mode.CHANNEL_LIST -> {

@@ -214,6 +214,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             val state = _update.value
             if (state is UpdateState.Available) {
                 val skipped = c.settings.current().skippedVersion
+                if (manual) _updatePrompt.value = false
                 _updatePrompt.value = manual || state.release.version != skipped
             } else if (!manual) {
                 _update.value = UpdateState.Idle
@@ -228,8 +229,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (!updater.canInstall()) {
             // Android 8+: the user has to allow Channelbox to install apps (once).
+            // When they come back from that screen, resumePendingUpdate() carries on by itself.
             if (updater.openInstallPermission()) {
-                showToast("Allow Channelbox to install apps, then choose Update again")
+                pendingInstall = true
+                showToast("Turn on \"Allow\" for Channelbox, then press Back")
             } else {
                 showToast("Allow \"Install unknown apps\" for Channelbox in Android settings")
             }
@@ -248,6 +251,17 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 _update.value = UpdateState.Failed(e.message ?: "Download failed")
             }
         }
+    }
+
+    /** Set while the user is on Android's "install unknown apps" screen. */
+    private var pendingInstall = false
+
+    /** Called when the app comes back to the front: finish an update that was waiting on permission. */
+    fun resumePendingUpdate() {
+        if (!pendingInstall) return
+        pendingInstall = false
+        if (updater.canInstall()) startUpdate()
+        else showToast("Channelbox still isn't allowed to install apps")
     }
 
     fun dismissUpdate(skipThisVersion: Boolean) {
