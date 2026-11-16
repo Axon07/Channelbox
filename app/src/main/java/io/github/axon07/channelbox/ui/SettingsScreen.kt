@@ -118,17 +118,36 @@ fun SettingsScreen(
 ) {
     var category by rememberSaveable { mutableStateOf(SettingsCategory.SOURCE) }
     var page by remember { mutableStateOf<Page?>(null) }
-    val firstCategory = remember { FocusRequester() }
+    // Section to come back to when a sub-page closes. While set, stray focus doesn't switch sections.
+    var returnTo by remember { mutableStateOf<SettingsCategory?>(null) }
+    val categoryFocus = remember { SettingsCategory.entries.associateWith { FocusRequester() } }
     // With a remote, start on the first category. With touch/mouse nothing needs focus.
     val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
     LaunchedEffect(Unit) {
         if (!touch) {
             delay(50)
-            runCatching { firstCategory.requestFocus() }
+            runCatching { categoryFocus.getValue(category).requestFocus() }
         }
     }
+    LaunchedEffect(page) {
+        val back = returnTo
+        if (page == null && back != null) {
+            category = back
+            if (!touch) {
+                delay(30)
+                runCatching { categoryFocus.getValue(back).requestFocus() }
+            }
+            delay(100)
+            returnTo = null
+        }
+    }
+    fun openPage(p: Page) {
+        if (returnTo == null) returnTo = category
+        page = p
+    }
+    fun closePage() { page = null }
     // Back on a sub-page returns to the category instead of leaving Settings.
-    BackHandler(enabled = page != null) { page = null }
+    BackHandler(enabled = page != null) { closePage() }
 
     Row(Modifier.fillMaxSize().background(Palette.Background)) {
         // ---- Categories ----
@@ -152,9 +171,10 @@ fun SettingsScreen(
                 CategoryRow(
                     category = c,
                     selected = c == category,
-                    modifier = if (i == 0) Modifier.focusRequester(firstCategory) else Modifier,
-                    onFocus = { if (page == null) category = c },
+                    modifier = Modifier.focusRequester(categoryFocus.getValue(c)),
+                    onFocus = { if (page == null && returnTo == null) category = c },
                     onTap = {
+                        returnTo = null
                         page = null
                         category = c
                     },
@@ -172,18 +192,18 @@ fun SettingsScreen(
         ) {
             val current = page
             if (current != null) {
-                BackLink(category.title) { page = null }
-                SubPage(current, settings, vm, onClose = { page = null }, onOpen = { page = it })
+                BackLink(category.title) { closePage() }
+                SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { openPage(it) })
             } else {
                 Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
                 Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (category) {
-                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource) { page = it }
-                        SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { page = it }
-                        SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { page = it }
-                        SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { page = it }
-                        SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit) { page = it }
+                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource) { openPage(it) }
+                        SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { openPage(it) }
+                        SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
+                        SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { openPage(it) }
+                        SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit) { openPage(it) }
                         SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
                         SettingsCategory.ABOUT -> AboutSettings(vm)
                     }
@@ -786,27 +806,17 @@ private fun ButtonRow(vararg buttons: Pair<String, () -> Unit>) {
 
 // ---- Building blocks -------------------------------------------------------------------------------
 
-private fun SettingsCategory.color(): Color = when (this) {
-    SettingsCategory.SOURCE -> Color(0xFF3D8BFD)
-    SettingsCategory.PLAYBACK -> Color(0xFF22C55E)
-    SettingsCategory.NETWORK -> Color(0xFF8B5CF6)
-    SettingsCategory.RECORDINGS -> Color(0xFFEF4444)
-    SettingsCategory.STARTUP -> Color(0xFFF59E0B)
-    SettingsCategory.UPDATES -> Color(0xFF14B8A6)
-    SettingsCategory.ABOUT -> Color(0xFF64748B)
-}
-
-/** Coloured rounded square with a white icon – the look used in both side menus. */
+/** Subtle rounded square with a muted icon – the look used in both side menus. */
 @Composable
-fun IconBadge(icon: ImageVector, color: Color, size: androidx.compose.ui.unit.Dp = 30.dp) {
+fun IconBadge(icon: ImageVector, size: androidx.compose.ui.unit.Dp = 30.dp, highlight: Boolean = false) {
     Box(
         Modifier
             .size(size)
             .clip(RoundedCornerShape(size / 3.2f))
-            .background(color),
+            .background(if (highlight) Color(0x26FFFFFF) else Color(0x14FFFFFF)),
         contentAlignment = Alignment.Center,
     ) {
-        AppIcon(icon, tint = Color.White, size = size * 0.56f)
+        AppIcon(icon, tint = if (highlight) Color.White else Color(0xFFAEB8C4), size = size * 0.56f)
     }
 }
 
@@ -845,7 +855,7 @@ private fun CategoryRow(
             Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(category.icon(), category.color())
+            IconBadge(category.icon(), highlight = selected)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(

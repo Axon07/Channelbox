@@ -48,11 +48,6 @@ import java.util.Locale
 
 // ---- Groups menu (Back from the guide) ---------------------------------------------------------
 
-private val GROUP_COLORS = listOf(
-    Color(0xFF3D8BFD), Color(0xFF22C55E), Color(0xFF8B5CF6), Color(0xFFF59E0B),
-    Color(0xFF14B8A6), Color(0xFFEC4899), Color(0xFF6366F1), Color(0xFFEF4444),
-)
-
 /**
  * Left-hand menu over the guide: channel groups, then three tiles at the bottom.
  * Index layout: 0 until filters.size = groups, then +0 Multi-view, +1 Recordings, +2 Settings.
@@ -94,21 +89,20 @@ fun GroupsPanel(
                     count = counts[f],
                     active = f == active,
                     selected = i == selected,
-                    color = GROUP_COLORS[(f.label.hashCode() and 0x7fffffff) % GROUP_COLORS.size],
                     onClick = { onSelect(i) },
                 )
             }
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QuickTile("Multi-view", AppIcons.Grid, Color(0xFF8B5CF6), selected == filters.size, Modifier.weight(1f)) {
+            QuickTile("Multi-view", AppIcons.Grid, selected == filters.size, Modifier.weight(1f)) {
                 onSelect(filters.size)
             }
             QuickTile(
                 if (recordingCount > 0) "Recordings · $recordingCount" else "Recordings",
-                AppIcons.Record, Color(0xFFEF4444), selected == filters.size + 1, Modifier.weight(1f),
+                AppIcons.Record, selected == filters.size + 1, Modifier.weight(1f),
             ) { onSelect(filters.size + 1) }
-            QuickTile("Settings", AppIcons.Settings, Color(0xFF64748B), selected == filters.size + 2, Modifier.weight(1f)) {
+            QuickTile("Settings", AppIcons.Settings, selected == filters.size + 2, Modifier.weight(1f)) {
                 onSelect(filters.size + 2)
             }
         }
@@ -121,7 +115,6 @@ private fun GroupRow(
     count: Int?,
     active: Boolean,
     selected: Boolean,
-    color: Color,
     onClick: () -> Unit,
 ) {
     Row(
@@ -136,11 +129,11 @@ private fun GroupRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (filter) {
-            ChannelFilter.All -> IconBadge(AppIcons.List, Color(0xFF3D8BFD))
-            ChannelFilter.Favorites -> IconBadge(AppIcons.Star, Color(0xFFEAB308))
+            ChannelFilter.All -> IconBadge(AppIcons.List, highlight = selected)
+            ChannelFilter.Favorites -> IconBadge(AppIcons.Star, highlight = selected)
             is ChannelFilter.Group ->
-                if (filter.name == ChannelFilter.UNGROUPED) IconBadge(AppIcons.Folder, Color(0xFF475569))
-                else LetterBadge(filter.label, color)
+                if (filter.name == ChannelFilter.UNGROUPED) IconBadge(AppIcons.Folder, highlight = selected)
+                else LetterBadge(filter.label, selected)
         }
         Spacer(Modifier.width(12.dp))
         Text(
@@ -166,17 +159,17 @@ private fun GroupRow(
 
 /** First letter of a group on a coloured tile. */
 @Composable
-private fun LetterBadge(label: String, color: Color) {
+private fun LetterBadge(label: String, highlight: Boolean) {
     Box(
         Modifier
             .size(30.dp)
             .clip(RoundedCornerShape(9.dp))
-            .background(color.copy(alpha = 0.85f)),
+            .background(if (highlight) Color(0x26FFFFFF) else Color(0x14FFFFFF)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#",
-            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) Color.White else Color(0xFFAEB8C4),
         )
     }
 }
@@ -185,7 +178,6 @@ private fun LetterBadge(label: String, color: Color) {
 private fun QuickTile(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
     selected: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
@@ -199,7 +191,7 @@ private fun QuickTile(
             .padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        IconBadge(icon, color, size = 32.dp)
+        IconBadge(icon, size = 32.dp, highlight = selected)
         Spacer(Modifier.height(6.dp))
         Text(label, fontSize = 11.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
