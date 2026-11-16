@@ -45,9 +45,12 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
 | **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. ● marks programmes set to record |
 | **Groups menu** | Back from the guide: channel groups, with Recordings and ⚙ Settings at the bottom |
-| **Playback** | Media3/ExoPlayer: HLS, MPEG-TS, DASH (`.mpd`, also `.mpd/…` links) and Smooth Streaming. Unknown links are tried as TS → HLS → DASH. A broken channel shows a message and retries – it never crashes the app |
+| **Playback** | Media3/ExoPlayer: HLS, MPEG-TS, DASH (`.mpd`, also `.mpd/…` links), Smooth Streaming, RTSP, RTMP and UDP multicast (`udp://@239.…`). Unknown links are tried as TS → HLS → DASH. A broken channel shows a message and retries – it never crashes the app |
 | **Stream options** | Kodi-style `url|User-Agent=…&Referer=…`, `#EXTVLCOPT:http-user-agent/http-referrer`, `#EXTHTTP:{…}`, `#KODIPROP:inputstream.adaptive.stream_headers` |
-| **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it |
+| **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it, and Widevine retries at security level L3 when L1 fails |
+| **Catch-up / archive** | Watch programmes that already aired, straight from the guide (↺). M3U `catchup` = `default` / `append` / `shift` / `flussonic` / `xc` with `catchup-source` templates (`${start}`, `{utc}`, `{duration:60}`, `{Y}-{m}-{d}` …), and Xtream Codes archives (server time zone aware). Also "watch from the start" for shows that are on now |
+| **Audio & subtitles** | Pick the audio language/track and subtitles or closed captions while watching (hold OK, Menu, or tap → Audio & subtitles). Picture size: fit, zoom or stretch |
+| **Audio formats** | Bundled FFmpeg decoder plays Dolby Digital (AC3), Dolby Digital+ (E-AC3), DTS and TrueHD on boxes that can't – no more silent sports channels. Optional "decode all audio in software" setting |
 | **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play (pause/seek), stop and delete |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press OK while watching: channels by group with what's on now |
@@ -63,16 +66,17 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | ▲ / ▼, CH+ / CH− | Change channel | Move | Move (CH± = page) |
 | ◀ | Open channel list | Previous group | Earlier |
 | ▶ / Info | Show/hide info banner | Next group | Later |
-| OK | Open channel list | Watch | Live show: watch · future show: Record menu |
-| Hold OK | Open guide | ★ favourite | Programme menu (watch / record / favourite) |
+| OK | Open channel list | Watch | On now: watch · finished: catch-up · future: record menu |
+| Hold OK | Audio, subtitles & picture size | ★ favourite | Programme menu (watch / from start / record / favourite) |
 | ● Record / red | Record what's on (again = stop) | – | Record / cancel the selected show |
 | 0–9 | Go to channel number | Go to channel number | Jump to channel |
 | Guide | Open guide | Open guide | Back to TV |
+| Menu | Audio, subtitles & picture size | Open guide | Groups menu |
 | Back | Open guide | Close | Groups menu → Back again: "Exit?" |
 | Last / Recall | Previous channel | Previous channel | – |
 
 **Groups menu:** ▲▼ choose, OK select, ▶ or Back-to-guide. **Recordings** and **⚙ Settings** are at the bottom.
-**Playing a recording:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, Back returns to the list.
+**Playing a recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, Back returns to the list.
 
 ### Where recordings are saved
 
@@ -161,7 +165,6 @@ Stack: Kotlin, Jetpack Compose for TV, Media3 ExoPlayer, Room, DataStore, WorkMa
 
 ## Roadmap
 
-- [ ] Catch-up / archive playback (Xtream `timeshift`, `catchup` M3U attributes)
 - [ ] Pause live TV (timeshift buffer)
 - [ ] Record DASH channels; record to USB drive / NAS; series recording
 - [ ] Reminders for upcoming programmes
@@ -171,7 +174,6 @@ Stack: Kotlin, Jetpack Compose for TV, Media3 ExoPlayer, Room, DataStore, WorkMa
 - [ ] Enter playlist URL from a phone (QR code + local web page) instead of typing it with the remote
 - [ ] Multi-view (2–4 channels at once)
 - [ ] VOD / series sections for Xtream
-- [ ] Per-channel user-agent / headers (`#EXTVLCOPT`)
 - [ ] Translations
 
 ## License

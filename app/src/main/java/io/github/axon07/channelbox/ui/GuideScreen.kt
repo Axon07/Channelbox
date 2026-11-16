@@ -99,6 +99,7 @@ fun GuideScreen(
     playingId: String?,
     favorites: Set<String>,
     recordingKeys: Set<String>,
+    canCatchUp: (ChannelEntity, ProgramEntity) -> Boolean,
     timeFormat: (Long) -> String,
     onTune: (ChannelEntity) -> Unit,
     onProgram: (ChannelEntity, ProgramEntity) -> Unit,
@@ -139,6 +140,9 @@ fun GuideScreen(
                             "${timeFormat(selectedProgram.start)} – ${timeFormat(selectedProgram.stop)}  ·  ${selectedChannel?.name.orEmpty()}",
                             fontSize = 14.sp, color = Palette.Accent,
                         )
+                        if (selectedChannel != null && selectedProgram.stop <= now && canCatchUp(selectedChannel, selectedProgram)) {
+                            Text("↺ Catch-up available – press OK to watch", fontSize = 13.sp, color = Palette.Text)
+                        }
                         Spacer(Modifier.height(8.dp))
                         Text(
                             selectedProgram.description.orEmpty(), fontSize = 14.sp, color = Palette.TextDim,
@@ -208,6 +212,7 @@ fun GuideScreen(
                     playing = ch.id == playingId,
                     favorite = ch.id in favorites,
                     recordingKeys = recordingKeys,
+                    canCatchUp = { p -> canCatchUp(ch, p) },
                     onTune = { onTune(ch) },
                     onProgram = { p -> onProgram(ch, p) },
                     onMenu = { p -> onMenu(ch, p) },
@@ -228,6 +233,7 @@ private fun GuideRow(
     playing: Boolean,
     favorite: Boolean,
     recordingKeys: Set<String>,
+    canCatchUp: (ProgramEntity) -> Boolean,
     onTune: () -> Unit,
     onProgram: (ProgramEntity) -> Unit,
     onMenu: (ProgramEntity?) -> Unit,
@@ -264,6 +270,7 @@ private fun GuideRow(
                     selected = rowSelected,
                     live = false,
                     recording = false,
+                    catchup = false,
                 )
             } else {
                 for (p in visible) {
@@ -279,6 +286,7 @@ private fun GuideRow(
                         selected = rowSelected && p.start <= focusTime && focusTime < p.stop,
                         live = p.start <= now && now < p.stop,
                         recording = TvViewModel.recordingKey(channel.id, p.start) in recordingKeys,
+                        catchup = p.stop <= now && canCatchUp(p),
                     )
                 }
             }
@@ -290,7 +298,7 @@ private fun GuideRow(
 }
 
 @Composable
-private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, live: Boolean, recording: Boolean) {
+private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, live: Boolean, recording: Boolean, catchup: Boolean) {
     Box(
         modifier
             .padding(end = 2.dp)
@@ -307,6 +315,7 @@ private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, li
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (recording) Text("● ", fontSize = 13.sp, color = Palette.Recording)
+            if (catchup) Text("↺ ", fontSize = 13.sp, color = Palette.TextDim)
             Text(title, fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }

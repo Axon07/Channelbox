@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import io.github.axon07.channelbox.data.Catchup
+import io.github.axon07.channelbox.data.StreamSpec
 
 sealed interface ChannelFilter {
     val label: String
@@ -57,7 +60,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     private val c = app.container
     private val repo = c.repository
-    val player = TvPlayer(app, c.http)
+    // The audio decoder choice is read once at start (changing it takes effect after a restart).
+    val player = TvPlayer(app, c.http, runBlocking { c.settings.current().preferSoftwareAudio })
 
     val settings: StateFlow<AppSettings?> = c.settings.flow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -302,6 +306,28 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun playRecording(recording: RecordingEntity) {
         recording.filePath?.let { player.playFile(it) }
     }
+
+    /** True if [program] on [channel] can be watched from the archive (or from its start, if it's on now). */
+    fun canCatchUp(channel: ChannelEntity, program: ProgramEntity, now: Long = System.currentTimeMillis()): Boolean =
+        Catchup.isAvailable(channel.catchupType, channel.catchupSource, channel.catchupDays) &&
+            program.start < now && program.start >= now - channel.catchupDays * 24 * HOUR
+
+    /** Plays a past (or current, from the start) programme from the provider's archive. */
+    fun playCatchUp(channel: ChannelEntity, program: ProgramEntity): Boolean {
+        val live = StreamSpecs.from(channel)
+        val url = Catchup.buildUrl(channel.streamUrl, channel.catchupType, channel.catchupSource, program.start, program.stop)
+            ?: return false
+        val archive = StreamSpecs.parse(url, live.headers, channel.drmType, channel.drmKey, null)
+        player.playOnDemand(StreamSpec(archive.url, archive.headers, archive.drm, archive.mime))
+        return true
+    }
+
+    fun setPreferSoftwareAudio(on: Boolean) = viewModelScope.launch {
+        c.settings.setPreferSoftwareAudio(on)
+        showToast("Takes effect the next time Channelbox starts")
+    }
+
+    fun setVideoScale(scale: Int) = viewModelScope.launch { c.settings.setVideoScale(scale) }
 
     /** Back to live TV after watching a recording. */
     fun resumeLive() {

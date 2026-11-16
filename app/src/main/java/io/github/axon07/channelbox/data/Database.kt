@@ -14,6 +14,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "channels")
@@ -34,6 +36,9 @@ data class ChannelEntity(
     val drmKey: String? = null,
     /** #KODIPROP manifest_type (mpd, hls…). */
     val mimeHint: String? = null,
+    /** Catch-up mode and URL template (see [Catchup]). */
+    val catchupType: String? = null,
+    val catchupSource: String? = null,
 )
 
 object RecStatus {
@@ -151,7 +156,7 @@ interface ProgramDao {
 
 @Database(
     entities = [ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -160,8 +165,17 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
 
     companion object {
+        /** v3: catch-up columns. Keeps favourites and recordings. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE channels ADD COLUMN catchupType TEXT")
+                db.execSQL("ALTER TABLE channels ADD COLUMN catchupSource TEXT")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build()
     }

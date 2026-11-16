@@ -29,6 +29,9 @@ class XtreamClient(private val http: OkHttpClient) {
 
         val xmltvUrl: String get() = "$base/xmltv.php?username=$u&password=$p"
 
+        fun timeshiftTemplate(streamId: String) =
+            "$base/timeshift/$u/$p/{duration:60}/{Y}-{m}-{d}:{H}-{M}/$streamId.ts"
+
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     }
 
@@ -42,6 +45,8 @@ class XtreamClient(private val http: OkHttpClient) {
         userInfo.str("status")?.let { status ->
             if (!status.equals("Active", ignoreCase = true)) throw IOException("Account status: $status")
         }
+        // Archive times are given in the server's own time zone.
+        val serverZone = (auth["server_info"] as? JsonObject)?.str("timezone")?.takeIf { it.isNotBlank() }
 
         val categories = (getJson(login.api("get_live_categories")) as? JsonArray).orEmpty()
             .mapNotNull { it as? JsonObject }
@@ -59,6 +64,8 @@ class XtreamClient(private val http: OkHttpClient) {
                 url = login.liveUrl(id),
                 epgId = o.str("epg_channel_id")?.takeIf { it.isNotBlank() },
                 catchupDays = if (o.str("tv_archive") == "1") o.str("tv_archive_duration")?.toIntOrNull() ?: 0 else 0,
+                catchupType = "default",
+                catchupSource = login.timeshiftTemplate(id) + (serverZone?.let { "{tz=$it}" } ?: ""),
             )
         }
         return ParsedPlaylist(channels, listOf(login.xmltvUrl))

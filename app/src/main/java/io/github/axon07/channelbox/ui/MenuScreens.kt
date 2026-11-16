@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -312,4 +314,67 @@ fun ActionDialog(title: String, subtitle: String?, actions: List<DialogAction>) 
             }
         }
     }
+}
+
+// ---- Playback options (audio, subtitles, picture size) -----------------------------------------
+
+val SCALE_LABELS = listOf("Fit", "Zoom (fill screen)", "Stretch")
+
+@Composable
+fun OptionsPanel(
+    audio: List<io.github.axon07.channelbox.player.TrackOption>,
+    subtitles: List<io.github.axon07.channelbox.player.TrackOption>,
+    scale: Int,
+    onAudio: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
+    onSubtitle: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
+    onScale: (Int) -> Unit,
+) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(50)
+        runCatching { first.requestFocus() }
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .width(360.dp)
+                .background(Palette.Panel)
+                .tap { }
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            var firstUsed = false
+            fun Modifier.firstFocus(): Modifier = if (!firstUsed) { firstUsed = true; this.focusRequester(first) } else this
+
+            Section("Audio")
+            if (audio.isEmpty()) Text("No audio tracks yet", fontSize = 13.sp, color = Palette.TextDim)
+            audio.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onAudio(t) } }
+
+            Section("Subtitles")
+            subtitles.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onSubtitle(t) } }
+
+            Section("Picture size")
+            SCALE_LABELS.forEachIndexed { i, label -> OptionRow(label, i == scale, Modifier.firstFocus()) { onScale(i) } }
+        }
+    }
+}
+
+@Composable
+private fun Section(title: String) {
+    Text(
+        title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextDim,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun OptionRow(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    androidx.tv.material3.ListItem(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.tap(onClick = onClick),
+        headlineContent = { Text(label, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        trailingContent = { if (selected) Text("✓", fontSize = 14.sp) },
+    )
 }

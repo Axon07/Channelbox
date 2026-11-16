@@ -77,6 +77,7 @@ fun BoxScope.TouchBar(
     onChannelDown: () -> Unit,
     onFavorite: () -> Unit,
     onRecord: () -> Unit,
+    onOptions: () -> Unit,
     onSettings: () -> Unit,
     onExit: () -> Unit,
 ) {
@@ -96,6 +97,7 @@ fun BoxScope.TouchBar(
         Pill("▼  CH−", onClick = onChannelDown)
         Pill(if (favorite) "★  Favourite" else "☆  Favourite", highlighted = favorite, onClick = onFavorite)
         Pill(if (recording) "■  Stop rec" else "●  Record", highlighted = recording, onClick = onRecord)
+        Pill("♪  Audio & subtitles", onClick = onOptions)
         Pill("⚙  Settings", onClick = onSettings)
         Pill("⏻  Exit", onClick = onExit)
     }

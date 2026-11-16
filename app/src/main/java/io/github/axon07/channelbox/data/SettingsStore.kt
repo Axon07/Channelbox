@@ -38,6 +38,10 @@ data class AppSettings(
     val refreshHours: Int = 12,
     val backAction: BackAction = BackAction.ASK_EXIT,
     val autoUpdateCheck: Boolean = true,
+    /** Decode audio with FFmpeg even when the box has its own decoder (fixes silent channels on some boxes). */
+    val preferSoftwareAudio: Boolean = false,
+    /** Picture size: 0 = fit, 1 = zoom (fill, crop edges), 2 = stretch. */
+    val videoScale: Int = 0,
     /** Version the user chose "Skip this version" for. */
     val skippedVersion: String? = null,
     val lastChannelId: String? = null,
@@ -62,6 +66,8 @@ class SettingsStore(private val context: Context) {
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val BACK_ACTION = stringPreferencesKey("back_action")
         val AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
+        val SOFTWARE_AUDIO = booleanPreferencesKey("prefer_software_audio")
+        val VIDEO_SCALE = intPreferencesKey("video_scale")
         val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
     }
 
@@ -83,6 +89,8 @@ class SettingsStore(private val context: Context) {
         backAction = runCatching { BackAction.valueOf(this[Keys.BACK_ACTION] ?: "") }
             .getOrDefault(BackAction.ASK_EXIT),
         autoUpdateCheck = this[Keys.AUTO_UPDATE] ?: true,
+        preferSoftwareAudio = this[Keys.SOFTWARE_AUDIO] ?: false,
+        videoScale = this[Keys.VIDEO_SCALE] ?: 0,
         skippedVersion = this[Keys.SKIPPED_VERSION],
         lastChannelId = this[Keys.LAST_CHANNEL],
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
@@ -113,6 +121,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
     suspend fun setRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }
+    suspend fun setPreferSoftwareAudio(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_AUDIO] = on }
+    suspend fun setVideoScale(scale: Int) = context.dataStore.edit { it[Keys.VIDEO_SCALE] = scale }
     suspend fun setAutoUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.AUTO_UPDATE] = on }
     suspend fun setSkippedVersion(version: String) = context.dataStore.edit { it[Keys.SKIPPED_VERSION] = version }
     suspend fun setLastRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_REFRESH] = time }

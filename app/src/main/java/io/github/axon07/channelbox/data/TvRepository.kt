@@ -99,6 +99,8 @@ class TvRepository(
                 drmType = p.drmType,
                 drmKey = p.drmKey,
                 mimeHint = p.manifestType,
+                catchupType = p.catchupType,
+                catchupSource = p.catchupSource,
             )
         }
     }

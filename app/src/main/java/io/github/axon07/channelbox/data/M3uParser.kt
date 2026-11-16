@@ -15,6 +15,9 @@ data class ParsedChannel(
     val drmKey: String? = null,
     val manifestType: String? = null,
     val tvgName: String? = null,
+    /** Catch-up mode (default, append, shift, flussonic, xc…) and URL template, see [Catchup]. */
+    val catchupType: String? = null,
+    val catchupSource: String? = null,
 )
 
 data class ParsedPlaylist(val channels: List<ParsedChannel>, val epgUrls: List<String>)
@@ -52,6 +55,7 @@ object M3uParser {
 
     fun parse(reader: BufferedReader): ParsedPlaylist {
         var epgUrl: String? = null
+        var header: Map<String, String> = emptyMap() // #EXTM3U attributes = defaults for every channel
         var p = Pending()
         val out = ArrayList<ParsedChannel>()
 
@@ -61,6 +65,7 @@ object M3uParser {
                 line.isEmpty() -> Unit
                 line.startsWith("#EXTM3U") -> {
                     val a = attributes(line)
+                    header = a
                     epgUrl = a["url-tvg"] ?: a["x-tvg-url"] ?: epgUrl
                 }
                 line.startsWith("#EXTINF") -> p.info = line
@@ -72,7 +77,7 @@ object M3uParser {
                 line.startsWith("#") -> Unit
                 else -> {
                     val info = p.info
-                    if (info != null) out += build(info, p, line)
+                    if (info != null) out += build(info, p, line, header)
                     p = Pending()
                 }
             }
@@ -130,8 +135,10 @@ object M3uParser {
         return ""
     }
 
-    private fun build(info: String, p: Pending, url: String): ParsedChannel {
+    private fun build(info: String, p: Pending, url: String, header: Map<String, String>): ParsedChannel {
         val a = attributes(info)
+        fun attr(vararg keys: String) = keys.firstNotNullOfOrNull { k -> a[k]?.takeIf { it.isNotBlank() } }
+            ?: keys.firstNotNullOfOrNull { k -> header[k]?.takeIf { it.isNotBlank() } }
         val name = displayName(info)
             .ifBlank { a["tvg-name"].orEmpty() }
             .ifBlank { url }
@@ -142,12 +149,14 @@ object M3uParser {
             logo = a["tvg-logo"]?.takeIf { it.isNotBlank() },
             url = url,
             epgId = a["tvg-id"]?.takeIf { it.isNotBlank() },
-            catchupDays = (a["catchup-days"] ?: a["tvg-rec"] ?: a["timeshift"])?.trim()?.toIntOrNull() ?: 0,
+            catchupDays = attr("catchup-days", "tvg-rec", "timeshift")?.trim()?.toIntOrNull() ?: 0,
             headers = LinkedHashMap(p.headers),
             drmType = p.drmType,
             drmKey = p.drmKey,
             manifestType = p.manifestType,
             tvgName = a["tvg-name"]?.takeIf { it.isNotBlank() },
+            catchupType = attr("catchup", "catchup-type"),
+            catchupSource = attr("catchup-source"),
         )
     }
 }

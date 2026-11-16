@@ -143,6 +143,21 @@ fun SettingsScreen(
             }
             run {
                 SettingRow(
+                    title = "Decode all audio in software (FFmpeg)",
+                    value = if (settings.preferSoftwareAudio) "On – try this if some channels have no sound"
+                    else "Off – the box's own decoders are used, FFmpeg only when needed",
+                    onClick = { vm.setPreferSoftwareAudio(!settings.preferSoftwareAudio) },
+                )
+            }
+            run {
+                SettingRow(
+                    title = "Picture size",
+                    value = SCALE_LABELS.getOrElse(settings.videoScale) { SCALE_LABELS[0] },
+                    onClick = { vm.setVideoScale((settings.videoScale + 1) % SCALE_LABELS.size) },
+                )
+            }
+            run {
+                SettingRow(
                     title = "Use as home screen",
                     value = if (isHome) "On – press Home and choose Channelbox, \"Always\"" else "Off",
                     onClick = {

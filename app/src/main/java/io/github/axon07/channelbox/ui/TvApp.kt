@@ -57,7 +57,7 @@ import kotlin.math.abs
 enum class Mode {
     PLAYER, CHANNEL_LIST, GUIDE, GROUPS, PROGRAM_MENU,
     RECORDINGS, RECORDING_MENU, PLAYBACK,
-    SETTINGS, SETUP, EXIT_CONFIRM, UPDATE,
+    SETTINGS, SETUP, EXIT_CONFIRM, UPDATE, OPTIONS,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
@@ -131,6 +131,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val toast by vm.toast.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val updatePrompt by vm.updatePrompt.collectAsStateWithLifecycle()
+    val tracksVersion by vm.player.tracksVersion.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
     var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
@@ -143,6 +144,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var recIndex by remember { mutableIntStateOf(0) }
     var exitReturn by remember { mutableStateOf(Mode.GROUPS) }
     var updateReturn by remember { mutableStateOf(Mode.PLAYER) }
+    var optionsReturn by remember { mutableStateOf(Mode.PLAYER) }
+    var optionsToken by remember { mutableIntStateOf(0) }
+    var playbackReturn by remember { mutableStateOf(Mode.RECORDINGS) }
     var menuChannel by remember { mutableStateOf<ChannelEntity?>(null) }
     var menuProgram by remember { mutableStateOf<ProgramEntity?>(null) }
     var menuRecording by remember { mutableStateOf<RecordingEntity?>(null) }
@@ -226,16 +230,41 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         mode = Mode.PLAYER
     }
 
-    /** OK / tap on a programme: live → watch it, future → show the record menu. */
+    fun openOptions() {
+        optionsReturn = mode
+        optionsToken++
+        mode = Mode.OPTIONS
+    }
+
+    /** Plays a past programme from the provider's archive. */
+    fun watchCatchUp(channel: ChannelEntity, program: ProgramEntity) {
+        if (vm.playCatchUp(channel, program)) {
+            playbackTitle = "↺ ${channel.name}: ${program.title}"
+            playbackReturn = Mode.GUIDE
+            playbackToken++
+            mode = Mode.PLAYBACK
+        } else {
+            vm.showToast("Catch-up isn't available for this channel")
+        }
+    }
+
+    /** OK / tap on a programme: on now → watch, finished → catch-up, future → record menu. */
     fun programPressed(channel: ChannelEntity, program: ProgramEntity?) {
         val t = System.currentTimeMillis()
-        if (program == null || program.start <= t) tuneAndWatch(channel) else openProgramMenu(channel, program)
+        when {
+            program == null || (program.start <= t && t < program.stop) -> tuneAndWatch(channel)
+            program.stop <= t ->
+                if (vm.canCatchUp(channel, program)) watchCatchUp(channel, program)
+                else vm.showToast("This programme has finished – the channel has no catch-up")
+            else -> openProgramMenu(channel, program)
+        }
     }
 
     fun openRecording(r: RecordingEntity) {
         val path = r.filePath
         if (path != null && File(path).length() > 0) {
             playbackTitle = r.title
+            playbackReturn = Mode.RECORDINGS
             vm.playRecording(r)
             playbackToken++
             mode = Mode.PLAYBACK
@@ -247,7 +276,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun leavePlayback() {
         vm.resumeLive()
-        mode = Mode.RECORDINGS
+        mode = playbackReturn
     }
 
     fun seekBy(delta: Long) {
@@ -302,7 +331,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun onLongOk() {
         when (mode) {
-            Mode.PLAYER -> openGuide()
+            Mode.PLAYER -> openOptions()
             Mode.CHANNEL_LIST -> visible.getOrNull(listIndex)?.let { vm.toggleFavorite(it) }
             Mode.GUIDE -> visible.getOrNull(guide.row)?.let { openProgramMenu(it, guide.programAt(it, guidePrograms)) }
             Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let {
@@ -332,7 +361,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_INFO -> {
                     if (bannerVisible) bannerVisible = false else vm.showBanner()
                 }
-                AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_MENU -> openGuide()
+                AndroidKeyEvent.KEYCODE_GUIDE -> openGuide()
+                AndroidKeyEvent.KEYCODE_MENU -> openOptions()
                 AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> vm.previousChannel()
                 in RECORD_KEYS -> vm.toggleRecordCurrent()
                 else -> return false
@@ -402,6 +432,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> seekBy(-10_000L)
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekBy(30_000L)
                 AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_INFO -> playbackToken++
+                AndroidKeyEvent.KEYCODE_MENU -> openOptions()
                 else -> return false
             }
             else -> return false
@@ -512,6 +543,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.EXIT_CONFIRM -> mode = exitReturn
             Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
+            Mode.OPTIONS -> mode = optionsReturn
             Mode.PLAYBACK -> playbackToken++
             else -> Unit
         }
@@ -537,6 +569,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.GROUPS -> lastBack()
             Mode.EXIT_CONFIRM -> mode = exitReturn
             Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
+            Mode.OPTIONS -> mode = optionsReturn
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
             Mode.RECORDINGS -> openGroups(filters.size)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
@@ -581,7 +614,13 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     isClickable = false
                     descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+            },
+            update = { view ->
+                view.resizeMode = when (settings.videoScale) {
+                    1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             modifier = if (mode in GUIDE_MODES) {
@@ -606,6 +645,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     playingId = current?.id,
                     favorites = favorites,
                     recordingKeys = recordingKeys,
+                    canCatchUp = { ch, p -> vm.canCatchUp(ch, p) },
                     timeFormat = timeFormat,
                     onTune = { tuneAndWatch(it) },
                     onProgram = { ch, p -> programPressed(ch, p) },
@@ -637,6 +677,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     val p = menuProgram
                     val t = System.currentTimeMillis()
                     val actions = mutableListOf(DialogAction("Watch ${ch.name}") { tuneAndWatch(ch) })
+                    if (p != null && p.start < t && vm.canCatchUp(ch, p)) {
+                        actions += DialogAction(if (p.stop <= t) "↺ Watch (catch-up)" else "↺ Watch from the start") {
+                            watchCatchUp(ch, p)
+                        }
+                    }
                     if (p != null && p.stop > t) {
                         val scheduled = TvViewModel.recordingKey(ch.id, p.start) in recordingKeys
                         actions += DialogAction(if (scheduled) "Cancel recording" else "● Record") {
@@ -746,6 +791,25 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     else -> Unit
                 }
             }
+            Mode.OPTIONS -> {
+                // Re-read the tracks each time the panel opens or a choice is made.
+                val audio = remember(optionsToken, tracksVersion) { vm.player.audioTracks() }
+                val subtitles = remember(optionsToken, tracksVersion) { vm.player.subtitleTracks() }
+                OptionsPanel(
+                    audio = audio,
+                    subtitles = subtitles,
+                    scale = settings.videoScale,
+                    onAudio = {
+                        vm.player.select(C.TRACK_TYPE_AUDIO, it)
+                        optionsToken++
+                    },
+                    onSubtitle = {
+                        vm.player.select(C.TRACK_TYPE_TEXT, it)
+                        optionsToken++
+                    },
+                    onScale = { vm.setVideoScale(it) },
+                )
+            }
             Mode.EXIT_CONFIRM -> ActionDialog(
                 title = "Exit Channelbox?",
                 subtitle = null,
@@ -777,6 +841,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         onChannelDown = { touchBarToken++; vm.zap(-1) },
                         onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
                         onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
+                        onOptions = { touchBar = false; openOptions() },
                         onSettings = { touchBar = false; mode = Mode.SETTINGS },
                         onExit = { touchBar = false; askExit(Mode.PLAYER) },
                     )
