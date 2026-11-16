@@ -9,7 +9,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.github.axon07.channelbox.container
-import io.github.axon07.channelbox.data.SourceType
 import java.util.concurrent.TimeUnit
 
 /** Reloads the playlist and TV guide in the background on the interval chosen in Settings. */
@@ -17,7 +16,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         val c = applicationContext.container
-        if (c.settings.current().sourceType == SourceType.NONE) return Result.success()
+        if (!c.settings.current().hasSource) return Result.success()
         return if (c.repository.refresh()) Result.success() else Result.retry()
     }
 

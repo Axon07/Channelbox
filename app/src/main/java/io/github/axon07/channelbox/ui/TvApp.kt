@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +46,6 @@ import io.github.axon07.channelbox.data.ProgramEntity
 import io.github.axon07.channelbox.data.RecStatus
 import io.github.axon07.channelbox.data.RecordingEntity
 import io.github.axon07.channelbox.data.RefreshState
-import io.github.axon07.channelbox.data.SourceType
 import io.github.axon07.channelbox.player.PlayerStatus
 import kotlinx.coroutines.delay
 import java.io.File
@@ -138,7 +138,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val vpnState by vm.vpnState.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
-    var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
+    var mode by remember { mutableStateOf(if (!settings.hasSource) Mode.SETUP else Mode.PLAYER) }
+    /** Playlist being edited on the setup screen; null = adding a new one. */
+    var setupPlaylistId by remember { mutableStateOf<String?>(null) }
     var digits by remember { mutableStateOf("") }
     var bannerVisible by remember { mutableStateOf(false) }
     var touchBar by remember { mutableStateOf(false) }
@@ -633,7 +635,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     // ---- Back: TV → Guide → Groups → Exit? ----------------------------------------------------
 
-    BackHandler(enabled = !(mode == Mode.SETUP && settings.sourceType == SourceType.NONE)) {
+    BackHandler(enabled = !(mode == Mode.SETUP && !settings.hasSource)) {
         when (mode) {
             Mode.PLAYER -> when {
                 digits.isNotEmpty() -> digits = ""
@@ -837,19 +839,29 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 refreshState = refreshState,
                 channelCount = allChannels.size,
                 vm = vm,
-                onEditSource = { mode = Mode.SETUP },
+                onEditSource = { id ->
+                    setupPlaylistId = id
+                    mode = Mode.SETUP
+                },
                 onOpenRecordings = {
                     recIndex = 0
                     mode = Mode.RECORDINGS
                 },
                 onExit = { exitApp() },
             )
-            Mode.SETUP -> SetupScreen(
-                initial = settings,
-                refreshState = refreshState,
-                vm = vm,
-                onDone = { mode = Mode.PLAYER },
-            )
+            Mode.SETUP -> {
+                // Decided once on entry: saving the first playlist mustn't restart this screen.
+                val firstRun = remember(setupPlaylistId) { !settings.hasSource }
+                key(setupPlaylistId) {
+                    SetupScreen(
+                        initial = settings.playlists.firstOrNull { it.id == setupPlaylistId },
+                        firstRun = firstRun,
+                        refreshState = refreshState,
+                        vm = vm,
+                        onDone = { mode = if (firstRun) Mode.PLAYER else Mode.SETTINGS },
+                    )
+                }
+            }
             Mode.UPDATE -> {
                 when (val u = update) {
                     is TvViewModel.UpdateState.Available -> ActionDialog(

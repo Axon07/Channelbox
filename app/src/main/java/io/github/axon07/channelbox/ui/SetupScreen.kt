@@ -40,27 +40,33 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
-import io.github.axon07.channelbox.data.AppSettings
+import io.github.axon07.channelbox.data.Playlist
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType
 import kotlinx.coroutines.delay
 
-/** First-run screen (and Settings → Playlist): M3U URL or Xtream Codes login. */
+/**
+ * Add or edit one playlist: M3U URL or Xtream Codes login.
+ * [initial] = null adds a new one; [firstRun] shows the welcome wording.
+ */
 @Composable
 fun SetupScreen(
-    initial: AppSettings,
+    initial: Playlist?,
+    firstRun: Boolean,
     refreshState: RefreshState,
     vm: TvViewModel,
     onDone: () -> Unit,
 ) {
+    val id = rememberSaveable { initial?.id ?: Playlist.newId() }
     var type by rememberSaveable {
-        mutableStateOf(if (initial.sourceType == SourceType.XTREAM) SourceType.XTREAM else SourceType.M3U)
+        mutableStateOf(if (initial?.type == SourceType.XTREAM) SourceType.XTREAM else SourceType.M3U)
     }
-    var m3uUrl by rememberSaveable { mutableStateOf(initial.m3uUrl) }
-    var server by rememberSaveable { mutableStateOf(initial.xtServer) }
-    var user by rememberSaveable { mutableStateOf(initial.xtUser) }
-    var pass by rememberSaveable { mutableStateOf(initial.xtPass) }
-    var epgUrl by rememberSaveable { mutableStateOf(initial.epgUrl) }
+    var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
+    var m3uUrl by rememberSaveable { mutableStateOf(initial?.m3uUrl.orEmpty()) }
+    var server by rememberSaveable { mutableStateOf(initial?.xtServer.orEmpty()) }
+    var user by rememberSaveable { mutableStateOf(initial?.xtUser.orEmpty()) }
+    var pass by rememberSaveable { mutableStateOf(initial?.xtPass.orEmpty()) }
+    var epgUrl by rememberSaveable { mutableStateOf(initial?.epgUrl.orEmpty()) }
     var submitted by remember { mutableStateOf(false) }
     var sawRunning by remember { mutableStateOf(false) }
 
@@ -84,10 +90,18 @@ fun SetupScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 40.dp, vertical = 24.dp)
     ) {
-        Text("Set up your TV service", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+        Text(
+            when {
+                firstRun -> "Set up your TV service"
+                initial == null -> "Add a playlist"
+                else -> "Edit ${initial.displayName}"
+            },
+            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
+        )
         Spacer(Modifier.height(4.dp))
         Text(
-            "Enter the details from your IPTV provider. Channelbox doesn't come with any channels.",
+            if (firstRun) "Enter the details from your IPTV provider. Channelbox doesn't come with any channels. You can add more playlists later in Settings."
+            else "Channels from all your playlists are shown together, and each playlist also gets its own entry in the groups menu.",
             fontSize = 14.sp, color = Palette.TextDim,
         )
         Spacer(Modifier.height(16.dp))
@@ -99,6 +113,7 @@ fun SetupScreen(
         Spacer(Modifier.height(16.dp))
 
         Column(Modifier.widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            TvTextField("Name – optional, e.g. \"Sports\" or the provider's name", name, { name = it })
             if (type == SourceType.M3U) {
                 TvTextField("Playlist URL", m3uUrl, { m3uUrl = it }, keyboardType = KeyboardType.Uri)
             } else {
@@ -116,7 +131,12 @@ fun SetupScreen(
             if (canSave) {
                 submitted = true
                 sawRunning = false
-                if (type == SourceType.M3U) vm.saveM3u(m3uUrl, epgUrl) else vm.saveXtream(server, user, pass, epgUrl)
+                vm.savePlaylist(
+                    Playlist(
+                        id = id, name = name, type = type, m3uUrl = m3uUrl, epgUrl = epgUrl,
+                        xtServer = server, xtUser = user, xtPass = pass, enabled = initial?.enabled ?: true,
+                    )
+                )
             }
         }
         Button(
@@ -124,7 +144,7 @@ fun SetupScreen(
             enabled = canSave,
             modifier = Modifier.tap(onClick = save),
         ) {
-            Text(if (busy) "Loading…" else "Save and load channels")
+            Text(if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload")
         }
         Spacer(Modifier.height(12.dp))
         when (refreshState) {

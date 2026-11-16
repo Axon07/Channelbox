@@ -41,33 +41,54 @@ class TvRepository(
         else db.channels().removeFavorite(channelId)
     }
 
-    /** Reloads the playlist and the TV guide. Returns true on success. */
+    /** Reloads every enabled playlist and the TV guide. Returns true when at least one playlist loaded. */
     suspend fun refresh(): Boolean = mutex.withLock {
         try {
             val s = settings.current()
-            _state.value = RefreshState.Running("Loading channels…")
-            val playlist = when (s.sourceType) {
-                SourceType.M3U -> http.download(s.m3uUrl) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
-                SourceType.XTREAM -> XtreamClient(http).load(XtreamClient.Login(s.xtServer, s.xtUser, s.xtPass))
-                SourceType.NONE -> {
-                    _state.value = RefreshState.Idle
-                    return@withLock false
+            val sources = s.playlists.filter { it.enabled }
+            if (sources.isEmpty()) {
+                db.channels().clear()
+                db.programs().clear()
+                _state.value = RefreshState.Idle
+                return@withLock false
+            }
+
+            val parsed = ArrayList<Pair<String, ParsedChannel>>()
+            val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
+            val epgUrls = ArrayList<String>()
+            val failures = ArrayList<String>()
+            sources.forEachIndexed { index, p ->
+                _state.value = RefreshState.Running(
+                    if (sources.size > 1) "Loading ${p.displayName} (${index + 1} of ${sources.size})…" else "Loading channels…"
+                )
+                try {
+                    val playlist = loadPlaylist(p)
+                    if (playlist.channels.isEmpty()) throw IOException("no channels in the playlist")
+                    playlist.channels.forEach { parsed += p.id to it }
+                    // Your own guide URLs first, then every guide the playlist lists.
+                    epgUrls += splitUrls(p.epgUrl) + playlist.epgUrls
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failures += "${p.displayName}: ${e.message ?: e.javaClass.simpleName}"
+                    kept += db.channels().forPlaylist(p.id).map { it.copy(playlistId = p.id) }
+                    epgUrls += splitUrls(p.epgUrl)
                 }
             }
-            if (playlist.channels.isEmpty()) throw IOException("The playlist loaded but has no channels")
+            if (parsed.isEmpty() && kept.isEmpty()) throw IOException(failures.joinToString("\n"))
 
-            val entities = toEntities(playlist.channels)
+            val entities = toEntities(parsed, kept)
             db.channels().replaceAll(entities)
 
             var programmes = 0
-            // Your own guide URLs first, then every guide the playlist lists.
-            val epgUrls = (splitUrls(s.epgUrl) + playlist.epgUrls).distinct()
-            if (epgUrls.isNotEmpty()) {
-                val tvgNames = playlist.channels.associate { it.url to it.tvgName }
-                programmes = importEpg(epgUrls, entities, tvgNames)
+            val guides = epgUrls.distinct()
+            if (guides.isNotEmpty()) {
+                val tvgNames = parsed.associate { it.second.url to it.second.tvgName }
+                programmes = importEpg(guides, entities, tvgNames)
             }
             settings.setLastRefresh(System.currentTimeMillis())
-            _state.value = RefreshState.Done(entities.size, programmes)
+            _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
+            else RefreshState.Failed("Couldn't load " + failures.joinToString("; ") + " – showing its last channels")
             true
         } catch (e: CancellationException) {
             throw e
@@ -77,18 +98,28 @@ class TvRepository(
         }
     }
 
-    private fun toEntities(parsed: List<ParsedChannel>): List<ChannelEntity> {
+    private suspend fun loadPlaylist(p: Playlist): ParsedPlaylist = when (p.type) {
+        SourceType.XTREAM -> XtreamClient(http).load(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass))
+        else -> http.download(p.m3uUrl) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
+    }
+
+    /**
+     * Merges the playlists in order. A channel keeps its own number when it's free;
+     * otherwise it gets the next free one, so a second playlist continues after the first.
+     */
+    private fun toEntities(parsed: List<Pair<String, ParsedChannel>>, kept: List<ChannelEntity>): List<ChannelEntity> {
         val used = HashSet<Int>()
         var next = 1
-        return parsed.distinctBy { it.url }.map { p ->
-            val number = p.number?.takeIf { used.add(it) } ?: run {
-                while (next in used) next++
-                used.add(next)
-                next
-            }
+        fun number(wanted: Int?): Int = wanted?.takeIf { used.add(it) } ?: run {
+            while (next in used) next++
+            used.add(next)
+            next
+        }
+        val seen = HashSet<String>()
+        val fresh = parsed.filter { seen.add(it.second.url) }.map { (playlistId, p) ->
             ChannelEntity(
                 id = p.url,
-                number = number,
+                number = number(p.number),
                 name = p.name,
                 groupTitle = p.group,
                 logoUrl = p.logo,
@@ -101,8 +132,11 @@ class TvRepository(
                 mimeHint = p.manifestType,
                 catchupType = p.catchupType,
                 catchupSource = p.catchupSource,
+                playlistId = playlistId,
             )
         }
+        val old = kept.filter { seen.add(it.id) }.map { it.copy(number = number(it.number)) }
+        return fresh + old
     }
 
     /** Loads every guide source; a source that fails is skipped. Returns the number of programmes stored. */

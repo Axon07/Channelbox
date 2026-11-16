@@ -58,6 +58,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.axon07.channelbox.BuildConfig
 import io.github.axon07.channelbox.data.AppSettings
+import io.github.axon07.channelbox.data.SettingsStore
 import io.github.axon07.channelbox.data.BackAction
 import io.github.axon07.channelbox.data.DNS_LABELS
 import io.github.axon07.channelbox.data.REFRESH_CHOICES
@@ -100,6 +101,7 @@ private enum class Page(val title: String) {
     // Pick-one lists
     SCALE("Picture size"), QUALITY("Maximum quality"), REFRESH("Reload automatically"),
     BACK("Back button on the groups menu"), STORAGE("Save recordings to"),
+    PLAYLIST("Playlist"),
 }
 
 /**
@@ -112,12 +114,14 @@ fun SettingsScreen(
     refreshState: RefreshState,
     channelCount: Int,
     vm: TvViewModel,
-    onEditSource: () -> Unit,
+    onEditSource: (String?) -> Unit,
     onOpenRecordings: () -> Unit,
     onExit: () -> Unit,
 ) {
     var category by rememberSaveable { mutableStateOf(SettingsCategory.SOURCE) }
     var page by remember { mutableStateOf<Page?>(null) }
+    /** Playlist shown on the PLAYLIST page. */
+    var playlistId by rememberSaveable { mutableStateOf<String?>(null) }
     // Section to come back to when a sub-page closes. While set, stray focus doesn't switch sections.
     var returnTo by remember { mutableStateOf<SettingsCategory?>(null) }
     val categoryFocus = remember { SettingsCategory.entries.associateWith { FocusRequester() } }
@@ -193,13 +197,19 @@ fun SettingsScreen(
             val current = page
             if (current != null) {
                 BackLink(category.title) { closePage() }
-                SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { openPage(it) })
+                SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { openPage(it) }, playlistId = playlistId, onEditSource = onEditSource)
             } else {
                 Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
                 Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (category) {
-                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource) { openPage(it) }
+                        SettingsCategory.SOURCE -> SourceSettings(
+                            settings, refreshState, channelCount, vm, onEditSource,
+                            onPlaylist = { id ->
+                                playlistId = id
+                                openPage(Page.PLAYLIST)
+                            },
+                        ) { openPage(it) }
                         SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { openPage(it) }
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
                         SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { openPage(it) }
@@ -221,18 +231,25 @@ private fun SourceSettings(
     refreshState: RefreshState,
     channelCount: Int,
     vm: TvViewModel,
-    onEditSource: () -> Unit,
+    onEditSource: (String?) -> Unit,
+    onPlaylist: (String) -> Unit,
     openPage: (Page) -> Unit,
 ) {
+    val counts by vm.playlistCounts.collectAsStateWithLifecycle()
+    settings.playlists.forEach { p ->
+        val n = counts[p.id] ?: if (p.id == SettingsStore.LEGACY_ID) counts[null] else null
+        SettingCard(
+            title = p.displayName,
+            description = p.summary + if (p.enabled) (n?.let { " · $it channels" } ?: "") else " · off",
+            value = if (p.enabled) "Manage" else "Off",
+            onClick = { onPlaylist(p.id) },
+        )
+    }
     SettingCard(
-        title = "TV service",
-        description = when (settings.sourceType) {
-            SourceType.M3U -> "M3U playlist · ${redact(settings.m3uUrl)}"
-            SourceType.XTREAM -> "Xtream Codes · ${settings.xtServer} · ${settings.xtUser}"
-            SourceType.NONE -> "Not set up yet"
-        },
-        value = "Change",
-        onClick = onEditSource,
+        title = if (settings.playlists.isEmpty()) "Add your TV service" else "Add another playlist",
+        description = "M3U link or Xtream Codes login. Channels from every playlist are shown together.",
+        value = "Add",
+        onClick = { onEditSource(null) },
     )
     val last = settings.lastRefresh.takeIf { it > 0 }
         ?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
@@ -512,7 +529,15 @@ private fun AboutSettings(vm: TvViewModel) {
 // ---- Sub-pages with text fields ---------------------------------------------------------------------
 
 @Composable
-private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose: () -> Unit, onOpen: (Page) -> Unit) {
+private fun SubPage(
+    page: Page,
+    settings: AppSettings,
+    vm: TvViewModel,
+    onClose: () -> Unit,
+    onOpen: (Page) -> Unit,
+    playlistId: String?,
+    onEditSource: (String?) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val net = settings.network
@@ -690,6 +715,55 @@ private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose:
                 selected = settings.maxQuality.toString(),
                 onSelect = { vm.setMaxQuality(it.toInt()); onClose() },
             )
+        }
+        Page.PLAYLIST -> {
+            val index = settings.playlists.indexOfFirst { it.id == playlistId }
+            val p = settings.playlists.getOrNull(index)
+            if (p == null) {
+                LaunchedEffect(Unit) { onClose() }
+                return
+            }
+            var confirmRemove by remember(p.id) { mutableStateOf(false) }
+            PageHeader(p.displayName, p.summary)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingCard(
+                    title = "Use this playlist",
+                    description = if (p.enabled) "Its channels are in the guide" else "Hidden – its channels aren't loaded",
+                    toggle = p.enabled,
+                    onClick = { vm.setPlaylistEnabled(p.id, !p.enabled) },
+                )
+                SettingCard(
+                    title = "Edit details",
+                    description = "Name, link or login, and TV guide",
+                    value = "Edit",
+                    onClick = { onEditSource(p.id) },
+                )
+                if (settings.playlists.size > 1) {
+                    if (index > 0) SettingCard(
+                        title = "Move up",
+                        description = "Earlier playlists get the lower channel numbers",
+                        value = "${index + 1} of ${settings.playlists.size}",
+                        onClick = { vm.movePlaylist(p.id, -1) },
+                    )
+                    if (index < settings.playlists.size - 1) SettingCard(
+                        title = "Move down",
+                        description = "Later playlists continue the numbering",
+                        value = "${index + 1} of ${settings.playlists.size}",
+                        onClick = { vm.movePlaylist(p.id, 1) },
+                    )
+                }
+                SettingCard(
+                    title = if (confirmRemove) "Press again to remove" else "Remove playlist",
+                    description = "Its channels leave the guide. Favourites and recordings are kept.",
+                    highlight = confirmRemove,
+                    onClick = {
+                        if (confirmRemove) {
+                            vm.removePlaylist(p.id)
+                            onClose()
+                        } else confirmRemove = true
+                    },
+                )
+            }
         }
         Page.REFRESH -> {
             PageHeader("Reload automatically", "How often to fetch the latest channels and programme guide in the background.")

@@ -39,6 +39,8 @@ data class ChannelEntity(
     /** Catch-up mode and URL template (see [Catchup]). */
     val catchupType: String? = null,
     val catchupSource: String? = null,
+    /** Which playlist (see [Playlist.id]) the channel came from. */
+    val playlistId: String? = null,
 )
 
 object RecStatus {
@@ -128,6 +130,9 @@ abstract class ChannelDao {
         insertAll(channels)
     }
 
+    @Query("SELECT * FROM channels WHERE playlistId = :playlistId OR (playlistId IS NULL AND :playlistId = 'main')")
+    abstract suspend fun forPlaylist(playlistId: String): List<ChannelEntity>
+
     @Query("UPDATE channels SET epgId = :epgId WHERE id = :id")
     abstract suspend fun setEpgId(id: String, epgId: String)
 
@@ -156,7 +161,7 @@ interface ProgramDao {
 
 @Database(
     entities = [ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -173,9 +178,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4: which playlist each channel came from. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE channels ADD COLUMN playlistId TEXT")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
     }

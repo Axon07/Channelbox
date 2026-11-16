@@ -15,7 +15,7 @@ import io.github.axon07.channelbox.data.RecordingEntity
 import io.github.axon07.channelbox.data.ReleaseInfo
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.data.RefreshState
-import io.github.axon07.channelbox.data.SourceType
+import io.github.axon07.channelbox.data.Playlist
 import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR
 import io.github.axon07.channelbox.player.TvPlayer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,6 +49,11 @@ sealed interface ChannelFilter {
 
     data object Favorites : ChannelFilter {
         override val label = "Favourites"
+    }
+
+    /** Every channel from one playlist (shown when more than one is in use). */
+    data class Source(val id: String, val name: String) : ChannelFilter {
+        override val label: String get() = name
     }
 
     data class Group(val name: String) : ChannelFilter {
@@ -96,24 +101,33 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private val _filter = MutableStateFlow<ChannelFilter>(ChannelFilter.All)
     val filter: StateFlow<ChannelFilter> = _filter.asStateFlow()
 
-    val filters: StateFlow<List<ChannelFilter>> = allChannels
-        .map { list ->
-            // Playlist order, with channels that have no group collected at the very end.
-            val groups = list.map { it.groupTitle }.distinct()
-            listOf(ChannelFilter.All, ChannelFilter.Favorites) +
-                (groups.filter { it != ChannelFilter.UNGROUPED } + groups.filter { it == ChannelFilter.UNGROUPED })
-                    .map { ChannelFilter.Group(it) }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
+    val filters: StateFlow<List<ChannelFilter>> = combine(allChannels, c.settings.flow) { list, s ->
+        // Playlist order, with channels that have no group collected at the very end.
+        val groups = list.map { it.groupTitle }.distinct()
+        val used = list.mapNotNull { it.playlistId }.toSet()
+        val sources = if (used.size > 1) {
+            s.playlists.filter { it.id in used }.map { ChannelFilter.Source(it.id, it.displayName) }
+        } else emptyList()
+        listOf(ChannelFilter.All, ChannelFilter.Favorites) + sources +
+            (groups.filter { it != ChannelFilter.UNGROUPED } + groups.filter { it == ChannelFilter.UNGROUPED })
+                .map { ChannelFilter.Group(it) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
 
     /** Number of channels in each group, for the groups menu. */
-    val filterCounts: StateFlow<Map<ChannelFilter, Int>> = combine(allChannels, favorites) { list, favs ->
+    val filterCounts: StateFlow<Map<ChannelFilter, Int>> = combine(filters, allChannels, favorites) { fs, list, favs ->
         val map = HashMap<ChannelFilter, Int>()
         map[ChannelFilter.All] = list.size
         map[ChannelFilter.Favorites] = list.count { it.id in favs }
         list.groupingBy { it.groupTitle }.eachCount().forEach { (g, n) -> map[ChannelFilter.Group(g)] = n }
+        val perSource = list.groupingBy { it.playlistId }.eachCount()
+        fs.filterIsInstance<ChannelFilter.Source>().forEach { map[it] = perSource[it.id] ?: 0 }
         map
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Channels per playlist id, for Settings. */
+    val playlistCounts: StateFlow<Map<String?, Int>> = allChannels
+        .map { list -> list.groupingBy { it.playlistId }.eachCount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Where recordings are saved, and free space there. */
     val recordingsFolder: java.io.File get() = c.recorder.directory()
@@ -124,6 +138,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 ChannelFilter.All -> list
                 ChannelFilter.Favorites -> list.filter { it.id in favs }
                 is ChannelFilter.Group -> list.filter { it.groupTitle == f.name }
+                is ChannelFilter.Source -> list.filter { (it.playlistId ?: io.github.axon07.channelbox.data.SettingsStore.LEGACY_ID) == f.id }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -489,7 +504,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     showToast("Allow the VPN in Settings → Network")
                 }
             }
-            if (s.sourceType == SourceType.NONE) return@launch
+            if (!s.hasSource) return@launch
             val hasChannels = repo.allChannels().isNotEmpty()
             if (hasChannels) ensurePlaying()
             val stale = s.refreshHours > 0 && System.currentTimeMillis() - s.lastRefresh > s.refreshHours * HOUR
@@ -580,23 +595,37 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { if (repo.refresh()) ensurePlaying() }
     }
 
-    fun saveM3u(url: String, epgUrl: String) = viewModelScope.launch {
-        c.settings.saveM3u(url, epgUrl)
+    fun savePlaylist(p: Playlist) = viewModelScope.launch {
+        c.settings.savePlaylist(p)
         reloadAfterSourceChange()
     }
 
-    fun saveXtream(server: String, user: String, pass: String, epgUrl: String) = viewModelScope.launch {
-        c.settings.saveXtream(server, user, pass, epgUrl)
+    fun removePlaylist(id: String) = viewModelScope.launch {
+        c.settings.removePlaylist(id)
+        reloadAfterSourceChange()
+    }
+
+    fun setPlaylistEnabled(id: String, on: Boolean) = viewModelScope.launch {
+        c.settings.setPlaylistEnabled(id, on)
+        reloadAfterSourceChange()
+    }
+
+    fun movePlaylist(id: String, delta: Int) = viewModelScope.launch {
+        c.settings.movePlaylist(id, delta)
         reloadAfterSourceChange()
     }
 
     private suspend fun reloadAfterSourceChange() {
-        if (repo.refresh()) {
+        val ok = repo.refresh()
+        val ids = repo.allChannels().map { it.id }.toSet()
+        // Keep watching the same channel if it's still there (e.g. after adding a second playlist).
+        if (_current.value?.id !in ids) {
+            if (_current.value != null) player.stop()
             _current.value = null
             previous = null
-            _filter.value = ChannelFilter.All
-            ensurePlaying()
         }
+        if (_filter.value != ChannelFilter.All && _filter.value !in filters.value) _filter.value = ChannelFilter.All
+        if (ok) ensurePlaying()
     }
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }

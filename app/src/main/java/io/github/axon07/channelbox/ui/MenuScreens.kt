@@ -78,7 +78,7 @@ fun GroupsPanel(
             modifier = Modifier.padding(start = 8.dp),
         )
         Text(
-            "${counts[ChannelFilter.All] ?: 0} channels · ${(filters.size - 2).coerceAtLeast(0)} groups",
+            "${counts[ChannelFilter.All] ?: 0} channels · ${filters.count { it is ChannelFilter.Group }} groups",
             fontSize = 12.sp, color = Palette.TextDim,
             modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 12.dp),
         )
@@ -131,6 +131,7 @@ private fun GroupRow(
         when (filter) {
             ChannelFilter.All -> IconBadge(AppIcons.List, highlight = selected)
             ChannelFilter.Favorites -> IconBadge(AppIcons.Star, highlight = selected)
+            is ChannelFilter.Source -> IconBadge(AppIcons.Globe, highlight = selected)
             is ChannelFilter.Group ->
                 if (filter.name == ChannelFilter.UNGROUPED) IconBadge(AppIcons.Folder, highlight = selected)
                 else LetterBadge(filter.label, selected)

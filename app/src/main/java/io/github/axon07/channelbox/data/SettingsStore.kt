@@ -11,8 +11,63 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 
 enum class SourceType { NONE, M3U, XTREAM }
+
+/** One TV service: an M3U link or an Xtream Codes login, plus an optional guide. */
+data class Playlist(
+    val id: String,
+    val name: String = "",
+    val type: SourceType = SourceType.M3U,
+    val m3uUrl: String = "",
+    /** Extra XMLTV guide URL(s) for this playlist, one per line or comma separated. */
+    val epgUrl: String = "",
+    val xtServer: String = "",
+    val xtUser: String = "",
+    val xtPass: String = "",
+    val enabled: Boolean = true,
+) {
+    /** Name to show: the one the user gave, else the server's host name. */
+    val displayName: String
+        get() = name.trim().ifEmpty {
+            val url = if (type == SourceType.XTREAM) xtServer else m3uUrl
+            runCatching { java.net.URI(url.trim()).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+                ?: "Playlist"
+        }
+
+    val summary: String
+        get() = if (type == SourceType.XTREAM) "Xtream Codes · ${xtServer.trim()} · ${xtUser.trim()}"
+        else "M3U · ${redact(m3uUrl.trim())}"
+
+    fun toJson() = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(id), "name" to JsonPrimitive(name), "type" to JsonPrimitive(type.name),
+            "m3u" to JsonPrimitive(m3uUrl), "epg" to JsonPrimitive(epgUrl), "server" to JsonPrimitive(xtServer),
+            "user" to JsonPrimitive(xtUser), "pass" to JsonPrimitive(xtPass), "enabled" to JsonPrimitive(enabled),
+        )
+    )
+
+    companion object {
+        fun newId(): String = java.util.UUID.randomUUID().toString().take(8)
+
+        fun fromJson(o: JsonObject): Playlist? {
+            fun str(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
+            val id = str("id").ifEmpty { return null }
+            return Playlist(
+                id = id, name = str("name"),
+                type = runCatching { SourceType.valueOf(str("type")) }.getOrDefault(SourceType.M3U),
+                m3uUrl = str("m3u"), epgUrl = str("epg"), xtServer = str("server"), xtUser = str("user"),
+                xtPass = str("pass"), enabled = (o["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
+            )
+        }
+    }
+}
 
 /** What the last Back press does (TV → guide → groups → this). */
 enum class BackAction(val label: String) {
@@ -63,12 +118,8 @@ val REFRESH_CHOICES = listOf(6, 12, 24, 48, 0)
 fun refreshLabel(hours: Int) = if (hours <= 0) "Off (only when you choose Reload)" else "Every $hours hours"
 
 data class AppSettings(
-    val sourceType: SourceType = SourceType.NONE,
-    val m3uUrl: String = "",
-    val epgUrl: String = "",
-    val xtServer: String = "",
-    val xtUser: String = "",
-    val xtPass: String = "",
+    /** Every TV service, in lineup order. Enabled ones are merged into one channel list. */
+    val playlists: List<Playlist> = emptyList(),
     val startOnBoot: Boolean = false,
     val invertChannelKeys: Boolean = false,
     val refreshHours: Int = 12,
@@ -88,11 +139,19 @@ data class AppSettings(
     val skippedVersion: String? = null,
     val lastChannelId: String? = null,
     val lastRefresh: Long = 0L,
-)
+) {
+    /** False until at least one playlist has been added (first-run setup). */
+    val hasSource: Boolean get() = playlists.isNotEmpty()
+}
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 class SettingsStore(private val context: Context) {
+
+    companion object {
+        /** Id given to the single source carried over from older versions (its channels keep working). */
+        const val LEGACY_ID = "main"
+    }
 
     private object Keys {
         val SOURCE = stringPreferencesKey("source_type")
@@ -135,20 +194,32 @@ class SettingsStore(private val context: Context) {
         val DAV_USER = stringPreferencesKey("dav_user")
         val DAV_PASS = stringPreferencesKey("dav_pass")
         val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
+        val PLAYLISTS = stringPreferencesKey("playlists")
     }
 
     val flow: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
 
     suspend fun current(): AppSettings = flow.first()
 
+    /** The playlist list; older versions stored a single source in separate keys. */
+    private fun Preferences.playlists(): List<Playlist> {
+        this[Keys.PLAYLISTS]?.let { text ->
+            return runCatching {
+                (Json.parseToJsonElement(text) as JsonArray).mapNotNull { (it as? JsonObject)?.let(Playlist::fromJson) }
+            }.getOrDefault(emptyList())
+        }
+        val type = runCatching { SourceType.valueOf(this[Keys.SOURCE] ?: "NONE") }.getOrDefault(SourceType.NONE)
+        if (type == SourceType.NONE) return emptyList()
+        return listOf(
+            Playlist(
+                id = LEGACY_ID, type = type, m3uUrl = this[Keys.M3U_URL].orEmpty(), epgUrl = this[Keys.EPG_URL].orEmpty(),
+                xtServer = this[Keys.XT_SERVER].orEmpty(), xtUser = this[Keys.XT_USER].orEmpty(), xtPass = this[Keys.XT_PASS].orEmpty(),
+            )
+        )
+    }
+
     private fun Preferences.toSettings() = AppSettings(
-        sourceType = runCatching { SourceType.valueOf(this[Keys.SOURCE] ?: "NONE") }
-            .getOrDefault(SourceType.NONE),
-        m3uUrl = this[Keys.M3U_URL].orEmpty(),
-        epgUrl = this[Keys.EPG_URL].orEmpty(),
-        xtServer = this[Keys.XT_SERVER].orEmpty(),
-        xtUser = this[Keys.XT_USER].orEmpty(),
-        xtPass = this[Keys.XT_PASS].orEmpty(),
+        playlists = playlists(),
         startOnBoot = this[Keys.START_ON_BOOT] ?: false,
         invertChannelKeys = this[Keys.INVERT_KEYS] ?: false,
         refreshHours = this[Keys.REFRESH_HOURS] ?: 12,
@@ -190,24 +261,37 @@ class SettingsStore(private val context: Context) {
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
     )
 
-    suspend fun saveM3u(url: String, epgUrl: String) {
-        context.dataStore.edit {
-            it[Keys.SOURCE] = SourceType.M3U.name
-            it[Keys.M3U_URL] = url.trim()
-            it[Keys.EPG_URL] = epgUrl.trim()
-            it[Keys.LAST_REFRESH] = 0L
+    private suspend fun editPlaylists(change: (MutableList<Playlist>) -> Unit) {
+        context.dataStore.edit { prefs ->
+            val list = prefs.playlists().toMutableList()
+            change(list)
+            prefs[Keys.PLAYLISTS] = JsonArray(list.map { it.toJson() }).toString()
+            prefs[Keys.LAST_REFRESH] = 0L
         }
     }
 
-    suspend fun saveXtream(server: String, user: String, pass: String, epgUrl: String) {
-        context.dataStore.edit {
-            it[Keys.SOURCE] = SourceType.XTREAM.name
-            it[Keys.XT_SERVER] = server.trim()
-            it[Keys.XT_USER] = user.trim()
-            it[Keys.XT_PASS] = pass
-            it[Keys.EPG_URL] = epgUrl.trim()
-            it[Keys.LAST_REFRESH] = 0L
-        }
+    /** Adds the playlist, or replaces the one with the same id. */
+    suspend fun savePlaylist(p: Playlist) = editPlaylists { list ->
+        val clean = p.copy(
+            name = p.name.trim(), m3uUrl = p.m3uUrl.trim(), epgUrl = p.epgUrl.trim(),
+            xtServer = p.xtServer.trim(), xtUser = p.xtUser.trim(),
+        )
+        val i = list.indexOfFirst { it.id == p.id }
+        if (i >= 0) list[i] = clean else list += clean
+    }
+
+    suspend fun removePlaylist(id: String) = editPlaylists { list -> list.removeAll { it.id == id } }
+
+    suspend fun setPlaylistEnabled(id: String, on: Boolean) = editPlaylists { list ->
+        val i = list.indexOfFirst { it.id == id }
+        if (i >= 0) list[i] = list[i].copy(enabled = on)
+    }
+
+    /** Moves a playlist up (-1) or down (+1); order decides channel numbering. */
+    suspend fun movePlaylist(id: String, delta: Int) = editPlaylists { list ->
+        val i = list.indexOfFirst { it.id == id }
+        val j = i + delta
+        if (i >= 0 && j in list.indices) list.add(j, list.removeAt(i))
     }
 
     suspend fun setStartOnBoot(on: Boolean) = context.dataStore.edit { it[Keys.START_ON_BOOT] = on }
