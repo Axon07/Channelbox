@@ -239,12 +239,13 @@ private fun GuideRow(
     onMenu: (ProgramEntity?) -> Unit,
 ) {
     val end = guideStart + GUIDE_SPAN
-    Row(Modifier.fillMaxWidth().height(ROW_HEIGHT).padding(vertical = 1.dp)) {
+    Row(Modifier.fillMaxWidth().height(ROW_HEIGHT).padding(vertical = 2.dp)) {
         Row(
             Modifier
                 .width(CHANNEL_COLUMN)
                 .fillMaxHeight()
-                .padding(end = 2.dp)
+                .padding(start = 6.dp, end = 3.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(if (rowSelected) Palette.SurfaceLive else Palette.Surface)
                 .tap(onLongClick = { onMenu(null) }, onClick = onTune)
                 .padding(horizontal = 8.dp),
@@ -301,7 +302,8 @@ private fun GuideRow(
 private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, live: Boolean, recording: Boolean, catchup: Boolean) {
     Box(
         modifier
-            .padding(end = 2.dp)
+            .padding(end = 3.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(
                 when {
                     selected -> Palette.Accent
@@ -309,8 +311,7 @@ private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, li
                     else -> Palette.Surface
                 }
             )
-            .then(if (selected) Modifier.border(2.dp, Color.White) else Modifier)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 10.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

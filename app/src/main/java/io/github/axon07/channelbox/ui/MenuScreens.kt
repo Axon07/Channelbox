@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +54,7 @@ import java.util.Locale
 @Composable
 fun GroupsPanel(
     filters: List<ChannelFilter>,
+    counts: Map<ChannelFilter, Int>,
     active: ChannelFilter,
     selected: Int,
     listState: LazyListState,
@@ -66,35 +68,48 @@ fun GroupsPanel(
         Modifier
             .fillMaxHeight()
             .width(300.dp)
-            .background(Palette.Panel)
+            .background(Brush.horizontalGradient(listOf(Color(0xF70E131A), Color(0xEB0E131A))))
             .tap { }
-            .padding(vertical = 16.dp)
+            .padding(top = 26.dp, bottom = 18.dp)
     ) {
         Text(
-            "Groups", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
-            modifier = Modifier.padding(horizontal = 20.dp),
+            "CHANNELS", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextDim,
+            letterSpacing = 1.6.sp, modifier = Modifier.padding(start = 26.dp, bottom = 8.dp),
         )
-        Spacer(Modifier.height(8.dp))
         LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
             itemsIndexed(filters) { i, f ->
                 MenuRow(
                     label = f.label,
-                    trailing = if (f == active) "✓" else null,
+                    leading = when (f) {
+                        ChannelFilter.Favorites -> "★"
+                        else -> null
+                    },
+                    leadingColor = Palette.Favorite,
+                    trailing = counts[f]?.toString(),
+                    active = f == active,
                     selected = i == selected,
                     onClick = { onSelect(i) },
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).height(1.dp).background(Color(0x33FFFFFF)))
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.padding(horizontal = 26.dp).fillMaxWidth().height(1.dp).background(Color(0x1FFFFFFF)))
+        Spacer(Modifier.height(8.dp))
         MenuRow(
-            label = "●  Recordings",
-            trailing = if (recordingCount > 0) recordingCount.toString() else null,
+            label = "Recordings",
+            leading = "●",
+            leadingColor = Palette.Recording,
+            trailing = recordingCount.takeIf { it > 0 }?.toString(),
+            active = false,
             selected = selected == filters.size,
             onClick = { onSelect(filters.size) },
         )
         MenuRow(
-            label = "⚙  Settings",
+            label = "Settings",
+            leading = "⚙",
+            leadingColor = Palette.TextDim,
             trailing = null,
+            active = false,
             selected = selected == filters.size + 1,
             onClick = { onSelect(filters.size + 1) },
         )
@@ -102,20 +117,52 @@ fun GroupsPanel(
 }
 
 @Composable
-private fun MenuRow(label: String, trailing: String?, selected: Boolean, onClick: () -> Unit) {
+private fun MenuRow(
+    label: String,
+    leading: String?,
+    leadingColor: Color,
+    trailing: String?,
+    active: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .padding(horizontal = 10.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) Palette.Accent else Color.Transparent)
-            .tap(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .height(44.dp)
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color(0x24FFFFFF) else Color.Transparent)
+            .tap(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontSize = 15.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, fontSize = 14.sp, color = Palette.TextDim)
+        // Accent bar on the highlighted row.
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(20.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (selected) Palette.Accent else Color.Transparent)
+        )
+        Spacer(Modifier.width(11.dp))
+        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
+            when {
+                leading != null -> Text(leading, fontSize = 13.sp, color = leadingColor)
+                active -> Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Accent))
+            }
+        }
+        Text(
+            label,
+            fontSize = 15.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected || active) Palette.Text else Color(0xFFC9D2DD),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (trailing != null) {
+            Text(trailing, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(end = 14.dp))
+        }
     }
 }
 

@@ -132,6 +132,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val update by vm.update.collectAsStateWithLifecycle()
     val updatePrompt by vm.updatePrompt.collectAsStateWithLifecycle()
     val tracksVersion by vm.player.tracksVersion.collectAsStateWithLifecycle()
+    val filterCounts by vm.filterCounts.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
     var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
@@ -665,6 +666,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 if (mode == Mode.GROUPS) {
                     GroupsPanel(
                         filters = filters,
+                        counts = filterCounts,
                         active = filter,
                         selected = groupsIndex,
                         listState = groupsListState,
@@ -754,6 +756,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 channelCount = allChannels.size,
                 vm = vm,
                 onEditSource = { mode = Mode.SETUP },
+                onOpenRecordings = {
+                    recIndex = 0
+                    mode = Mode.RECORDINGS
+                },
                 onExit = { exitApp() },
             )
             Mode.SETUP -> SetupScreen(

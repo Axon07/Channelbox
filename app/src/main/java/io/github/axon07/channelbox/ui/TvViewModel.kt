@@ -47,7 +47,12 @@ sealed interface ChannelFilter {
     }
 
     data class Group(val name: String) : ChannelFilter {
-        override val label: String get() = name
+        override val label: String get() = if (name == UNGROUPED) "Other channels" else name
+    }
+
+    companion object {
+        /** Group name the playlist parsers give channels without a group. */
+        const val UNGROUPED = "Uncategorized"
     }
 }
 
@@ -79,10 +84,25 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     val filters: StateFlow<List<ChannelFilter>> = allChannels
         .map { list ->
+            // Playlist order, with channels that have no group collected at the very end.
+            val groups = list.map { it.groupTitle }.distinct()
             listOf(ChannelFilter.All, ChannelFilter.Favorites) +
-                list.map { it.groupTitle }.distinct().map { ChannelFilter.Group(it) }
+                (groups.filter { it != ChannelFilter.UNGROUPED } + groups.filter { it == ChannelFilter.UNGROUPED })
+                    .map { ChannelFilter.Group(it) }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
+
+    /** Number of channels in each group, for the groups menu. */
+    val filterCounts: StateFlow<Map<ChannelFilter, Int>> = combine(allChannels, favorites) { list, favs ->
+        val map = HashMap<ChannelFilter, Int>()
+        map[ChannelFilter.All] = list.size
+        map[ChannelFilter.Favorites] = list.count { it.id in favs }
+        list.groupingBy { it.groupTitle }.eachCount().forEach { (g, n) -> map[ChannelFilter.Group(g)] = n }
+        map
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Where recordings are saved, and free space there. */
+    val recordingsFolder: java.io.File get() = c.recorder.directory()
 
     val visibleChannels: StateFlow<List<ChannelEntity>> =
         combine(allChannels, favorites, _filter) { list, favs, f ->
