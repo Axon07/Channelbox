@@ -7,6 +7,17 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Release builds get their version from the git tag (see .github/workflows/release.yml):
+//   ./gradlew assembleRelease -PappVersionName=0.2.0   ->  versionName 0.2.0, versionCode 200
+val appVersionName = (findProperty("appVersionName") as String?)?.removePrefix("v") ?: "0.1.0"
+val appVersionCode = appVersionName.split('.', '-').take(3).map { it.toIntOrNull() ?: 0 }
+    .let { (it + listOf(0, 0, 0)).take(3) }
+    .let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
+    .coerceAtLeast(1)
+
+// The permanent release key comes from environment variables (GitHub secrets in CI).
+val releaseKeystore: String? = System.getenv("SIGNING_KEYSTORE_PATH")
+
 android {
     namespace = "io.github.axon07.channelbox"
     compileSdk = 35
@@ -16,17 +27,30 @@ android {
         // 21 = Android 5.0, so old/cheap Android TV boxes still work.
         minSdk = 21
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+        // GitHub repo the in-app updater checks for new releases.
+        buildConfigField("String", "UPDATE_REPO", "\"Axon07/Channelbox\"")
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             // Kept off for the first releases so nothing gets stripped by mistake.
             isMinifyEnabled = false
-            // Signed with the debug key so a release APK can be sideloaded straight away.
-            // Replace with your own keystore before publishing anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            // Official releases are signed with the permanent key so in-app updates install over
+            // the old version. Local/CI test builds fall back to the debug key.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

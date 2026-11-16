@@ -57,7 +57,7 @@ import kotlin.math.abs
 enum class Mode {
     PLAYER, CHANNEL_LIST, GUIDE, GROUPS, PROGRAM_MENU,
     RECORDINGS, RECORDING_MENU, PLAYBACK,
-    SETTINGS, SETUP, EXIT_CONFIRM,
+    SETTINGS, SETUP, EXIT_CONFIRM, UPDATE,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
@@ -129,6 +129,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val recordingKeys by vm.recordingKeys.collectAsStateWithLifecycle()
     val recordingChannels by vm.recordingChannels.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
+    val updatePrompt by vm.updatePrompt.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
     var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
@@ -140,6 +142,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var groupsIndex by remember { mutableIntStateOf(0) }
     var recIndex by remember { mutableIntStateOf(0) }
     var exitReturn by remember { mutableStateOf(Mode.GROUPS) }
+    var updateReturn by remember { mutableStateOf(Mode.PLAYER) }
     var menuChannel by remember { mutableStateOf<ChannelEntity?>(null) }
     var menuProgram by remember { mutableStateOf<ProgramEntity?>(null) }
     var menuRecording by remember { mutableStateOf<RecordingEntity?>(null) }
@@ -463,6 +466,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             runCatching { rootFocus.requestFocus() }
         }
     }
+    // "Update available" prompt: shown over whatever screen is open (but not during first setup).
+    LaunchedEffect(updatePrompt) {
+        if (updatePrompt && mode != Mode.UPDATE && mode != Mode.SETUP) {
+            updateReturn = mode
+            mode = Mode.UPDATE
+        } else if (!updatePrompt && mode == Mode.UPDATE) {
+            mode = updateReturn
+        }
+    }
     LaunchedEffect(toast) {
         val t = toast ?: return@LaunchedEffect
         delay(3_000)
@@ -499,6 +511,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.EXIT_CONFIRM -> mode = exitReturn
+            Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
             Mode.PLAYBACK -> playbackToken++
             else -> Unit
         }
@@ -523,6 +536,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.GUIDE -> openGroups()
             Mode.GROUPS -> lastBack()
             Mode.EXIT_CONFIRM -> mode = exitReturn
+            Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
             Mode.RECORDINGS -> openGroups(filters.size)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
@@ -703,6 +717,35 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 vm = vm,
                 onDone = { mode = Mode.PLAYER },
             )
+            Mode.UPDATE -> {
+                when (val u = update) {
+                    is TvViewModel.UpdateState.Available -> ActionDialog(
+                        title = "Update available: Channelbox ${u.release.version}",
+                        subtitle = "You have ${vm.appVersion}." +
+                            (u.release.notes.lineSequence().firstOrNull { it.isNotBlank() }
+                                ?.let { "\n" + it.trim().removePrefix("#").removePrefix("-").trim() } ?: ""),
+                        actions = listOf(
+                            DialogAction("Update now") { vm.startUpdate() },
+                            DialogAction("Later") { vm.dismissUpdate(skipThisVersion = false) },
+                            DialogAction("Skip this version") { vm.dismissUpdate(skipThisVersion = true) },
+                        ),
+                    )
+                    is TvViewModel.UpdateState.Downloading -> ActionDialog(
+                        title = "Downloading Channelbox ${u.release.version}… ${u.percent}%",
+                        subtitle = "Android will ask you to confirm the update when it's done.",
+                        actions = listOf(DialogAction("Hide") { vm.dismissUpdate(skipThisVersion = false) }),
+                    )
+                    is TvViewModel.UpdateState.Failed -> ActionDialog(
+                        title = "Update failed",
+                        subtitle = u.message,
+                        actions = listOf(
+                            DialogAction("Try again") { vm.checkForUpdates(manual = true) },
+                            DialogAction("Close") { vm.dismissUpdate(skipThisVersion = false) },
+                        ),
+                    )
+                    else -> Unit
+                }
+            }
             Mode.EXIT_CONFIRM -> ActionDialog(
                 title = "Exit Channelbox?",
                 subtitle = null,

@@ -37,6 +37,9 @@ data class AppSettings(
     val invertChannelKeys: Boolean = false,
     val refreshHours: Int = 12,
     val backAction: BackAction = BackAction.ASK_EXIT,
+    val autoUpdateCheck: Boolean = true,
+    /** Version the user chose "Skip this version" for. */
+    val skippedVersion: String? = null,
     val lastChannelId: String? = null,
     val lastRefresh: Long = 0L,
 )
@@ -58,6 +61,8 @@ class SettingsStore(private val context: Context) {
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val BACK_ACTION = stringPreferencesKey("back_action")
+        val AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
+        val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
     }
 
     val flow: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -77,6 +82,8 @@ class SettingsStore(private val context: Context) {
         refreshHours = this[Keys.REFRESH_HOURS] ?: 12,
         backAction = runCatching { BackAction.valueOf(this[Keys.BACK_ACTION] ?: "") }
             .getOrDefault(BackAction.ASK_EXIT),
+        autoUpdateCheck = this[Keys.AUTO_UPDATE] ?: true,
+        skippedVersion = this[Keys.SKIPPED_VERSION],
         lastChannelId = this[Keys.LAST_CHANNEL],
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
     )
@@ -106,5 +113,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
     suspend fun setRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }
+    suspend fun setAutoUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.AUTO_UPDATE] = on }
+    suspend fun setSkippedVersion(version: String) = context.dataStore.edit { it[Keys.SKIPPED_VERSION] = version }
     suspend fun setLastRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_REFRESH] = time }
 }

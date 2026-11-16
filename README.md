@@ -34,6 +34,9 @@ newest test build from the **[Actions](https://github.com/Axon07/Channelbox/acti
 
 Install it on the box with the **Downloader** app, a USB stick, or `adb install channelbox.apk`.
 
+**Updates:** Channelbox checks for a new release when it starts and offers to install it (turn that off in Settings).
+You can also use **Settings → Check for updates**. The first time, Android asks you to allow Channelbox to install apps.
+
 ## Features (v0.1)
 
 | | |
@@ -100,6 +103,32 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Or upload the APK somewhere and use the *Downloader* app on the box.
+
+## Releasing
+
+Releases are built by GitHub Actions and signed with a permanent key, so the in-app updater can install each new
+version over the old one. One-time setup (Windows PowerShell, JDK 17 installed):
+
+```powershell
+$env:JAVA_HOME = (Get-ChildItem "C:\Program Files\Eclipse Adoptium" -Directory -Filter "jdk-17*" | Select-Object -First 1).FullName
+& "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v -keystore "$env:USERPROFILE\channelbox-release.jks" -alias channelbox -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Channelbox"
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\channelbox-release.jks")) | Set-Clipboard
+```
+
+Then in the repo: **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | paste (the keystore, copied to the clipboard by the last line) |
+| `SIGNING_STORE_PASSWORD` | the password you typed for the keystore |
+| `SIGNING_KEY_ALIAS` | `channelbox` |
+| `SIGNING_KEY_PASSWORD` | the same password |
+
+Keep a backup of `channelbox-release.jks` and its password somewhere safe – if it's lost, existing installs can't be
+updated and everyone has to uninstall and reinstall.
+
+To release: **Releases → Draft a new release → new tag `v0.2.0` → Publish**. The workflow sets the app version from the
+tag, builds the signed APK and attaches it; installed apps will offer the update.
 
 ## Making it act like a cable box
 

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.Text
 import io.github.axon07.channelbox.BuildConfig
@@ -155,6 +156,28 @@ fun SettingsScreen(
                     title = "Reverse up/down channel buttons",
                     value = onOff(settings.invertChannelKeys),
                     onClick = { vm.setInvertChannelKeys(!settings.invertChannelKeys) },
+                )
+            }
+            run {
+                val update by vm.update.collectAsStateWithLifecycle()
+                SettingRow(
+                    title = "Check for updates",
+                    value = when (val u = update) {
+                        TvViewModel.UpdateState.Checking -> "Checking…"
+                        TvViewModel.UpdateState.UpToDate -> "You have the latest version (${vm.appVersion})"
+                        is TvViewModel.UpdateState.Available -> "Version ${u.release.version} is available – select to update"
+                        is TvViewModel.UpdateState.Downloading -> "Downloading version ${u.release.version}… ${u.percent}%"
+                        is TvViewModel.UpdateState.Failed -> "Couldn't check: ${u.message}"
+                        TvViewModel.UpdateState.Idle -> "Installed: version ${vm.appVersion}"
+                    },
+                    onClick = { vm.checkForUpdates(manual = true) },
+                )
+            }
+            run {
+                SettingRow(
+                    title = "Check for updates when the app starts",
+                    value = onOff(settings.autoUpdateCheck),
+                    onClick = { vm.setAutoUpdateCheck(!settings.autoUpdateCheck) },
                 )
             }
             run {

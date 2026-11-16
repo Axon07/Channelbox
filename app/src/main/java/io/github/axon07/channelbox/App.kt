@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import io.github.axon07.channelbox.data.AppDatabase
 import io.github.axon07.channelbox.data.Recorder
+import io.github.axon07.channelbox.data.Updater
 import io.github.axon07.channelbox.data.SettingsStore
 import io.github.axon07.channelbox.data.TvRepository
 import io.github.axon07.channelbox.data.createHttpClient
@@ -34,6 +35,7 @@ class AppContainer(context: Context) {
     val http = createHttpClient()
     val repository = TvRepository(database, settings, http)
     val recorder = Recorder(context, database, http)
+    val updater = Updater(context, http)
 }
 
 val Context.container: AppContainer get() = (applicationContext as App).container

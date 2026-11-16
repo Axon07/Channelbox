@@ -12,6 +12,7 @@ import io.github.axon07.channelbox.data.ChannelEntity
 import io.github.axon07.channelbox.data.ProgramEntity
 import io.github.axon07.channelbox.data.RecStatus
 import io.github.axon07.channelbox.data.RecordingEntity
+import io.github.axon07.channelbox.data.ReleaseInfo
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType
@@ -137,6 +138,90 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         if (_toast.value?.id == id) _toast.value = null
     }
 
+    // ---- Updates --------------------------------------------------------------------------
+
+    sealed interface UpdateState {
+        data object Idle : UpdateState
+        data object Checking : UpdateState
+        data object UpToDate : UpdateState
+        data class Available(val release: ReleaseInfo) : UpdateState
+        data class Downloading(val release: ReleaseInfo, val percent: Int) : UpdateState
+        data class Failed(val message: String) : UpdateState
+    }
+
+    private val updater = c.updater
+    val appVersion: String get() = updater.currentVersion
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+
+    /** True when the update dialog should be on screen. */
+    private val _updatePrompt = MutableStateFlow(false)
+    val updatePrompt: StateFlow<Boolean> = _updatePrompt.asStateFlow()
+
+    /**
+     * [manual] = the user pressed "Check for updates": always report the result.
+     * Automatic checks stay silent unless there's a new version they haven't skipped.
+     */
+    fun checkForUpdates(manual: Boolean) {
+        if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
+        viewModelScope.launch {
+            _update.value = UpdateState.Checking
+            val result = runCatching { updater.latest() }
+            val release = result.getOrNull()
+            _update.value = when {
+                result.isFailure -> UpdateState.Failed(result.exceptionOrNull()?.message ?: "Couldn't reach GitHub")
+                release != null && updater.isNewer(release) -> UpdateState.Available(release)
+                else -> UpdateState.UpToDate
+            }
+            val state = _update.value
+            if (state is UpdateState.Available) {
+                val skipped = c.settings.current().skippedVersion
+                _updatePrompt.value = manual || state.release.version != skipped
+            } else if (!manual) {
+                _update.value = UpdateState.Idle
+            }
+        }
+    }
+
+    fun startUpdate() {
+        val release = when (val s = _update.value) {
+            is UpdateState.Available -> s.release
+            else -> return
+        }
+        if (!updater.canInstall()) {
+            // Android 8+: the user has to allow Channelbox to install apps (once).
+            if (updater.openInstallPermission()) {
+                showToast("Allow Channelbox to install apps, then choose Update again")
+            } else {
+                showToast("Allow \"Install unknown apps\" for Channelbox in Android settings")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _update.value = UpdateState.Downloading(release, 0)
+            try {
+                val apk = updater.download(release) { percent ->
+                    _update.value = UpdateState.Downloading(release, percent)
+                }
+                _update.value = UpdateState.Available(release)
+                _updatePrompt.value = false
+                updater.install(apk)
+            } catch (e: Exception) {
+                _update.value = UpdateState.Failed(e.message ?: "Download failed")
+            }
+        }
+    }
+
+    fun dismissUpdate(skipThisVersion: Boolean) {
+        _updatePrompt.value = false
+        val s = _update.value
+        if (skipThisVersion && s is UpdateState.Available) {
+            viewModelScope.launch { c.settings.setSkippedVersion(s.release.version) }
+        }
+    }
+
+    fun setAutoUpdateCheck(on: Boolean) = viewModelScope.launch { c.settings.setAutoUpdateCheck(on) }
+
     // ---- Recordings -----------------------------------------------------------------------
 
     private val recorder = c.recorder
@@ -224,6 +309,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // Startup update check, a few seconds in so it doesn't slow down tuning the first channel.
+        viewModelScope.launch {
+            delay(8_000)
+            if (c.settings.current().autoUpdateCheck) checkForUpdates(manual = false)
+        }
         viewModelScope.launch {
             val s = c.settings.current()
             if (s.sourceType == SourceType.NONE) return@launch
