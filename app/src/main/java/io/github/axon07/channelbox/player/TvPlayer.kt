@@ -13,10 +13,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider
-import androidx.media3.exoplayer.drm.FrameworkMediaDrm
-import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import io.github.axon07.channelbox.data.StreamSpec
@@ -95,8 +92,12 @@ class TvPlayer(private val context: Context, private val http: OkHttpClient) {
         handler.removeCallbacksAndMessages(null)
         filePath = null
         spec = stream
-        candidates = if (stream.mime != null) listOf(stream.mime)
-        else listOf(null, StreamSpecs.MIME_HLS, StreamSpecs.MIME_DASH)
+        candidates = when {
+            stream.mime != null -> listOf(stream.mime)
+            // DRM-protected IPTV streams are almost always DASH, even without ".mpd" in the link.
+            stream.drm != null -> listOf(StreamSpecs.MIME_DASH, null, StreamSpecs.MIME_HLS)
+            else -> listOf(null, StreamSpecs.MIME_HLS, StreamSpecs.MIME_DASH)
+        }
         attempt = 0
         confirmed = false
         retries = 0
@@ -162,25 +163,24 @@ class TvPlayer(private val context: Context, private val http: OkHttpClient) {
 
         val drm = s.drm
         if (drm != null) {
-            val keys = drm.clearKeyJson
-            if (keys != null) {
+            if (drm.clearKeys.isNotEmpty()) {
                 // ClearKey with the keys in the playlist: answer license requests locally.
-                val manager = DefaultDrmSessionManager.Builder()
-                    .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
-                    .setMultiSession(true)
-                    .build(LocalMediaDrmCallback(keys.toByteArray()))
+                val manager = ClearKeyDrmSessionManager(drm.clearKeys)
                 sources.setDrmSessionManagerProvider { manager }
             } else {
                 val scheme = when (drm.type) {
                     StreamSpecs.CLEARKEY -> C.CLEARKEY_UUID
-                    StreamSpecs.PLAYREADY -> C.PLAYREADY_UUID
+                    // Many Android TV boxes have no PlayReady; most license servers also speak Widevine.
+                    StreamSpecs.PLAYREADY ->
+                        if (supported(C.PLAYREADY_UUID)) C.PLAYREADY_UUID else C.WIDEVINE_UUID
                     else -> C.WIDEVINE_UUID
                 }
                 item.setDrmConfiguration(
                     MediaItem.DrmConfiguration.Builder(scheme)
                         .setLicenseUri(drm.licenseUrl)
                         .setLicenseRequestHeaders(drm.licenseHeaders)
-                        .setMultiSession(true)
+                        .setMultiSession(scheme == C.CLEARKEY_UUID)
+                        .setPlayClearContentWithoutKey(true)
                         .build()
                 )
                 sources.setDrmSessionManagerProvider(
@@ -190,6 +190,9 @@ class TvPlayer(private val context: Context, private val http: OkHttpClient) {
         }
         return sources.createMediaSource(item.build())
     }
+
+    private fun supported(scheme: java.util.UUID): Boolean =
+        runCatching { android.media.MediaDrm.isCryptoSchemeSupported(scheme) }.getOrDefault(false)
 
     private fun handleError(error: PlaybackException) {
         if (!isLive) {

@@ -9,9 +9,18 @@ data class DrmSpec(
     /** License server URL, if the key is fetched from a server. */
     val licenseUrl: String? = null,
     val licenseHeaders: Map<String, String> = emptyMap(),
-    /** ClearKey JSON Web Key set, when the keys are given directly in the playlist. */
-    val clearKeyJson: String? = null,
-)
+    /**
+     * ClearKey keys given right in the playlist: base64url key-id → base64url key.
+     * A key stored under [ANY_KID] is used for whatever key id the stream asks for.
+     */
+    val clearKeys: Map<String, String> = emptyMap(),
+) {
+    val clearKeyJson: String? get() = if (clearKeys.isEmpty()) null else StreamSpecs.clearKeyJwk(clearKeys)
+
+    companion object {
+        const val ANY_KID = "*"
+    }
+}
 
 /** Everything needed to open one stream. */
 data class StreamSpec(
@@ -101,6 +110,7 @@ object StreamSpecs {
             "clearkey" in t -> CLEARKEY
             "widevine" in t -> WIDEVINE
             "playready" in t -> PLAYREADY
+            "clear" in t || "w3" in t -> CLEARKEY
             t.isEmpty() && !k.startsWith("http", ignoreCase = true) -> CLEARKEY
             else -> WIDEVINE
         }
@@ -116,26 +126,74 @@ object StreamSpecs {
         if (kind != CLEARKEY || k.isEmpty()) return DrmSpec(kind)
 
         // ClearKey with the keys right in the playlist.
-        if (k.startsWith("{") && "\"keys\"" in k) return DrmSpec(CLEARKEY, clearKeyJson = k)
-        val pairs = LinkedHashMap<String, String>()
-        if (k.startsWith("{")) {
-            Regex(""""([^"]+)"\s*:\s*"([^"]+)"""").findAll(k).forEach { pairs[it.groupValues[1]] = it.groupValues[2] }
+        val keys = parseClearKeys(k)
+        return DrmSpec(CLEARKEY, clearKeys = keys)
+    }
+
+    /**
+     * Accepts every format seen in IPTV playlists:
+     *  - "kid:key" or "kid1:key1,kid2:key2" (hex or base64)
+     *  - {"kid":"key", …} or a full JWK set {"keys":[{"kty":"oct","kid":"…","k":"…"}]}
+     *  - just "key" (used for any key id)
+     */
+    fun parseClearKeys(text: String): Map<String, String> {
+        val k = text.trim()
+        val out = LinkedHashMap<String, String>()
+        if (k.startsWith("{") && "\"keys\"" in k) {
+            Regex("""\{[^{}]*\}""").findAll(k).forEach { obj ->
+                val o = obj.value
+                val kid = Regex(""""kid"\s*:\s*"([^"]+)"""").find(o)?.groupValues?.get(1)
+                val key = Regex(""""k"\s*:\s*"([^"]+)"""").find(o)?.groupValues?.get(1)
+                if (key != null) out[kid?.let { toBase64Url(it) } ?: DrmSpec.ANY_KID] = toBase64Url(key)
+            }
+        } else if (k.startsWith("{")) {
+            Regex(""""([^"]+)"\s*:\s*"([^"]+)"""").findAll(k).forEach {
+                out[toBase64Url(it.groupValues[1])] = toBase64Url(it.groupValues[2])
+            }
         } else {
-            k.split(',', ';', ' ').map { it.trim() }.filter { ':' in it }.forEach {
-                pairs[it.substringBefore(':').trim()] = it.substringAfter(':').trim()
+            k.split(',', ';', ' ').map { it.trim() }.filter { it.isNotEmpty() }.forEach { part ->
+                if (':' in part) out[toBase64Url(part.substringBefore(':'))] = toBase64Url(part.substringAfter(':'))
+                else out[DrmSpec.ANY_KID] = toBase64Url(part)
             }
         }
-        if (pairs.isEmpty()) return DrmSpec(CLEARKEY)
-        return DrmSpec(CLEARKEY, clearKeyJson = clearKeyJwk(pairs))
+        return out
+    }
+
+    /**
+     * Builds the ClearKey license response for one request. Uses the key with the requested
+     * id when we have it; otherwise falls back to the only (or first) key we were given –
+     * playlists often list the right key under a different key id.
+     */
+    fun clearKeyResponse(request: String, keys: Map<String, String>): String {
+        val requested = Regex(""""kids"\s*:\s*\[([^\]]*)]""").find(request)?.groupValues?.get(1)
+            ?.let { list -> Regex(""""([^"]+)"""").findAll(list).map { toBase64Url(it.groupValues[1]) }.toList() }
+            .orEmpty()
+        if (requested.isEmpty()) return clearKeyJwk(keys.filterKeys { it != DrmSpec.ANY_KID }.ifEmpty { keys })
+        val fallback = keys[DrmSpec.ANY_KID] ?: keys.values.firstOrNull()
+        val answer = LinkedHashMap<String, String>()
+        requested.forEach { kid -> (keys[kid] ?: fallback)?.let { answer[kid] = it } }
+        return clearKeyJwk(answer)
+    }
+
+    /** Kodi 21 "inputstream.adaptive.drm" JSON → (license type, license key in the legacy format). */
+    fun parseKodiDrmJson(json: String): Pair<String, String>? {
+        val system = Regex(""""((?:com\.widevine\.alpha)|(?:org\.w3\.clearkey)|(?:com\.microsoft\.playready)|(?:com\.clearkey\.alpha))"""")
+            .find(json)?.groupValues?.get(1) ?: return null
+        val server = Regex(""""server_url"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
+        val headers = Regex(""""req_headers"\s*:\s*"([^"]*)"""").find(json)?.groupValues?.get(1)
+        if (server != null) return system to (server + (headers?.let { "|$it" } ?: ""))
+        val keyIds = Regex(""""keyids"\s*:\s*(\{[^}]*\})""").find(json)?.groupValues?.get(1)
+        if (keyIds != null) return system to keyIds
+        return system to ""
     }
 
     /** Builds the JSON Web Key set ExoPlayer's ClearKey support expects. */
     fun clearKeyJwk(pairs: Map<String, String>): String =
-        pairs.entries.joinToString(
+        pairs.filterKeys { it != DrmSpec.ANY_KID }.entries.joinToString(
             prefix = "{\"keys\":[",
             postfix = "],\"type\":\"temporary\"}",
             separator = ",",
-        ) { (kid, key) -> "{\"kty\":\"oct\",\"k\":\"${toBase64Url(key)}\",\"kid\":\"${toBase64Url(kid)}\"}" }
+        ) { (kid, key) -> "{\"kty\":\"oct\",\"k\":\"$key\",\"kid\":\"$kid\"}" }
 
     /** Hex (32 chars, dashes allowed) → base64url; anything else is treated as base64 already. */
     internal fun toBase64Url(value: String): String {

@@ -22,7 +22,7 @@ class M3uParserTest {
     @Test
     fun parsesChannelsAndAttributes() {
         val result = M3uParser.parse(sample.reader().buffered())
-        assertEquals("http://example.com/guide.xml.gz", result.epgUrl)
+        assertEquals(listOf("http://example.com/guide.xml.gz", "http://backup/guide.xml"), result.epgUrls)
         assertEquals(3, result.channels.size)
 
         val cbc = result.channels[0]

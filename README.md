@@ -19,7 +19,7 @@ Bring your own IPTV subscription (M3U or Xtream Codes).
 
 > [!NOTE]
 > Channelbox is **only a player**. It doesn't include, sell or link to any channels. You need your own IPTV service.
-> Not affiliated with TiviMate or any IPTV provider.
+> Not affiliated with any IPTV provider.
 
 ## Why
 
@@ -42,12 +42,12 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | | |
 |---|---|
 | **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login |
-| **TV guide** | XMLTV (incl. `.xml.gz`), from the playlist's `url-tvg`, from Xtream, or a custom URL. Channels without a `tvg-id` are matched by name |
+| **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
 | **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. ● marks programmes set to record |
 | **Groups menu** | Back from the guide: channel groups, with Recordings and ⚙ Settings at the bottom |
 | **Playback** | Media3/ExoPlayer: HLS, MPEG-TS, DASH (`.mpd`, also `.mpd/…` links) and Smooth Streaming. Unknown links are tried as TS → HLS → DASH. A broken channel shows a message and retries – it never crashes the app |
 | **Stream options** | Kodi-style `url|User-Agent=…&Referer=…`, `#EXTVLCOPT:http-user-agent/http-referrer`, `#EXTHTTP:{…}`, `#KODIPROP:inputstream.adaptive.stream_headers` |
-| **DRM** | `#KODIPROP:inputstream.adaptive.license_type` / `license_key`: ClearKey with `kid:key` pairs (hex or base64) or JSON, ClearKey/Widevine/PlayReady license-server URLs with headers (`url|Header=Value|…`) |
+| **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it |
 | **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play (pause/seek), stop and delete |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press OK while watching: channels by group with what's on now |

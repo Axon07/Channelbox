@@ -61,7 +61,7 @@ class XtreamClient(private val http: OkHttpClient) {
                 catchupDays = if (o.str("tv_archive") == "1") o.str("tv_archive_duration")?.toIntOrNull() ?: 0 else 0,
             )
         }
-        return ParsedPlaylist(channels, login.xmltvUrl)
+        return ParsedPlaylist(channels, listOf(login.xmltvUrl))
     }
 
     private suspend fun getJson(url: String): JsonElement =

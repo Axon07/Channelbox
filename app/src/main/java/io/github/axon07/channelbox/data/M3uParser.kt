@@ -14,9 +14,14 @@ data class ParsedChannel(
     val drmType: String? = null,
     val drmKey: String? = null,
     val manifestType: String? = null,
+    val tvgName: String? = null,
 )
 
-data class ParsedPlaylist(val channels: List<ParsedChannel>, val epgUrl: String?)
+data class ParsedPlaylist(val channels: List<ParsedChannel>, val epgUrls: List<String>)
+
+/** Splits a list of guide URLs separated by commas, spaces or new lines. */
+fun splitUrls(s: String?): List<String> =
+    s.orEmpty().split(',', ' ', '\n', '\r', '\t').map { it.trim() }.filter { it.startsWith("http", ignoreCase = true) }.distinct()
 
 /**
  * Parses extended M3U playlists:
@@ -73,8 +78,7 @@ object M3uParser {
             }
         }
 
-        val guide = epgUrl?.split(',')?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-        return ParsedPlaylist(out, guide)
+        return ParsedPlaylist(out, splitUrls(epgUrl))
     }
 
     private fun kodiProp(p: Pending, kv: String) {
@@ -84,6 +88,16 @@ object M3uParser {
             "inputstream.adaptive.license_type" -> p.drmType = value
             "inputstream.adaptive.license_key" -> p.drmKey = value
             "inputstream.adaptive.manifest_type" -> p.manifestType = value
+            // Newer Kodi format: "com.widevine.alpha|https://license…" or "org.w3.clearkey|kid:key"
+            "inputstream.adaptive.drm_legacy" -> {
+                p.drmType = value.substringBefore('|').trim()
+                p.drmKey = value.substringAfter('|', "").trim()
+            }
+            // Kodi 21 JSON format: {"com.widevine.alpha":{"license":{"server_url":"…","req_headers":"…"}}}
+            "inputstream.adaptive.drm" -> StreamSpecs.parseKodiDrmJson(value)?.let { (type, key) ->
+                p.drmType = type
+                p.drmKey = key
+            }
             "inputstream.adaptive.stream_headers",
             "inputstream.adaptive.common_headers",
             "inputstream.adaptive.manifest_headers" -> p.headers += StreamSpecs.parseHeaderString(value)
@@ -133,6 +147,7 @@ object M3uParser {
             drmType = p.drmType,
             drmKey = p.drmKey,
             manifestType = p.manifestType,
+            tvgName = a["tvg-name"]?.takeIf { it.isNotBlank() },
         )
     }
 }

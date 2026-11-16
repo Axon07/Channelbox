@@ -60,17 +60,11 @@ class TvRepository(
             db.channels().replaceAll(entities)
 
             var programmes = 0
-            val epgUrl = s.epgUrl.ifBlank { playlist.epgUrl.orEmpty() }
-            if (epgUrl.isNotBlank()) {
-                _state.value = RefreshState.Running("Loading TV guide…")
-                programmes = try {
-                    importEpg(epgUrl, entities)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Channels still work without a guide; don't fail the whole refresh.
-                    0
-                }
+            // Your own guide URLs first, then every guide the playlist lists.
+            val epgUrls = (splitUrls(s.epgUrl) + playlist.epgUrls).distinct()
+            if (epgUrls.isNotEmpty()) {
+                val tvgNames = playlist.channels.associate { it.url to it.tvgName }
+                programmes = importEpg(epgUrls, entities, tvgNames)
             }
             settings.setLastRefresh(System.currentTimeMillis())
             _state.value = RefreshState.Done(entities.size, programmes)
@@ -109,23 +103,51 @@ class TvRepository(
         }
     }
 
-    private suspend fun importEpg(url: String, channels: List<ChannelEntity>): Int {
-        val wanted = HashSet<String>()
-        channels.mapNotNullTo(wanted) { it.epgId }
-
-        // Channels without a tvg-id get matched by name against XMLTV <display-name>.
-        val byName = HashMap<String, MutableList<ChannelEntity>>()
-        channels.filter { it.epgId == null }.forEach {
-            byName.getOrPut(normalizeName(it.name)) { mutableListOf() }.add(it)
-        }
-        val nameMatches = HashMap<String, String>() // channel id -> epg id
-
+    /** Loads every guide source; a source that fails is skipped. Returns the number of programmes stored. */
+    private suspend fun importEpg(
+        urls: List<String>,
+        channels: List<ChannelEntity>,
+        tvgNames: Map<String, String?>,
+    ): Int {
+        val matcher = EpgMatcher(
+            channels.map { ch -> EpgMatcher.Candidate(ch.id, ch.epgId, listOfNotNull(tvgNames[ch.id], ch.name)) }
+        )
         val now = System.currentTimeMillis()
         val keepFrom = now - 6 * HOUR
         val keepTo = now + 8 * 24 * HOUR
+        val filled = HashSet<String>() // guide ids that already have programmes from an earlier source
 
         db.programs().clear()
         var count = 0
+        urls.forEachIndexed { index, url ->
+            _state.value = RefreshState.Running(
+                if (urls.size > 1) "Loading TV guide ${index + 1} of ${urls.size}…" else "Loading TV guide…"
+            )
+            try {
+                count += importOne(url, matcher, filled, keepFrom, keepTo)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // One broken guide shouldn't stop the others.
+            }
+        }
+
+        val changed = channels.filter { ch -> matcher.assigned[ch.id]?.let { it != ch.epgId } == true }
+        if (changed.isNotEmpty()) {
+            db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }
+        }
+        return count
+    }
+
+    private suspend fun importOne(
+        url: String,
+        matcher: EpgMatcher,
+        filled: MutableSet<String>,
+        keepFrom: Long,
+        keepTo: Long,
+    ): Int {
+        var count = 0
+        val fromThisSource = HashSet<String>()
         val batch = ArrayList<ProgramEntity>(BATCH)
 
         fun flush() {
@@ -139,18 +161,11 @@ class TvRepository(
             val parser = Xml.newPullParser()
             parser.setInput(maybeGunzip(input), null)
             XmlTvParser(parser).parse(
-                onChannel = { id, names ->
-                    val key = id.lowercase()
-                    names.forEach { n ->
-                        byName.remove(normalizeName(n))?.forEach { ch ->
-                            nameMatches[ch.id] = key
-                            wanted += key
-                        }
-                    }
-                },
+                onChannel = { id, names -> matcher.onChannel(id, names) },
                 onProgramme = { channelId, start, stop, title, desc ->
-                    val key = channelId.lowercase()
-                    if (key in wanted && stop > keepFrom && start < keepTo) {
+                    val key = channelId.trim().lowercase()
+                    if (stop > keepFrom && start < keepTo && key !in filled && matcher.wants(key)) {
+                        fromThisSource += key
                         batch += ProgramEntity(epgId = key, start = start, stop = stop, title = title, description = desc)
                         if (batch.size >= BATCH) flush()
                     }
@@ -158,19 +173,14 @@ class TvRepository(
             )
             flush()
         }
-
-        if (nameMatches.isNotEmpty()) {
-            db.withTransaction { nameMatches.forEach { (id, epg) -> db.channels().setEpgId(id, epg) } }
-        }
+        matcher.finish()
+        filled += fromThisSource
         return count
     }
 
     companion object {
         const val HOUR = 3_600_000L
         private const val BATCH = 2_000
-        private val noise = Regex("""\b(hd|fhd|uhd|sd|4k|hevc|h265)\b""")
-
-        fun normalizeName(name: String): String =
-            name.lowercase().replace(noise, "").filter { it.isLetterOrDigit() }
+        fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
     }
 }
