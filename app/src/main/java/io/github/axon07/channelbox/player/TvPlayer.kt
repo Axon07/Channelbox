@@ -89,7 +89,10 @@ class TvPlayer(
     /** False while a recording or catch-up programme is playing. */
     val isLive: Boolean get() = !onDemand
 
-    private val bandwidthMeter = DefaultBandwidthMeter.getSingletonInstance(context)
+    // Assume a fast connection at the start, so streams don't open at their lowest quality.
+    private val bandwidthMeter = DefaultBandwidthMeter.Builder(context)
+        .setInitialBitrateEstimate(20_000_000L)
+        .build()
 
     /** Login for playing recordings saved on an SMB share. */
     var storageSettings: () -> StorageSettings = { StorageSettings() }
@@ -340,10 +343,15 @@ class TvPlayer(
                 .map { it.copy(selected = overridden && it.selected) }
     }
 
-    /** Caps automatic quality (0 = no limit), e.g. 720 to save data on a slow connection. */
+    /**
+     * Quality choice: 0 = best available, >0 = best up to that height, both held steady;
+     * [ADAPTIVE] = switch with the connection speed. Switching levels mid-stream can show green
+     * blocks on some streams, so steady is the default.
+     */
     fun setMaxQuality(height: Int) {
         val b = exo.trackSelectionParameters.buildUpon()
         if (height <= 0) b.clearVideoSizeConstraints() else b.setMaxVideoSize(Int.MAX_VALUE, height)
+        b.setForceHighestSupportedBitrate(height != ADAPTIVE)
         exo.trackSelectionParameters = b.build()
     }
 
@@ -442,3 +450,6 @@ class TvPlayer(
         const val DEFAULT_USER_AGENT = UserAgent.DEFAULT
     }
 }
+
+/** [TvPlayer.setMaxQuality] value: let quality follow the connection speed. */
+const val ADAPTIVE = -1

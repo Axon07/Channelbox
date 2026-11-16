@@ -16,6 +16,7 @@ class EpgMatcher(channels: List<Candidate>) {
 
     private data class XmlChannel(val id: String, val names: List<String>)
 
+    private val all = channels.associateBy { it.channelId }
     private val unmatched = LinkedHashMap<String, Candidate>().apply { channels.forEach { put(it.channelId, it) } }
     private val pending = ArrayList<XmlChannel>()
     private var finalized = false
@@ -66,6 +67,21 @@ class EpgMatcher(channels: List<Candidate>) {
         xml.forEach { x ->
             x.names.forEach { n -> byName[normalizeName(n)]?.toList()?.forEach { assign(it, x.id) } }
         }
+    }
+
+    /**
+     * Called after each guide source. Channels whose guide entry got no programmes (anywhere so far)
+     * become unmatched again, so the next guide can link them by id or name.
+     */
+    fun releaseEmpty(withProgrammes: Set<String>) {
+        val empty = assigned.filterValues { it !in withProgrammes }.keys.toList()
+        empty.forEach { id ->
+            val key = assigned.remove(id)
+            if (key != null && assigned.values.none { it == key }) wanted -= key
+            all[id]?.let { unmatched[id] = it }
+        }
+        pending.clear()
+        finalized = false
     }
 
     private fun assign(c: Candidate, xmlId: String) {

@@ -272,7 +272,13 @@ private fun SourceSettings(
     )
 }
 
-private val QUALITY_CHOICES = listOf(0 to "Best available", 1080 to "Up to 1080p", 720 to "Up to 720p", 480 to "Up to 480p")
+private val QUALITY_CHOICES = listOf(
+    0 to "Best available",
+    1080 to "Up to 1080p",
+    720 to "Up to 720p",
+    480 to "Up to 480p",
+    -1 to "Automatic (follows connection speed)",
+)
 
 @Composable
 private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (Page) -> Unit) {

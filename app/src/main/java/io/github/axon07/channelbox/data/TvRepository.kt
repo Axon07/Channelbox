@@ -211,6 +211,7 @@ class TvRepository(
         }
         matcher.finish()
         filled += fromThisSource
+        matcher.releaseEmpty(filled)
         return count
     }
 
