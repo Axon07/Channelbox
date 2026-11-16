@@ -185,6 +185,18 @@ fun GuideScreen(
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                 val total = maxWidth
+                // "Now" marker: a small pill on the time ruler.
+                if (now in guideStart until guideStart + GUIDE_SPAN) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = total * ((now - guideStart).toFloat() / GUIDE_SPAN) - 1.dp)
+                            .width(3.dp)
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Palette.Accent)
+                    )
+                }
                 for (i in 0 until (GUIDE_SPAN / GUIDE_STEP).toInt()) {
                     Text(
                         timeFormat(guideStart + i * GUIDE_STEP),
@@ -279,6 +291,9 @@ private fun GuideRow(
                     val e = minOf(p.stop, end)
                     ProgramCell(
                         title = (if (p.start < guideStart) "‹ " else "") + p.title,
+                        progress = if (p.start <= now && now < p.stop) {
+                            ((now - s).toFloat() / (e - s).coerceAtLeast(1)).coerceIn(0f, 1f)
+                        } else 0f,
                         modifier = Modifier
                             .offset(x = x(s))
                             .width(x(e) - x(s))
@@ -291,15 +306,20 @@ private fun GuideRow(
                     )
                 }
             }
-            if (now in guideStart until end) {
-                Box(Modifier.offset(x = x(now)).width(2.dp).fillMaxHeight().background(Palette.Accent))
-            }
         }
     }
 }
 
 @Composable
-private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, live: Boolean, recording: Boolean, catchup: Boolean) {
+private fun ProgramCell(
+    title: String,
+    modifier: Modifier,
+    selected: Boolean,
+    live: Boolean,
+    recording: Boolean,
+    catchup: Boolean,
+    progress: Float = 0f,
+) {
     Box(
         modifier
             .padding(end = 3.dp)
@@ -310,11 +330,19 @@ private fun ProgramCell(title: String, modifier: Modifier, selected: Boolean, li
                     live -> Palette.SurfaceLive
                     else -> Palette.Surface
                 }
-            )
-            .padding(horizontal = 10.dp),
+            ),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Elapsed part of the show that's on now, drawn behind the title so the text stays readable.
+        if (progress > 0f) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress)
+                    .background(if (selected) Color(0x26FFFFFF) else Color(0x1A3D8BFD))
+            )
+        }
+        Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (recording) Text("● ", fontSize = 13.sp, color = Palette.Recording)
             if (catchup) Text("↺ ", fontSize = 13.sp, color = Palette.TextDim)
             Text(title, fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)

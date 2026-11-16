@@ -1,7 +1,6 @@
 package io.github.axon07.channelbox.data
 
 import android.content.Context
-import io.github.axon07.channelbox.player.TvPlayer
 import io.github.axon07.channelbox.system.RecordingWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,13 +39,13 @@ class Recorder(
     private val context: Context,
     private val db: AppDatabase,
     private val http: OkHttpClient,
+    val storage: RecordingStorage,
 ) {
     private val dao = db.recordings()
 
     val recordings: Flow<List<RecordingEntity>> = dao.observeAll()
 
-    fun directory(): File =
-        (context.getExternalFilesDir("recordings") ?: File(context.filesDir, "recordings")).also { it.mkdirs() }
+    fun directory(): File = storage.localDirectory()
 
     suspend fun schedule(channel: ChannelEntity, title: String, start: Long, stop: Long, programStart: Long?): Long {
         val id = dao.insert(
@@ -77,7 +76,7 @@ class Recorder(
 
     suspend fun delete(recording: RecordingEntity) {
         RecordingWorker.cancel(context, recording.id)
-        dao.get(recording.id)?.filePath?.let { File(it).delete() }
+        dao.get(recording.id)?.filePath?.let { storage.delete(it) }
         dao.delete(recording.id)
     }
 
@@ -85,7 +84,7 @@ class Recorder(
     suspend fun tidyUp() {
         val now = System.currentTimeMillis()
         dao.getAll().filter { it.status == RecStatus.RECORDING && it.stop < now }.forEach {
-            val size = it.filePath?.let { p -> File(p).length() } ?: 0L
+            val size = it.filePath?.takeIf { p -> p.startsWith("/") }?.let { p -> File(p).length() } ?: it.sizeBytes
             dao.update(it.copy(status = if (size > 0) RecStatus.DONE else RecStatus.FAILED, sizeBytes = size))
         }
     }
@@ -124,38 +123,46 @@ class Recorder(
     }
 
     private inner class Session(var rec: RecordingEntity) {
-        private var file: File? = null
-        private var out: OutputStream? = null
+        private var sink: RecordingSink? = null
+        private var written = 0L
         private var lastUpdate = 0L
 
+        /** Opens the file in the storage chosen in Settings (this box, USB, network share…). */
         suspend fun open(extension: String) {
-            val f = File(directory(), "${fileName(rec)}.$extension")
-            file = f
-            out = BufferedOutputStream(FileOutputStream(f, true), 256 * 1024)
-            rec = rec.copy(filePath = f.path)
+            val s = storage.open("${fileName(rec)}.$extension")
+            sink = s
+            rec = rec.copy(filePath = s.location)
             dao.update(rec)
         }
 
         suspend fun write(bytes: ByteArray, length: Int = bytes.size) {
-            out?.write(bytes, 0, length) ?: return
+            val out = sink?.output ?: return
+            withContext(Dispatchers.IO) { out.write(bytes, 0, length) }
+            written += length
             val now = System.currentTimeMillis()
             if (now - lastUpdate > 10_000) {
                 lastUpdate = now
-                out?.flush()
-                rec = rec.copy(sizeBytes = file?.length() ?: 0)
+                rec = rec.copy(sizeBytes = written)
                 dao.update(rec)
             }
         }
 
         suspend fun close(error: String?) {
-            runCatching { out?.flush(); out?.close() }
-            val size = file?.length() ?: 0L
+            var problem = error
+            val location = sink?.let { s ->
+                try {
+                    s.finish()
+                } catch (e: Exception) {
+                    problem = problem ?: e.message
+                    s.location
+                }
+            }
             val status = when {
-                size > 0 -> RecStatus.DONE
-                error != null -> RecStatus.FAILED
+                written > 0 -> RecStatus.DONE
+                problem != null -> RecStatus.FAILED
                 else -> RecStatus.CANCELLED
             }
-            rec = rec.copy(status = status, sizeBytes = size, error = error)
+            rec = rec.copy(status = status, sizeBytes = written, error = problem, filePath = location ?: rec.filePath)
             dao.update(rec)
         }
     }
@@ -271,7 +278,7 @@ class Recorder(
     /** Runs a request with the channel's headers; cancelling the coroutine aborts it. */
     private suspend fun execute(spec: StreamSpec, url: String): Response {
         val builder = Request.Builder().url(url)
-            .header("User-Agent", spec.header("User-Agent") ?: TvPlayer.DEFAULT_USER_AGENT)
+            .header("User-Agent", spec.header("User-Agent") ?: UserAgent.current)
         spec.headers.forEach { (k, v) -> if (!k.equals("User-Agent", ignoreCase = true)) builder.header(k, v) }
         val call: Call = http.newCall(builder.build())
         val handle = currentCoroutineContext().job.invokeOnCompletion { call.cancel() }

@@ -57,11 +57,11 @@ import kotlin.math.abs
 enum class Mode {
     PLAYER, CHANNEL_LIST, GUIDE, GROUPS, PROGRAM_MENU,
     RECORDINGS, RECORDING_MENU, PLAYBACK,
-    SETTINGS, SETUP, EXIT_CONFIRM, UPDATE, OPTIONS,
+    SETTINGS, SETUP, EXIT_CONFIRM, UPDATE, OPTIONS, MULTIVIEW,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
-private val OWN_KEY_MODES = setOf(Mode.PLAYER, Mode.CHANNEL_LIST, Mode.GUIDE, Mode.GROUPS, Mode.RECORDINGS, Mode.PLAYBACK)
+private val OWN_KEY_MODES = setOf(Mode.PLAYER, Mode.CHANNEL_LIST, Mode.GUIDE, Mode.GROUPS, Mode.RECORDINGS, Mode.PLAYBACK, Mode.MULTIVIEW)
 
 /** Screens that show the guide with the small live preview. */
 private val GUIDE_MODES = setOf(Mode.GUIDE, Mode.GROUPS, Mode.PROGRAM_MENU)
@@ -89,6 +89,7 @@ private val HANDLED_KEYS = OK_KEYS + RECORD_KEYS + setOf(
     AndroidKeyEvent.KEYCODE_LAST_CHANNEL,
     AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AndroidKeyEvent.KEYCODE_MEDIA_PLAY, AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
     AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
+    AndroidKeyEvent.KEYCODE_CAPTIONS, AndroidKeyEvent.KEYCODE_PROG_GREEN,
 ) + (AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9) +
     (AndroidKeyEvent.KEYCODE_NUMPAD_0..AndroidKeyEvent.KEYCODE_NUMPAD_9)
 
@@ -133,6 +134,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val updatePrompt by vm.updatePrompt.collectAsStateWithLifecycle()
     val tracksVersion by vm.player.tracksVersion.collectAsStateWithLifecycle()
     val filterCounts by vm.filterCounts.collectAsStateWithLifecycle()
+    val inPip by vm.inPip.collectAsStateWithLifecycle()
+    val vpnState by vm.vpnState.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
     var mode by remember { mutableStateOf(if (settings.sourceType == SourceType.NONE) Mode.SETUP else Mode.PLAYER) }
@@ -148,6 +151,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var optionsReturn by remember { mutableStateOf(Mode.PLAYER) }
     var optionsToken by remember { mutableIntStateOf(0) }
     var playbackReturn by remember { mutableStateOf(Mode.RECORDINGS) }
+    val multi = remember { MultiViewState() }
+    var multiPicking by remember { mutableStateOf(false) }
+    var multiPickIndex by remember { mutableIntStateOf(0) }
+    var streamInfo by remember { mutableStateOf<io.github.axon07.channelbox.player.StreamInfo?>(null) }
+    var captionLangs by remember { mutableStateOf<List<String>>(emptyList()) }
     var menuChannel by remember { mutableStateOf<ChannelEntity?>(null) }
     var menuProgram by remember { mutableStateOf<ProgramEntity?>(null) }
     var menuRecording by remember { mutableStateOf<RecordingEntity?>(null) }
@@ -167,7 +175,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val swipeThreshold = with(LocalDensity.current) { 60.dp.toPx() }
 
     val weOwnKeys = mode in OWN_KEY_MODES
-    val groupItemCount = filters.size + 2 // + Recordings + Settings
+    val groupItemCount = filters.size + 3 // + Multi-view, Recordings, Settings
 
     // ---- Navigation helpers --------------------------------------------------------------------
 
@@ -205,6 +213,28 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
 
+    fun openMultiView() {
+        multi.start(vm, current)
+        multiPicking = false
+        mode = Mode.MULTIVIEW
+    }
+
+    /** Leaves multi-view; [watch] = the channel to continue full screen. */
+    fun closeMultiView(watch: ChannelEntity? = null) {
+        multi.release()
+        multiPicking = false
+        if (watch != null) vm.tune(watch) else vm.resumeLive()
+        mode = Mode.PLAYER
+    }
+
+    fun toggleCaptions() {
+        if (vm.player.captionLanguages().isEmpty()) {
+            vm.showToast("No subtitles or captions on this channel")
+        } else {
+            vm.showToast(if (vm.player.toggleCaptions()) "Captions on" else "Captions off")
+        }
+    }
+
     fun selectGroupItem(i: Int) {
         when {
             i < filters.size -> {
@@ -212,7 +242,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 guide.row = 0
                 mode = Mode.GUIDE
             }
-            i == filters.size -> {
+            i == filters.size -> openMultiView()
+            i == filters.size + 1 -> {
                 recIndex = 0
                 mode = Mode.RECORDINGS
             }
@@ -326,6 +357,13 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.GROUPS -> selectGroupItem(groupsIndex)
             Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let { openRecording(it) }
             Mode.PLAYBACK -> togglePause()
+            Mode.MULTIVIEW -> if (multiPicking) {
+                visible.getOrNull(multiPickIndex)?.let { multi.assign(vm, multi.focused, it) }
+                multiPicking = false
+            } else {
+                multiPickIndex = visible.indexOfFirst { it.id == multi.channels[multi.focused]?.id }.coerceAtLeast(0)
+                multiPicking = true
+            }
             else -> Unit
         }
     }
@@ -339,6 +377,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 menuRecording = it
                 mode = Mode.RECORDING_MENU
             }
+            Mode.MULTIVIEW -> if (!multiPicking) multi.channels[multi.focused]?.let { closeMultiView(it) }
             else -> Unit
         }
     }
@@ -366,6 +405,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_MENU -> openOptions()
                 AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> vm.previousChannel()
                 in RECORD_KEYS -> vm.toggleRecordCurrent()
+                AndroidKeyEvent.KEYCODE_CAPTIONS -> toggleCaptions()
+                AndroidKeyEvent.KEYCODE_PROG_GREEN -> openMultiView()
                 else -> return false
             }
             Mode.CHANNEL_LIST -> {
@@ -434,7 +475,28 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekBy(30_000L)
                 AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_INFO -> playbackToken++
                 AndroidKeyEvent.KEYCODE_MENU -> openOptions()
+                AndroidKeyEvent.KEYCODE_CAPTIONS -> toggleCaptions()
                 else -> return false
+            }
+            Mode.MULTIVIEW -> if (multiPicking) {
+                val size = visible.size
+                when (code) {
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> if (size > 0) multiPickIndex = (multiPickIndex - 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (size > 0) multiPickIndex = (multiPickIndex + 1).mod(size)
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { vm.cycleFilter(-1); multiPickIndex = 0 }
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { vm.cycleFilter(1); multiPickIndex = 0 }
+                    else -> return false
+                }
+            } else {
+                when (code) {
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> multi.move(0, -1)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> multi.move(0, 1)
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> multi.move(-1, 0)
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> multi.move(1, 0)
+                    AndroidKeyEvent.KEYCODE_MENU, AndroidKeyEvent.KEYCODE_PROG_GREEN ->
+                        multi.setTileCount(if (multi.tiles == 4) 2 else 4)
+                    else -> return false
+                }
             }
             else -> return false
         }
@@ -475,6 +537,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             bannerVisible = false
         }
     }
+    // Live stream details for the info banner (resolution, fps, audio, bitrate, captions).
+    LaunchedEffect(bannerVisible) {
+        while (bannerVisible) {
+            streamInfo = vm.player.streamInfo()
+            captionLangs = vm.player.captionLanguages()
+            delay(1_000)
+        }
+    }
     LaunchedEffect(touchBarToken) {
         if (touchBarToken > 0) {
             touchBar = true
@@ -488,8 +558,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             commitDigits()
         }
     }
-    LaunchedEffect(listIndex, mode) {
+    LaunchedEffect(listIndex, mode, multiPickIndex, multiPicking) {
         if (mode == Mode.CHANNEL_LIST) listState.scrollToItem((listIndex - 3).coerceAtLeast(0))
+        if (mode == Mode.MULTIVIEW && multiPicking) listState.scrollToItem((multiPickIndex - 3).coerceAtLeast(0))
     }
     LaunchedEffect(mode) {
         ok.armed = false
@@ -572,10 +643,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
             Mode.OPTIONS -> mode = optionsReturn
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
-            Mode.RECORDINGS -> openGroups(filters.size)
+            Mode.RECORDINGS -> openGroups(filters.size + 1)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.PLAYBACK -> leavePlayback()
-            Mode.SETTINGS -> openGroups(filters.size + 1)
+            Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
+            Mode.SETTINGS -> openGroups(filters.size + 2)
             Mode.SETUP -> mode = Mode.SETTINGS
         }
     }
@@ -624,7 +696,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
-            modifier = if (mode in GUIDE_MODES) {
+            modifier = if (inPip) {
+                Modifier.fillMaxSize()
+            } else if (mode == Mode.MULTIVIEW) {
+                Modifier.size(0.dp)
+            } else if (mode in GUIDE_MODES) {
                 Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = PREVIEW_PADDING, end = PREVIEW_PADDING)
@@ -634,7 +710,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             },
         )
 
-        when (mode) {
+        // In picture-in-picture only the video is shown.
+        if (!inPip) when (mode) {
             Mode.GUIDE, Mode.GROUPS, Mode.PROGRAM_MENU -> {
                 GuideScreen(
                     state = guide,
@@ -801,7 +878,13 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 // Re-read the tracks each time the panel opens or a choice is made.
                 val audio = remember(optionsToken, tracksVersion) { vm.player.audioTracks() }
                 val subtitles = remember(optionsToken, tracksVersion) { vm.player.subtitleTracks() }
+                val quality = remember(optionsToken, tracksVersion) { vm.player.videoTracks() }
                 OptionsPanel(
+                    quality = quality,
+                    onQuality = {
+                        vm.player.select(C.TRACK_TYPE_VIDEO, it)
+                        optionsToken++
+                    },
                     audio = audio,
                     subtitles = subtitles,
                     scale = settings.videoScale,
@@ -815,6 +898,37 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     },
                     onScale = { vm.setVideoScale(it) },
                 )
+            }
+            Mode.MULTIVIEW -> {
+                MultiViewScreen(multi, onTileTap = { i ->
+                    if (multi.focused == i) {
+                        multiPickIndex = 0
+                        multiPicking = true
+                    } else {
+                        multi.select(i)
+                    }
+                })
+                if (multiPicking) {
+                    ChannelListPanel(
+                        channels = visible,
+                        selected = multiPickIndex,
+                        listState = listState,
+                        filterLabel = filter.label,
+                        favorites = favorites,
+                        playingId = multi.channels[multi.focused]?.id,
+                        upcoming = upcoming,
+                        now = now,
+                        onSelect = { i ->
+                            visible.getOrNull(i)?.let { multi.assign(vm, multi.focused, it) }
+                            multiPicking = false
+                        },
+                        onFavorite = { i -> visible.getOrNull(i)?.let { vm.toggleFavorite(it) } },
+                        onGroup = { d ->
+                            vm.cycleFilter(d)
+                            multiPickIndex = 0
+                        },
+                    )
+                }
             }
             Mode.EXIT_CONFIRM -> ActionDialog(
                 title = "Exit Channelbox?",
@@ -835,7 +949,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val cur = current
                 if (cur != null && cur.id in recordingChannels) RecIndicator()
                 if (mode == Mode.PLAYER && bannerVisible && cur != null) {
-                    InfoBanner(cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat)
+                    InfoBanner(
+                        cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
+                        info = streamInfo,
+                        captions = captionLangs,
+                        vpnOn = vpnState == io.github.axon07.channelbox.system.VpnManager.State.On,
+                    )
                 }
                 if (mode == Mode.PLAYER && touchBar) {
                     TouchBar(
@@ -847,7 +966,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         onChannelDown = { touchBarToken++; vm.zap(-1) },
                         onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
                         onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
+                        onCaptions = { touchBarToken++; toggleCaptions() },
                         onOptions = { touchBar = false; openOptions() },
+                        onPip = if (io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)) {
+                            { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
+                        } else null,
+                        onMultiView = { touchBar = false; openMultiView() },
                         onSettings = { touchBar = false; mode = Mode.SETTINGS },
                         onExit = { touchBar = false; askExit(Mode.PLAYER) },
                     )
@@ -872,9 +996,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
             }
         }
-        if (digits.isNotEmpty()) {
+        if (digits.isNotEmpty() && !inPip) {
             NumberEntry(digits, digits.toIntOrNull()?.let { n -> allChannels.firstOrNull { it.number == n } })
         }
-        toast?.let { ToastMessage(it.text) }
+        if (!inPip) toast?.let { ToastMessage(it.text) }
     }
 }

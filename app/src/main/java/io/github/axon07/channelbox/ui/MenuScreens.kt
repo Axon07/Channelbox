@@ -48,8 +48,8 @@ import java.util.Locale
 // ---- Groups menu (Back from the guide) ---------------------------------------------------------
 
 /**
- * Left-hand menu over the guide: channel groups, then Recordings and Settings pinned at the bottom.
- * Index layout: 0 until filters.size = groups, filters.size = Recordings, filters.size + 1 = Settings.
+ * Left-hand menu over the guide: channel groups, then Multi-view, Recordings and Settings at the bottom.
+ * Index layout: 0 until filters.size = groups, then +0 Multi-view, +1 Recordings, +2 Settings.
  */
 @Composable
 fun GroupsPanel(
@@ -80,10 +80,8 @@ fun GroupsPanel(
             itemsIndexed(filters) { i, f ->
                 MenuRow(
                     label = f.label,
-                    leading = when (f) {
-                        ChannelFilter.Favorites -> "★"
-                        else -> null
-                    },
+                    leading = null,
+                    leadingIcon = if (f == ChannelFilter.Favorites) AppIcons.Star else null,
                     leadingColor = Palette.Favorite,
                     trailing = counts[f]?.toString(),
                     active = f == active,
@@ -96,22 +94,34 @@ fun GroupsPanel(
         Box(Modifier.padding(horizontal = 26.dp).fillMaxWidth().height(1.dp).background(Color(0x1FFFFFFF)))
         Spacer(Modifier.height(8.dp))
         MenuRow(
-            label = "Recordings",
-            leading = "●",
-            leadingColor = Palette.Recording,
-            trailing = recordingCount.takeIf { it > 0 }?.toString(),
+            label = "Multi-view",
+            leading = null,
+            leadingIcon = AppIcons.Grid,
+            leadingColor = Palette.TextDim,
+            trailing = null,
             active = false,
             selected = selected == filters.size,
             onClick = { onSelect(filters.size) },
         )
         MenuRow(
-            label = "Settings",
-            leading = "⚙",
-            leadingColor = Palette.TextDim,
-            trailing = null,
+            label = "Recordings",
+            leading = null,
+            leadingIcon = AppIcons.Record,
+            leadingColor = Palette.Recording,
+            trailing = recordingCount.takeIf { it > 0 }?.toString(),
             active = false,
             selected = selected == filters.size + 1,
             onClick = { onSelect(filters.size + 1) },
+        )
+        MenuRow(
+            label = "Settings",
+            leading = null,
+            leadingIcon = AppIcons.Settings,
+            leadingColor = Palette.TextDim,
+            trailing = null,
+            active = false,
+            selected = selected == filters.size + 2,
+            onClick = { onSelect(filters.size + 2) },
         )
     }
 }
@@ -121,6 +131,7 @@ private fun MenuRow(
     label: String,
     leading: String?,
     leadingColor: Color,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     trailing: String?,
     active: Boolean,
     selected: Boolean,
@@ -147,6 +158,7 @@ private fun MenuRow(
         Spacer(Modifier.width(11.dp))
         Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
             when {
+                leadingIcon != null -> AppIcon(leadingIcon, tint = leadingColor, size = 15.dp)
                 leading != null -> Text(leading, fontSize = 13.sp, color = leadingColor)
                 active -> Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Accent))
             }
@@ -309,10 +321,10 @@ fun BoxScope.PlaybackOverlay(
                 fontSize = 14.sp, color = Palette.TextDim, modifier = Modifier.weight(1f),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("⏪ 10s") { onSeek(-10_000L) }
-                Pill(if (playing) "⏸ Pause" else "▶ Play", onClick = onToggle)
-                Pill("30s ⏩") { onSeek(30_000L) }
-                Pill("✕ Close", onClick = onClose)
+                Pill("10 s", icon = AppIcons.Rewind) { onSeek(-10_000L) }
+                Pill(if (playing) "Pause" else "Play", icon = if (playing) AppIcons.Pause else AppIcons.Play, onClick = onToggle)
+                Pill("30 s", icon = AppIcons.Forward) { onSeek(30_000L) }
+                Pill("Close", icon = AppIcons.Close, onClick = onClose)
             }
         }
     }
@@ -369,6 +381,8 @@ val SCALE_LABELS = listOf("Fit", "Zoom (fill screen)", "Stretch")
 
 @Composable
 fun OptionsPanel(
+    quality: List<io.github.axon07.channelbox.player.TrackOption>,
+    onQuality: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
     audio: List<io.github.axon07.channelbox.player.TrackOption>,
     subtitles: List<io.github.axon07.channelbox.player.TrackOption>,
     scale: Int,
@@ -394,11 +408,16 @@ fun OptionsPanel(
             var firstUsed = false
             fun Modifier.firstFocus(): Modifier = if (!firstUsed) { firstUsed = true; this.focusRequester(first) } else this
 
+            if (quality.size > 1) {
+                Section("Quality")
+                quality.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onQuality(t) } }
+            }
+
             Section("Audio")
             if (audio.isEmpty()) Text("No audio tracks yet", fontSize = 13.sp, color = Palette.TextDim)
             audio.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onAudio(t) } }
 
-            Section("Subtitles")
+            Section("Subtitles & closed captions")
             subtitles.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onSubtitle(t) } }
 
             Section("Picture size")

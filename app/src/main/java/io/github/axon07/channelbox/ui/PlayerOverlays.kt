@@ -49,6 +49,9 @@ fun BoxScope.InfoBanner(
     programs: List<ProgramEntity>?,
     now: Long,
     timeFormat: (Long) -> String,
+    info: io.github.axon07.channelbox.player.StreamInfo? = null,
+    captions: List<String> = emptyList(),
+    vpnOn: Boolean = false,
 ) {
     val (current, next) = nowAndNext(programs, now)
     Box(
@@ -92,6 +95,18 @@ fun BoxScope.InfoBanner(
                         "Next  ${timeFormat(next.start)}   ${next.title}",
                         fontSize = 13.sp, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
+                }
+                // What's actually playing: quality, frame rate, audio, bitrate, captions, VPN.
+                val details = listOfNotNull(info?.video, info?.audio, info?.bitrate)
+                if (details.isNotEmpty() || captions.isNotEmpty() || vpnOn) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        details.forEach { Tag(it) }
+                        if (captions.isNotEmpty()) {
+                            Tag("CC: " + captions.take(4).joinToString(", ") + if (captions.size > 4) "…" else "", icon = AppIcons.Captions)
+                        }
+                        if (vpnOn) Tag("VPN", icon = AppIcons.Shield)
+                    }
                 }
             }
         }
@@ -254,4 +269,22 @@ fun BoxScope.ToastMessage(text: String) {
             .background(Color(0xE6151B23))
             .padding(horizontal = 18.dp, vertical = 10.dp),
     )
+}
+
+@Composable
+private fun Tag(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null) {
+    Row(
+        Modifier
+            .padding(end = 6.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(Color(0x26FFFFFF))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            AppIcon(icon, tint = Palette.Text, size = 12.dp)
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(text, fontSize = 11.sp, color = Palette.Text, maxLines = 1)
+    }
 }

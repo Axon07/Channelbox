@@ -27,8 +27,11 @@ import androidx.media3.exoplayer.drm.HttpMediaDrmCallback
 import androidx.media3.exoplayer.drm.UnsupportedDrmException
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
+import io.github.axon07.channelbox.data.StorageSettings
 import io.github.axon07.channelbox.data.StreamSpec
 import io.github.axon07.channelbox.data.StreamSpecs
+import io.github.axon07.channelbox.data.UserAgent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,7 +47,10 @@ sealed interface PlayerStatus {
     data class Error(val message: String) : PlayerStatus
 }
 
-/** An audio or subtitle track the viewer can pick. [group] null = "Off". */
+/** What's playing right now, for the info banner. */
+data class StreamInfo(val video: String?, val audio: String?, val bitrate: String?)
+
+/** An audio, video or subtitle track the viewer can pick. [group] null = "Off" / "Auto". */
 data class TrackOption(val label: String, val group: Tracks.Group?, val index: Int, val selected: Boolean)
 
 /**
@@ -83,6 +89,11 @@ class TvPlayer(
     /** False while a recording or catch-up programme is playing. */
     val isLive: Boolean get() = !onDemand
 
+    private val bandwidthMeter = DefaultBandwidthMeter.getSingletonInstance(context)
+
+    /** Login for playing recordings saved on an SMB share. */
+    var storageSettings: () -> StorageSettings = { StorageSettings() }
+
     // FFmpeg (bundled) decodes AC3 / E-AC3 / DTS / TrueHD audio when the box can't.
     private val renderers = DefaultRenderersFactory(context)
         .setExtensionRendererMode(
@@ -92,6 +103,7 @@ class TvPlayer(
         .setEnableDecoderFallback(true)
 
     val exo: ExoPlayer = ExoPlayer.Builder(context, renderers)
+        .setBandwidthMeter(bandwidthMeter)
         .build()
         .apply {
             setAudioAttributes(
@@ -189,12 +201,13 @@ class TvPlayer(
     }
 
     private fun buildSource(s: StreamSpec, mime: String?): MediaSource {
-        val userAgent = s.header("User-Agent") ?: DEFAULT_USER_AGENT
+        val userAgent = s.header("User-Agent") ?: UserAgent.current
         val httpSource = OkHttpDataSource.Factory(http)
             .setUserAgent(userAgent)
             .setDefaultRequestProperties(s.headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) })
         // DefaultDataSource adds udp://, rtmp://, file:// … and uses OkHttp for http(s).
-        val dataSource = DefaultDataSource.Factory(context, httpSource)
+        val dataSource = if (s.url.startsWith("smb://")) SmbDataSource.Factory(storageSettings)
+        else DefaultDataSource.Factory(context, httpSource)
         val sources = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSource)
         val item = MediaItem.Builder().setUri(s.url)
         if (mime != null) item.setMimeType(mime)
@@ -317,10 +330,75 @@ class TvPlayer(
         return out
     }
 
+    /** Video qualities, "Auto" first. */
+    fun videoTracks(): List<TrackOption> {
+        val list = tracks(C.TRACK_TYPE_VIDEO)
+        val overridden = exo.trackSelectionParameters.overrides.keys.any { it.type == C.TRACK_TYPE_VIDEO }
+        val playing = exo.videoFormat?.height?.takeIf { it > 0 }?.let { " (now ${it}p)" }.orEmpty()
+        return listOf(TrackOption("Auto$playing", null, 0, !overridden)) +
+            list.sortedByDescending { it.group?.getTrackFormat(it.index)?.height ?: 0 }
+                .map { it.copy(selected = overridden && it.selected) }
+    }
+
+    /** Caps automatic quality (0 = no limit), e.g. 720 to save data on a slow connection. */
+    fun setMaxQuality(height: Int) {
+        val b = exo.trackSelectionParameters.buildUpon()
+        if (height <= 0) b.clearVideoSizeConstraints() else b.setMaxVideoSize(Int.MAX_VALUE, height)
+        exo.trackSelectionParameters = b.build()
+    }
+
+    /** Languages of the subtitles / closed captions the stream offers. */
+    fun captionLanguages(): List<String> = tracks(C.TRACK_TYPE_TEXT).map { it.label.substringBefore(" · ") }.distinct()
+
+    val captionsOn: Boolean
+        get() = C.TRACK_TYPE_TEXT !in exo.trackSelectionParameters.disabledTrackTypes &&
+            tracks(C.TRACK_TYPE_TEXT).any { it.selected }
+
+    /** CC button: turns captions off, or on in the box's language (else the first one). Returns the new state. */
+    fun toggleCaptions(): Boolean {
+        val text = tracks(C.TRACK_TYPE_TEXT)
+        if (captionsOn || text.isEmpty()) {
+            select(C.TRACK_TYPE_TEXT, TrackOption("Off", null, 0, false))
+            return false
+        }
+        val lang = Locale.getDefault().language
+        val pick = text.firstOrNull { it.group?.getTrackFormat(it.index)?.language?.startsWith(lang) == true } ?: text.first()
+        select(C.TRACK_TYPE_TEXT, pick)
+        return true
+    }
+
+    fun streamInfo(): StreamInfo {
+        val v = exo.videoFormat
+        val a = exo.audioFormat
+        val video = v?.let { f ->
+            listOfNotNull(
+                if (f.height > 0) "${f.height}p" else null,
+                f.frameRate.takeIf { it > 0 }?.let { "${Math.round(it)} fps" },
+                codecName(f.sampleMimeType ?: f.codecs),
+            ).joinToString(" · ").ifEmpty { null }
+        }
+        val audio = a?.let { describe(it, 1).substringAfter("Track 1 · ", describe(it, 1)) }
+        val bits = (v?.bitrate?.takeIf { it > 0 } ?: bandwidthMeter.bitrateEstimate.toInt().takeIf { it > 0 })
+            ?.let { String.format(Locale.US, "%.1f Mbps", it / 1_000_000.0) }
+        return StreamInfo(video, audio, bits)
+    }
+
+    private fun codecName(mime: String?): String? = when {
+        mime == null -> null
+        mime.contains("avc") || mime == MimeTypes.VIDEO_H264 -> "H.264"
+        mime.contains("hev") || mime.contains("hvc") || mime == MimeTypes.VIDEO_H265 -> "H.265"
+        mime.contains("av01") || mime == MimeTypes.VIDEO_AV1 -> "AV1"
+        mime == MimeTypes.VIDEO_MPEG2 -> "MPEG-2"
+        mime.contains("vp9") || mime == MimeTypes.VIDEO_VP9 -> "VP9"
+        else -> null
+    }
+
     fun select(type: Int, option: TrackOption) {
         val builder = exo.trackSelectionParameters.buildUpon()
         val group = option.group
-        if (group == null) {
+        if (group == null && type == C.TRACK_TYPE_VIDEO) {
+            builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+        } else if (group == null) {
             builder.setTrackTypeDisabled(type, true)
         } else {
             builder.setTrackTypeDisabled(type, false)
@@ -330,6 +408,13 @@ class TvPlayer(
     }
 
     private fun describe(f: Format, number: Int): String {
+        if (f.sampleMimeType?.startsWith("video/") == true || f.height > 0) {
+            return listOfNotNull(
+                if (f.height > 0) "${f.height}p" else "Video $number",
+                f.frameRate.takeIf { it > 0 }?.let { "${Math.round(it)} fps" },
+                f.bitrate.takeIf { it > 0 }?.let { String.format(Locale.US, "%.1f Mbps", it / 1_000_000.0) },
+            ).joinToString(" · ")
+        }
         val language = f.language?.takeIf { it.isNotBlank() && it != "und" }
             ?.let { Locale(it).displayLanguage.takeIf { name -> name.isNotBlank() } ?: it }
         val name = f.label?.takeIf { it.isNotBlank() } ?: language ?: "Track $number"
@@ -354,6 +439,6 @@ class TvPlayer(
     }
 
     companion object {
-        const val DEFAULT_USER_AGENT = "Channelbox/1.0 (Linux; Android) ExoPlayer"
+        const val DEFAULT_USER_AGENT = UserAgent.DEFAULT
     }
 }

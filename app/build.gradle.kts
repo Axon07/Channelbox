@@ -74,7 +74,12 @@ android {
     }
 
     packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += listOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "/META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            "/META-INF/DEPENDENCIES",
+            "/META-INF/INDEX.LIST",
+        )
     }
 }
 
@@ -114,6 +119,9 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.work.runtime.ktx)
     implementation(libs.okhttp)
+    implementation(libs.okhttp.doh)
+    implementation(libs.wireguard.tunnel)
+    implementation(libs.smbj)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.serialization.json)
 

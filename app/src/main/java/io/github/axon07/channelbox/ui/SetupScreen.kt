@@ -151,6 +151,7 @@ fun TvTextField(
     onValueChange: (String) -> Unit,
     password: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
+    lines: Int = 1,
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
@@ -159,13 +160,15 @@ fun TvTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+            singleLine = lines == 1,
+            minLines = lines,
+            maxLines = if (lines == 1) 1 else lines,
+            textStyle = TextStyle(color = Color.White, fontSize = if (lines == 1) 16.sp else 12.sp),
             cursorBrush = SolidColor(Color.White),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (password) KeyboardType.Password else keyboardType,
-                imeAction = ImeAction.Next,
+                imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default,
             ),
             modifier = Modifier
                 .fillMaxWidth()

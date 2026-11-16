@@ -49,6 +49,29 @@ object SetTopBox {
         false
     }
 
+    /** Restarts Channelbox (used after changing proxy / DNS settings). */
+    fun restart(context: Context) {
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        )
+        Runtime.getRuntime().exit(0)
+    }
+
+    fun supportsPip(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    /** Shrinks the app into a small always-on-top video window. */
+    fun enterPip(activity: android.app.Activity): Boolean {
+        if (!supportsPip(activity) || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return runCatching {
+            activity.enterPictureInPictureMode(
+                android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
+            )
+        }.getOrDefault(false)
+    }
+
     fun adbGrantCommand(context: Context) =
         "adb shell appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow"
 }

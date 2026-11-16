@@ -52,18 +52,28 @@ fun Context.findActivity(): Activity? {
 }
 
 @Composable
-fun Pill(text: String, modifier: Modifier = Modifier, highlighted: Boolean = false, onClick: () -> Unit) {
-    Text(
-        text,
-        fontSize = 14.sp,
-        color = Palette.Text,
-        maxLines = 1,
-        modifier = modifier
+fun Pill(
+    text: String,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    iconTint: Color = Palette.Text,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier
             .clip(RoundedCornerShape(18.dp))
             .background(if (highlighted) Palette.Accent else Color(0xE61F2A37))
             .tap(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-    )
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            AppIcon(icon, tint = iconTint, size = 16.dp)
+            if (text.isNotEmpty()) androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 7.dp))
+        }
+        if (text.isNotEmpty()) Text(text, fontSize = 14.sp, color = Palette.Text, maxLines = 1)
+    }
 }
 
 /** On-screen buttons shown when the video is tapped (phones, tablets, mouse users). */
@@ -77,7 +87,10 @@ fun BoxScope.TouchBar(
     onChannelDown: () -> Unit,
     onFavorite: () -> Unit,
     onRecord: () -> Unit,
+    onCaptions: () -> Unit,
     onOptions: () -> Unit,
+    onPip: (() -> Unit)?,
+    onMultiView: () -> Unit,
     onSettings: () -> Unit,
     onExit: () -> Unit,
 ) {
@@ -91,14 +104,23 @@ fun BoxScope.TouchBar(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        Pill("☰  Channels", onClick = onChannels)
-        Pill("▦  Guide", onClick = onGuide)
-        Pill("▲  CH+", onClick = onChannelUp)
-        Pill("▼  CH−", onClick = onChannelDown)
-        Pill(if (favorite) "★  Favourite" else "☆  Favourite", highlighted = favorite, onClick = onFavorite)
-        Pill(if (recording) "■  Stop rec" else "●  Record", highlighted = recording, onClick = onRecord)
-        Pill("♪  Audio & subtitles", onClick = onOptions)
-        Pill("⚙  Settings", onClick = onSettings)
-        Pill("⏻  Exit", onClick = onExit)
+        Pill("Channels", icon = AppIcons.List, onClick = onChannels)
+        Pill("Guide", icon = AppIcons.Guide, onClick = onGuide)
+        Pill("CH+", icon = AppIcons.Up, onClick = onChannelUp)
+        Pill("CH−", icon = AppIcons.Down, onClick = onChannelDown)
+        Pill(
+            "Favourite", icon = if (favorite) AppIcons.Star else AppIcons.StarOutline,
+            iconTint = if (favorite) Palette.Favorite else Palette.Text, highlighted = favorite, onClick = onFavorite,
+        )
+        Pill(
+            if (recording) "Stop" else "Record", icon = if (recording) AppIcons.Stop else AppIcons.Record,
+            iconTint = Palette.Recording, highlighted = recording, onClick = onRecord,
+        )
+        Pill("CC", icon = AppIcons.Captions, onClick = onCaptions)
+        Pill("Audio & quality", icon = AppIcons.Audio, onClick = onOptions)
+        if (onPip != null) Pill("Mini player", icon = AppIcons.Pip, onClick = onPip)
+        Pill("Multi-view", icon = AppIcons.Grid, onClick = onMultiView)
+        Pill("Settings", icon = AppIcons.Settings, onClick = onSettings)
+        Pill("Exit", icon = AppIcons.Exit, onClick = onExit)
     }
 }

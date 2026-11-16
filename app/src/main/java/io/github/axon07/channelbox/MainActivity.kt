@@ -5,6 +5,8 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import android.content.res.Configuration
+import io.github.axon07.channelbox.system.SetTopBox
 import io.github.axon07.channelbox.ui.ChannelboxTheme
 import io.github.axon07.channelbox.ui.TvApp
 import io.github.axon07.channelbox.ui.TvViewModel
@@ -21,6 +23,19 @@ class MainActivity : ComponentActivity() {
                 TvApp(vm)
             }
         }
+    }
+
+    /** Home pressed while watching: keep playing in a small window if that's switched on. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (vm.settings.value?.pipOnLeave == true && vm.current.value != null && vm.player.exo.isPlaying) {
+            SetTopBox.enterPip(this)
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        vm.inPip.value = isInPictureInPictureMode
     }
 
     override fun onStart() {

@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,15 +63,21 @@ fun rememberTimeFormatter(): (Long) -> String {
     return remember(format) { { t: Long -> format.format(Date(t)) } }
 }
 
+/**
+ * Channel logo. Transparent PNGs are drawn as-is (no box behind them); a small
+ * placeholder with the channel's initials only shows when there's no logo or it fails to load.
+ */
 @Composable
 fun ChannelLogo(url: String?, name: String, modifier: Modifier = Modifier) {
+    var failed by remember(url) { mutableStateOf(false) }
+    val placeholder = url.isNullOrBlank() || failed
     Box(
-        modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Palette.Surface),
+        modifier.then(
+            if (placeholder) Modifier.clip(RoundedCornerShape(6.dp)).background(Palette.Surface) else Modifier
+        ),
         contentAlignment = Alignment.Center,
     ) {
-        if (url.isNullOrBlank()) {
+        if (placeholder) {
             Text(
                 text = name.take(3).uppercase(),
                 color = Palette.TextDim,
@@ -82,6 +91,7 @@ fun ChannelLogo(url: String?, name: String, modifier: Modifier = Modifier) {
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
+                onError = { failed = true },
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(),
             )
         }

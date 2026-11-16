@@ -1,6 +1,12 @@
 package io.github.axon07.channelbox.ui
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,8 +40,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,25 +53,44 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.axon07.channelbox.BuildConfig
 import io.github.axon07.channelbox.data.AppSettings
 import io.github.axon07.channelbox.data.BackAction
+import io.github.axon07.channelbox.data.DNS_LABELS
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType
+import io.github.axon07.channelbox.data.UserAgent
 import io.github.axon07.channelbox.data.redact
 import io.github.axon07.channelbox.data.refreshLabel
 import io.github.axon07.channelbox.system.SetTopBox
+import io.github.axon07.channelbox.system.VpnManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
-private enum class SettingsCategory(val icon: String, val title: String, val blurb: String) {
-    SOURCE("☰", "Playlist & guide", "Your TV service and programme guide"),
-    PLAYBACK("▶", "Playback", "Picture, sound and the remote"),
-    RECORDINGS("●", "Recordings", "Where recordings are kept"),
-    STARTUP("⏻", "Start-up & exit", "Make it behave like a cable box"),
-    UPDATES("↻", "Updates", "Keep Channelbox up to date"),
-    ABOUT("ⓘ", "About", "Version and licence"),
+private enum class SettingsCategory(val title: String, val blurb: String) {
+    SOURCE("Playlist & guide", "Your TV service and programme guide"),
+    PLAYBACK("Playback", "Picture, sound, quality and the remote"),
+    NETWORK("Network & VPN", "Get around ISP blocking"),
+    RECORDINGS("Recordings", "Where recordings are saved"),
+    STARTUP("Start-up & exit", "Make it behave like a cable box"),
+    UPDATES("Updates", "Keep Channelbox up to date"),
+    ABOUT("About", "Version and this device"),
 }
+
+private fun SettingsCategory.icon(): ImageVector = when (this) {
+    SettingsCategory.SOURCE -> AppIcons.List
+    SettingsCategory.PLAYBACK -> AppIcons.Play
+    SettingsCategory.NETWORK -> AppIcons.Shield
+    SettingsCategory.RECORDINGS -> AppIcons.Record
+    SettingsCategory.STARTUP -> AppIcons.Power
+    SettingsCategory.UPDATES -> AppIcons.Refresh
+    SettingsCategory.ABOUT -> AppIcons.Info
+}
+
+/** Sub-pages with text fields, opened from a setting card. */
+private enum class Page { VPN, PROXY, DNS, USER_AGENT, SMB, WEBDAV }
 
 /**
  * Two panes: categories on the left, that category's settings on the right.
@@ -79,17 +107,20 @@ fun SettingsScreen(
     onExit: () -> Unit,
 ) {
     var category by rememberSaveable { mutableStateOf(SettingsCategory.SOURCE) }
+    var page by remember { mutableStateOf<Page?>(null) }
     val firstCategory = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         delay(50)
         runCatching { firstCategory.requestFocus() }
     }
+    // Back on a sub-page returns to the category instead of leaving Settings.
+    BackHandler(enabled = page != null) { page = null }
 
     Row(Modifier.fillMaxSize().background(Palette.Background)) {
         // ---- Categories ----
         Column(
             Modifier
-                .width(290.dp)
+                .width(280.dp)
                 .fillMaxHeight()
                 .background(Color(0xFF0E131A))
                 .padding(top = 30.dp, start = 18.dp, end = 18.dp, bottom = 18.dp)
@@ -107,12 +138,12 @@ fun SettingsScreen(
                     category = c,
                     selected = c == category,
                     modifier = if (i == 0) Modifier.focusRequester(firstCategory) else Modifier,
-                    onFocus = { category = c },
+                    onFocus = { if (page == null) category = c },
                 )
             }
         }
 
-        // ---- Settings in the chosen category ----
+        // ---- Settings in the chosen category (or a sub-page) ----
         Column(
             Modifier
                 .weight(1f)
@@ -120,16 +151,22 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 30.dp, start = 36.dp, end = 40.dp, bottom = 24.dp)
         ) {
-            Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
-            Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (category) {
-                    SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource)
-                    SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm)
-                    SettingsCategory.RECORDINGS -> RecordingSettings(vm, onOpenRecordings)
-                    SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit)
-                    SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
-                    SettingsCategory.ABOUT -> AboutSettings(vm)
+            val current = page
+            if (current != null) {
+                SubPage(current, settings, vm, onClose = { page = null })
+            } else {
+                Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+                Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (category) {
+                        SettingsCategory.SOURCE -> SourceSettings(settings, refreshState, channelCount, vm, onEditSource)
+                        SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm)
+                        SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { page = it }
+                        SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { page = it }
+                        SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit)
+                        SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
+                        SettingsCategory.ABOUT -> AboutSettings(vm)
+                    }
                 }
             }
         }
@@ -177,13 +214,25 @@ private fun SourceSettings(
     )
 }
 
+private val QUALITY_CHOICES = listOf(0 to "Best available", 1080 to "Up to 1080p", 720 to "Up to 720p", 480 to "Up to 480p")
+
 @Composable
 private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel) {
+    val context = LocalContext.current
     SettingCard(
         title = "Picture size",
-        description = "How the picture fills the screen. Also available while watching (hold OK).",
+        description = "How the picture fills the screen. Also while watching: hold OK.",
         value = SCALE_LABELS.getOrElse(settings.videoScale) { SCALE_LABELS[0] },
         onClick = { vm.setVideoScale((settings.videoScale + 1) % SCALE_LABELS.size) },
+    )
+    SettingCard(
+        title = "Maximum quality",
+        description = "Lower it on a slow connection to avoid buffering",
+        value = QUALITY_CHOICES.firstOrNull { it.first == settings.maxQuality }?.second ?: "Best available",
+        onClick = {
+            val i = QUALITY_CHOICES.indexOfFirst { it.first == settings.maxQuality }
+            vm.setMaxQuality(QUALITY_CHOICES[(i + 1).mod(QUALITY_CHOICES.size)].first)
+        },
     )
     SettingCard(
         title = "Decode all audio in software",
@@ -191,6 +240,14 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel) {
         toggle = settings.preferSoftwareAudio,
         onClick = { vm.setPreferSoftwareAudio(!settings.preferSoftwareAudio) },
     )
+    if (SetTopBox.supportsPip(context)) {
+        SettingCard(
+            title = "Mini player when pressing Home",
+            description = "Keep watching in a small window (picture-in-picture) while using other apps",
+            toggle = settings.pipOnLeave,
+            onClick = { vm.setPipOnLeave(!settings.pipOnLeave) },
+        )
+    }
     SettingCard(
         title = "Reverse channel up / down",
         description = "Swap which way ▲ and ▼ change the channel",
@@ -200,8 +257,89 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel) {
 }
 
 @Composable
-private fun RecordingSettings(vm: TvViewModel, onOpenRecordings: () -> Unit) {
-    val folder = remember { vm.recordingsFolder }
+private fun NetworkSettingsList(settings: AppSettings, vm: TvViewModel, openPage: (Page) -> Unit) {
+    val context = LocalContext.current
+    val net = settings.network
+    val vpn by vm.vpnState.collectAsStateWithLifecycle()
+    val askVpn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) vm.setVpnEnabled(true)
+        else Toast.makeText(context, "Android didn't allow the VPN", Toast.LENGTH_SHORT).show()
+    }
+
+    if (vm.networkNeedsRestart(net)) {
+        SettingCard(
+            title = "Restart to apply",
+            description = "Proxy and DNS changes take effect after Channelbox restarts",
+            value = "Restart now",
+            highlight = true,
+            onClick = { SetTopBox.restart(context) },
+        )
+    }
+    SettingCard(
+        title = "VPN (WireGuard)",
+        description = when (val v = vpn) {
+            VpnManager.State.On -> "Connected" + if (net.vpnAllApps) " · whole box" else " · Channelbox only"
+            VpnManager.State.Connecting -> "Connecting…"
+            is VpnManager.State.Failed -> "Couldn't connect: ${v.message}"
+            VpnManager.State.Off -> if (net.vpnConfig.isBlank()) "Add a WireGuard config from your VPN provider first" else "Off"
+        },
+        toggle = net.vpnEnabled,
+        onClick = {
+            if (net.vpnEnabled) {
+                vm.setVpnEnabled(false)
+            } else if (net.vpnConfig.isBlank()) {
+                openPage(Page.VPN)
+            } else {
+                val ask = VpnManager.permissionIntent(context)
+                if (ask == null) vm.setVpnEnabled(true) else askVpn.launch(ask)
+            }
+        },
+    )
+    SettingCard(
+        title = "VPN configuration",
+        description = if (net.vpnConfig.isBlank()) "Not set" else "WireGuard config saved",
+        value = "Edit",
+        onClick = { openPage(Page.VPN) },
+    )
+    SettingCard(
+        title = "Encrypted DNS",
+        description = "Look up server names privately – gets around ISP DNS blocking",
+        value = DNS_LABELS[net.dns] ?: "System",
+        onClick = {
+            val keys = DNS_LABELS.keys.toList()
+            val next = keys[(keys.indexOf(net.dns) + 1).mod(keys.size)]
+            if (next == "custom") openPage(Page.DNS) else vm.saveNetwork(net.copy(dns = next))
+        },
+    )
+    SettingCard(
+        title = "Proxy",
+        description = "Send Channelbox's traffic through an HTTP or SOCKS5 proxy",
+        value = when (net.proxyType) {
+            "http" -> "HTTP · ${net.proxyHost}:${net.proxyPort}"
+            "socks5" -> "SOCKS5 · ${net.proxyHost}:${net.proxyPort}"
+            else -> "Off"
+        },
+        onClick = { openPage(Page.PROXY) },
+    )
+    SettingCard(
+        title = "User agent",
+        description = "How Channelbox identifies itself. Some providers only allow certain players.",
+        value = UserAgent.presetName(net.userAgent),
+        onClick = {
+            val presets = UserAgent.PRESETS.values.toList()
+            val i = presets.indexOf(net.userAgent)
+            if (i < 0 || i == presets.lastIndex) openPage(Page.USER_AGENT)
+            else vm.saveNetwork(net.copy(userAgent = presets[i + 1]))
+        },
+    )
+}
+
+@Composable
+private fun RecordingSettings(settings: AppSettings, vm: TvViewModel, onOpenRecordings: () -> Unit, openPage: (Page) -> Unit) {
+    val st = settings.storage
+    var description by remember { mutableStateOf("") }
+    LaunchedEffect(st) { description = vm.describeStorage(st) }
+    val drives = remember { vm.removableDrives() }
     SettingCard(
         title = "Recordings",
         description = "Watch, stop or delete your recordings",
@@ -209,11 +347,45 @@ private fun RecordingSettings(vm: TvViewModel, onOpenRecordings: () -> Unit) {
         onClick = onOpenRecordings,
     )
     SettingCard(
-        title = "Storage",
-        description = "Saved on this box in Android/data/…/files/recordings",
-        value = "${formatSize(folder.usableSpace)} free",
-        onClick = {},
+        title = "Save recordings to",
+        description = description,
+        value = when (st.type) {
+            "removable" -> "USB / SD card"
+            "smb" -> "Network share"
+            "webdav" -> "WebDAV"
+            else -> "This box"
+        },
+        onClick = {
+            val types = listOf("local", "removable", "smb", "webdav")
+            val next = types[(types.indexOf(st.type) + 1).mod(types.size)]
+            vm.saveStorage(st.copy(type = next))
+        },
     )
+    if (st.type == "removable" && drives > 1) {
+        SettingCard(
+            title = "Which drive",
+            description = "$drives drives found",
+            value = "Drive ${st.removableIndex + 1}",
+            onClick = { vm.saveStorage(st.copy(removableIndex = (st.removableIndex + 1) % drives)) },
+        )
+    }
+    if (st.type == "smb") {
+        SettingCard(
+            title = "Network share (SMB)",
+            description = if (st.smbHost.isBlank()) "Windows PC, NAS or Samba server – not set" else "\\\\${st.smbHost}\\${st.smbShare}",
+            value = "Edit",
+            onClick = { openPage(Page.SMB) },
+        )
+    }
+    if (st.type == "webdav") {
+        SettingCard(
+            title = "WebDAV folder",
+            description = st.davUrl.ifBlank { "Nextcloud, Synology, QNAP… – not set" } +
+                " · recorded here first, uploaded when finished",
+            value = "Edit",
+            onClick = { openPage(Page.WEBDAV) },
+        )
+    }
 }
 
 @Composable
@@ -235,7 +407,7 @@ private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -
         SettingCard(
             title = "Permission to start on boot",
             description = if (canAutoStart) "Granted" else "Android needs \"Display over other apps\" allowed for this",
-            value = if (canAutoStart) "✓" else "Allow",
+            value = if (canAutoStart) "Granted" else "Allow",
             onClick = {
                 if (!SetTopBox.openOverlaySettings(context)) {
                     Toast.makeText(
@@ -299,17 +471,245 @@ private fun UpdateSettings(settings: AppSettings, vm: TvViewModel) {
 
 @Composable
 private fun AboutSettings(vm: TvViewModel) {
-    SettingCard(title = "Channelbox", description = "Version ${vm.appVersion}", onClick = {})
-    SettingCard(
-        title = "Free & open source",
-        description = "GPL-3.0 licence · github.com/Axon07/Channelbox",
-        onClick = {},
-    )
-    SettingCard(
-        title = "Channels",
-        description = "Channelbox is only a player – channels come from your own TV service",
-        onClick = {},
-    )
+    val widevine = remember { vm.widevineLevel() }
+    InfoCard("Version", "Channelbox ${vm.appVersion} (build ${BuildConfig.VERSION_CODE})")
+    InfoCard("Device", "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+    InfoCard("Widevine security level", "$widevine – L1 = hardware, L3 = software")
+    InfoCard("Audio decoding", "Box decoders, plus bundled FFmpeg for Dolby Digital, DD+, DTS and TrueHD")
+    InfoCard("Source code", "github.com/Axon07/Channelbox · free and open source under GPL-3.0")
+    InfoCard("Channels", "Channelbox is only a player – channels come from your own TV service")
+}
+
+// ---- Sub-pages with text fields ---------------------------------------------------------------------
+
+@Composable
+private fun SubPage(page: Page, settings: AppSettings, vm: TvViewModel, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val net = settings.network
+    val st = settings.storage
+    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+
+    when (page) {
+        Page.VPN -> {
+            var config by remember { mutableStateOf(net.vpnConfig) }
+            var link by remember { mutableStateOf("") }
+            var allApps by remember { mutableStateOf(net.vpnAllApps) }
+            val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                if (uri != null) {
+                    val text = runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                    }.getOrNull()
+                    if (text != null) config = text else toast("Couldn't read that file")
+                }
+            }
+            PageHeader(
+                "WireGuard VPN",
+                "Get a WireGuard config (.conf) from your VPN provider – most offer one – and paste it below, load it from a link, or open the file.",
+            )
+            TvTextField("Config", config, { config = it }, lines = 8)
+            Spacer(Modifier.height(8.dp))
+            TvTextField("…or a link to the config file", link, { link = it }, keyboardType = KeyboardType.Uri)
+            Spacer(Modifier.height(10.dp))
+            SettingCard(
+                title = "Send all apps through the VPN",
+                description = if (allApps) "The whole box uses the VPN" else "Only Channelbox uses the VPN (recommended)",
+                toggle = allApps,
+                onClick = { allApps = !allApps },
+            )
+            Spacer(Modifier.height(10.dp))
+            ButtonRow(
+                "Save" to {
+                    val error = vm.saveVpnConfig(config, allApps)
+                    if (error != null) {
+                        toast("Not a valid WireGuard config: $error")
+                    } else {
+                        toast("Saved")
+                        onClose()
+                    }
+                },
+                "Load link" to {
+                    if (link.isBlank()) {
+                        toast("Type the link first")
+                    } else {
+                        scope.launch {
+                            runCatching { vm.fetchText(link.trim()) }
+                                .onSuccess { config = it; toast("Loaded – check it and press Save") }
+                                .onFailure { toast("Couldn't load it: ${it.message}") }
+                        }
+                    }
+                },
+                "Open file" to {
+                    try {
+                        pickFile.launch("*/*")
+                    } catch (e: ActivityNotFoundException) {
+                        toast("This box has no file picker – use a link instead")
+                    }
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.PROXY -> {
+            var type by remember { mutableStateOf(net.proxyType) }
+            var host by remember { mutableStateOf(net.proxyHost) }
+            var port by remember { mutableStateOf(net.proxyPort.takeIf { it > 0 }?.toString().orEmpty()) }
+            var user by remember { mutableStateOf(net.proxyUser) }
+            var pass by remember { mutableStateOf(net.proxyPass) }
+            PageHeader("Proxy", "All of Channelbox's traffic (playlists, guide, streams) goes through the proxy. Restart to apply.")
+            SettingCard(
+                title = "Type",
+                value = when (type) {
+                    "http" -> "HTTP"
+                    "socks5" -> "SOCKS5"
+                    else -> "Off"
+                },
+                onClick = {
+                    type = when (type) {
+                        "none" -> "http"
+                        "http" -> "socks5"
+                        else -> "none"
+                    }
+                },
+            )
+            if (type != "none") {
+                Spacer(Modifier.height(8.dp))
+                TvTextField("Server", host, { host = it }, keyboardType = KeyboardType.Uri)
+                Spacer(Modifier.height(8.dp))
+                TvTextField("Port", port, { port = it.filter(Char::isDigit) }, keyboardType = KeyboardType.Number)
+                Spacer(Modifier.height(8.dp))
+                TvTextField("Username (optional)", user, { user = it })
+                Spacer(Modifier.height(8.dp))
+                TvTextField("Password (optional)", pass, { pass = it }, password = true)
+            }
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Save" to {
+                    vm.saveNetwork(
+                        net.copy(proxyType = type, proxyHost = host, proxyPort = port.toIntOrNull() ?: 0, proxyUser = user, proxyPass = pass)
+                    )
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.DNS -> {
+            var url by remember { mutableStateOf(net.dnsCustomUrl) }
+            PageHeader("Custom encrypted DNS", "Enter a DNS-over-HTTPS address, e.g. https://dns.nextdns.io/abc123")
+            TvTextField("DNS-over-HTTPS URL", url, { url = it }, keyboardType = KeyboardType.Uri)
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Save" to {
+                    if (!url.trim().startsWith("https://")) {
+                        toast("It needs to start with https://")
+                    } else {
+                        vm.saveNetwork(net.copy(dns = "custom", dnsCustomUrl = url))
+                        onClose()
+                    }
+                },
+                "Use system DNS" to {
+                    vm.saveNetwork(net.copy(dns = "system"))
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.USER_AGENT -> {
+            var ua by remember { mutableStateOf(net.userAgent) }
+            PageHeader("Custom user agent", "Use this if your provider asks for a specific player. Leave empty for Channelbox's default.")
+            TvTextField("User agent", ua, { ua = it }, lines = 3)
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Save" to {
+                    vm.saveNetwork(net.copy(userAgent = ua))
+                    onClose()
+                },
+                "Default" to {
+                    vm.saveNetwork(net.copy(userAgent = ""))
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.SMB -> {
+            var host by remember { mutableStateOf(st.smbHost) }
+            var share by remember { mutableStateOf(st.smbShare) }
+            var path by remember { mutableStateOf(st.smbPath) }
+            var user by remember { mutableStateOf(st.smbUser) }
+            var pass by remember { mutableStateOf(st.smbPass) }
+            var domain by remember { mutableStateOf(st.smbDomain) }
+            fun edited() = st.copy(
+                type = "smb", smbHost = host, smbShare = share, smbPath = path,
+                smbUser = user, smbPass = pass, smbDomain = domain,
+            )
+            PageHeader(
+                "Network share (SMB)",
+                "Windows shared folder, NAS (Synology, QNAP, TrueNAS, Unraid…) or Samba. Recordings are written straight to it.",
+            )
+            TvTextField("Server (name or IP, e.g. 192.168.1.20)", host, { host = it }, keyboardType = KeyboardType.Uri)
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Share name (e.g. media)", share, { share = it })
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Folder inside the share", path, { path = it })
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Username (empty for guest)", user, { user = it })
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Password", pass, { pass = it }, password = true)
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Domain / workgroup (optional)", domain, { domain = it })
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Test" to {
+                    scope.launch { toast(vm.testStorage(edited())?.let { "Didn't work: $it" } ?: "Connected – it works") }
+                },
+                "Save" to {
+                    vm.saveStorage(edited())
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.WEBDAV -> {
+            var url by remember { mutableStateOf(st.davUrl) }
+            var user by remember { mutableStateOf(st.davUser) }
+            var pass by remember { mutableStateOf(st.davPass) }
+            fun edited() = st.copy(type = "webdav", davUrl = url, davUser = user, davPass = pass)
+            PageHeader(
+                "WebDAV folder",
+                "Nextcloud, ownCloud, Synology, QNAP… Recordings are saved on the box first and uploaded when they finish.",
+            )
+            TvTextField("Folder address (https://…)", url, { url = it }, keyboardType = KeyboardType.Uri)
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Username", user, { user = it })
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Password / app password", pass, { pass = it }, password = true)
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Test" to {
+                    scope.launch { toast(vm.testStorage(edited())?.let { "Didn't work: $it" } ?: "Connected – it works") }
+                },
+                "Save" to {
+                    vm.saveStorage(edited())
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PageHeader(title: String, text: String) {
+    Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+    Text(text, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+}
+
+@Composable
+private fun ButtonRow(vararg buttons: Pair<String, () -> Unit>) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        buttons.forEach { (label, action) ->
+            androidx.tv.material3.Button(onClick = action, modifier = Modifier.tap(onClick = action)) { Text(label) }
+        }
+    }
 }
 
 // ---- Building blocks -------------------------------------------------------------------------------
@@ -341,11 +741,16 @@ private fun CategoryRow(category: SettingsCategory, selected: Boolean, modifier:
             Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                category.icon, fontSize = 15.sp,
-                color = if (focused) Color.White else if (category == SettingsCategory.RECORDINGS) Palette.Recording else Palette.TextDim,
-                modifier = Modifier.width(26.dp),
+            AppIcon(
+                category.icon(),
+                tint = when {
+                    focused -> Color.White
+                    category == SettingsCategory.RECORDINGS -> Palette.Recording
+                    else -> Palette.TextDim
+                },
+                size = 17.dp,
             )
+            Spacer(Modifier.width(12.dp))
             Text(
                 category.title, fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
@@ -365,6 +770,7 @@ private fun SettingCard(
     description: String? = null,
     value: String? = null,
     toggle: Boolean? = null,
+    highlight: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -376,7 +782,7 @@ private fun SettingCard(
             .tap(onClick = onClick),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Palette.Surface,
+            containerColor = if (highlight) Color(0x333D8BFD) else Palette.Surface,
             contentColor = Palette.Text,
             focusedContainerColor = Palette.SurfaceLive,
             focusedContentColor = Palette.Text,
@@ -393,13 +799,13 @@ private fun SettingCard(
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp)
+                .heightIn(min = 60.dp)
                 .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
-                if (description != null) {
+                if (!description.isNullOrBlank()) {
                     Text(
                         description, fontSize = 12.sp, color = Palette.TextDim, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
@@ -415,6 +821,21 @@ private fun SettingCard(
                 )
             }
         }
+    }
+}
+
+/** A read-only line (About page). */
+@Composable
+private fun InfoCard(title: String, text: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Palette.Surface)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Text(title, fontSize = 12.sp, color = Palette.TextDim)
+        Text(text, fontSize = 15.sp, color = Palette.Text, modifier = Modifier.padding(top = 2.dp))
     }
 }
 

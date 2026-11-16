@@ -32,6 +32,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import io.github.axon07.channelbox.data.NetworkSettings
+import io.github.axon07.channelbox.data.StorageSettings
+import io.github.axon07.channelbox.data.UserAgent
+import io.github.axon07.channelbox.data.download
+import io.github.axon07.channelbox.system.VpnManager
 import io.github.axon07.channelbox.data.Catchup
 import io.github.axon07.channelbox.data.StreamSpec
 
@@ -66,7 +71,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private val c = app.container
     private val repo = c.repository
     // The audio decoder choice is read once at start (changing it takes effect after a restart).
-    val player = TvPlayer(app, c.http, runBlocking { c.settings.current().preferSoftwareAudio })
+    private val softwareAudio = runBlocking { c.settings.current().preferSoftwareAudio }
+    val player = TvPlayer(app, c.http, softwareAudio)
+
+    /** Extra players for multi-view (released when multi-view closes). */
+    fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, softwareAudio).also {
+        it.storageSettings = { settings.value?.storage ?: StorageSettings() }
+    }
+
+    /** True while the app is shrunk to a picture-in-picture window. */
+    val inPip = MutableStateFlow(false)
 
     val settings: StateFlow<AppSettings?> = c.settings.flow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -324,7 +338,15 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playRecording(recording: RecordingEntity) {
-        recording.filePath?.let { player.playFile(it) }
+        val path = recording.filePath ?: return
+        val st = settings.value?.storage ?: StorageSettings()
+        when {
+            path.startsWith("/") -> player.playFile(path)
+            path.startsWith("http") -> player.playOnDemand(
+                StreamSpec(path, mapOf("Authorization" to okhttp3.Credentials.basic(st.davUser, st.davPass)), null, null)
+            )
+            else -> player.playOnDemand(StreamSpec(path, emptyMap(), null, null)) // smb://
+        }
     }
 
     /** True if [program] on [channel] can be watched from the archive (or from its start, if it's on now). */
@@ -348,6 +370,79 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setVideoScale(scale: Int) = viewModelScope.launch { c.settings.setVideoScale(scale) }
+    fun setMaxQuality(height: Int) = viewModelScope.launch { c.settings.setMaxQuality(height) }
+    fun setPipOnLeave(on: Boolean) = viewModelScope.launch { c.settings.setPipOnLeave(on) }
+
+    // ---- Network: VPN, proxy, DNS, user agent ----------------------------------------------
+
+    val vpnState = VpnManager.state
+
+    /** Proxy and DNS are built into the HTTP client at start-up, so changing them needs a restart. */
+    fun networkNeedsRestart(now: NetworkSettings): Boolean {
+        val start = c.startupNetwork
+        return now.dns != start.dns || now.dnsCustomUrl != start.dnsCustomUrl ||
+            now.proxyType != start.proxyType || now.proxyHost != start.proxyHost || now.proxyPort != start.proxyPort ||
+            now.proxyUser != start.proxyUser || now.proxyPass != start.proxyPass
+    }
+
+    fun saveNetwork(n: NetworkSettings) = viewModelScope.launch { c.settings.saveNetwork(n) }
+
+    /** Call after Android's VPN permission has been granted (or if it already was). */
+    fun setVpnEnabled(on: Boolean) = viewModelScope.launch {
+        val n = c.settings.current().network
+        if (on && n.vpnConfig.isBlank()) {
+            showToast("Add a WireGuard config first")
+            return@launch
+        }
+        c.settings.saveNetwork(n.copy(vpnEnabled = on))
+        if (on) {
+            if (VpnManager.connect(getApplication(), n.vpnConfig, n.vpnAllApps)) {
+                showToast("VPN connected")
+                _current.value?.let { player.play(StreamSpecs.from(it)) } // reconnect through the tunnel
+            }
+        } else {
+            VpnManager.disconnect()
+            showToast("VPN off")
+        }
+    }
+
+    /** Saves a WireGuard config (and reconnects if the VPN is on). Returns an error message, or null. */
+    fun saveVpnConfig(config: String, allApps: Boolean): String? {
+        VpnManager.validate(config)?.let { return it }
+        viewModelScope.launch {
+            val n = c.settings.current().network.copy(vpnConfig = config.trim(), vpnAllApps = allApps)
+            c.settings.saveNetwork(n)
+            if (n.vpnEnabled) {
+                VpnManager.disconnect()
+                VpnManager.connect(getApplication(), n.vpnConfig, n.vpnAllApps)
+            }
+        }
+        return null
+    }
+
+    /** Downloads a WireGuard config from a link (e.g. one you uploaded or your provider's). */
+    suspend fun fetchText(url: String): String = c.http.download(url) { it.bufferedReader().readText() }
+
+    // ---- Recording storage ------------------------------------------------------------------
+
+    fun saveStorage(st: StorageSettings) = viewModelScope.launch { c.settings.saveStorage(st) }
+
+    suspend fun testStorage(st: StorageSettings): String? = c.storage.test(st)
+
+    suspend fun describeStorage(st: StorageSettings): String = c.storage.describe(st)
+
+    fun removableDrives(): Int = c.storage.removableDirectories().size
+
+    // ---- Device info for Settings → About --------------------------------------------------
+
+    fun widevineLevel(): String = runCatching {
+        val drm = android.media.MediaDrm(androidx.media3.common.C.WIDEVINE_UUID)
+        try {
+            drm.getPropertyString("securityLevel")
+        } finally {
+            if (android.os.Build.VERSION.SDK_INT >= 28) drm.close() else @Suppress("DEPRECATION") drm.release()
+        }
+    }.getOrDefault("not available")
 
     /** Back to live TV after watching a recording. */
     fun resumeLive() {
@@ -355,6 +450,14 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        player.storageSettings = { settings.value?.storage ?: StorageSettings() }
+        // Settings that apply immediately.
+        viewModelScope.launch {
+            c.settings.flow.collect { s ->
+                UserAgent.apply(s.network.userAgent)
+                player.setMaxQuality(s.maxQuality)
+            }
+        }
         // Startup update check, a few seconds in so it doesn't slow down tuning the first channel.
         viewModelScope.launch {
             delay(8_000)
@@ -362,6 +465,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             val s = c.settings.current()
+            // Bring the VPN up first so the playlist and streams go through it.
+            if (s.network.vpnEnabled && s.network.vpnConfig.isNotBlank()) {
+                if (VpnManager.permissionIntent(app) == null) {
+                    if (!VpnManager.connect(app, s.network.vpnConfig, s.network.vpnAllApps)) {
+                        showToast("VPN didn't connect – check Settings → Network")
+                    }
+                } else {
+                    showToast("Allow the VPN in Settings → Network")
+                }
+            }
             if (s.sourceType == SourceType.NONE) return@launch
             val hasChannels = repo.allChannels().isNotEmpty()
             if (hasChannels) ensurePlaying()
