@@ -49,9 +49,13 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Stream options** | Kodi-style `url|User-Agent=…&Referer=…`, `#EXTVLCOPT:http-user-agent/http-referrer`, `#EXTHTTP:{…}`, `#KODIPROP:inputstream.adaptive.stream_headers` |
 | **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it, and Widevine retries at security level L3 when L1 fails |
 | **Catch-up / archive** | Watch programmes that already aired, straight from the guide (↺). M3U `catchup` = `default` / `append` / `shift` / `flussonic` / `xc` with `catchup-source` templates (`${start}`, `{utc}`, `{duration:60}`, `{Y}-{m}-{d}` …), and Xtream Codes archives (server time zone aware). Also "watch from the start" for shows that are on now |
-| **Audio & subtitles** | Pick the audio language/track and subtitles or closed captions while watching (hold OK, Menu, or tap → Audio & subtitles). Picture size: fit, zoom or stretch |
+| **Audio, quality & subtitles** | While watching (hold OK, Menu, or tap → Audio & quality): pick the quality, audio language/track and subtitles or closed captions; CC button toggles captions. Picture size: fit, zoom or stretch. Optional maximum quality for slow connections |
 | **Audio formats** | Bundled FFmpeg decoder plays Dolby Digital (AC3), Dolby Digital+ (E-AC3), DTS and TrueHD on boxes that can't – no more silent sports channels. Optional "decode all audio in software" setting |
-| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play (pause/seek), stop and delete |
+| **Network & VPN** | Built-in **WireGuard VPN** (paste or load a config from any VPN provider; only Channelbox or the whole box), **HTTP / SOCKS5 proxy**, **encrypted DNS** (DNS-over-HTTPS: Cloudflare, Google, Quad9, AdGuard or custom) and a **user agent** setting – ways around ISP blocking |
+| **Multi-view** | Watch 2 or 4 channels at once (Groups menu → Multi-view, or the green button). Sound follows the highlighted tile |
+| **Mini player** | Picture-in-picture when you press Home (optional) or from the on-screen buttons |
+| **Stream info** | The info banner shows resolution, frame rate, codec, audio format, bitrate, available caption languages and VPN status |
+| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play (pause/seek), stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press OK while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
@@ -74,6 +78,8 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | Menu | Audio, subtitles & picture size | Open guide | Groups menu |
 | Back | Open guide | Close | Groups menu → Back again: "Exit?" |
 | Last / Recall | Previous channel | Previous channel | – |
+| CC / Subtitles | Captions on/off | – | – |
+| Green | Multi-view | – | – |
 
 **Groups menu:** ▲▼ choose, OK select, ▶ or Back-to-guide. **Recordings** and **⚙ Settings** are at the bottom.
 **Playing a recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, Back returns to the list.
@@ -172,7 +178,6 @@ Stack: Kotlin, Jetpack Compose for TV, Media3 ExoPlayer, Room, DataStore, WorkMa
 - [ ] Parental PIN
 - [ ] EPG search
 - [ ] Enter playlist URL from a phone (QR code + local web page) instead of typing it with the remote
-- [ ] Multi-view (2–4 channels at once)
 - [ ] VOD / series sections for Xtream
 - [ ] Translations
 
