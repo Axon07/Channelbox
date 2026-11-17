@@ -44,8 +44,13 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease -PappVersionName="${GITHUB_REF_NAME#v}"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk "channelbox-${GITHUB_REF_NAME}.apk"
+        # The fixed-name copy keeps .../releases/latest/download/channelbox.apk (and Downloader codes) always current.
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "channelbox-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk channelbox.apk
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: channelbox-*.apk
+          files: |
+            channelbox-*.apk
+            channelbox.apk
