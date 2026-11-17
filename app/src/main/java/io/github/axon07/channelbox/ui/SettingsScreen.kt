@@ -7,6 +7,9 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,7 +80,7 @@ import java.util.Date
 private enum class SettingsCategory(val title: String, val blurb: String) {
     SOURCE("Playlist & guide", "Your TV service and programme guide"),
     PLAYBACK("Playback", "Picture, sound, quality and the remote"),
-    NETWORK("Network & VPN", "Get around ISP blocking"),
+    NETWORK("Network & VPN", "VPN, proxy and private DNS"),
     RECORDINGS("Recordings", "Where recordings are saved"),
     STARTUP("Start-up & exit", "Make it behave like a cable box"),
     PARENTAL("Parental & hidden", "PIN, locked and hidden channels"),
@@ -163,17 +166,17 @@ fun SettingsScreen(
             Modifier
                 .width(290.dp)
                 .fillMaxHeight()
-                .background(Brush.verticalGradient(listOf(Color(0xFF111821), Color(0xFF0B1016))))
+                .background(Color(0xFF0F151C))
                 .verticalScroll(rememberScrollState())
-                .padding(top = 26.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
+                .padding(top = 28.dp, start = 14.dp, end = 14.dp, bottom = 16.dp)
         ) {
             Text(
-                "Settings", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
-                modifier = Modifier.padding(start = 8.dp),
+                "Settings", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
+                modifier = Modifier.padding(start = 10.dp),
             )
             Text(
-                "Channelbox ${vm.appVersion}", fontSize = 12.sp, color = Palette.TextDim,
-                modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 14.dp),
+                "Channelbox ${vm.appVersion}", fontSize = 12.sp, color = Color(0xFF7D8A9A),
+                modifier = Modifier.padding(start = 10.dp, top = 2.dp, bottom = 18.dp),
             )
             SettingsCategory.entries.forEachIndexed { i, c ->
                 CategoryRow(
@@ -196,16 +199,23 @@ fun SettingsScreen(
                 .weight(1f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(top = 30.dp, start = 36.dp, end = 40.dp, bottom = 24.dp)
+                .padding(top = 30.dp, start = 40.dp, end = 40.dp, bottom = 28.dp)
+                .widthIn(max = 780.dp)
         ) {
             val current = page
             if (current != null) {
                 BackLink(category.title) { closePage() }
                 SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { openPage(it) }, playlistId = playlistId, onEditSource = onEditSource)
             } else {
-                Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
-                Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 20.dp)) {
+                    IconBadge(category.icon(), size = 40.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(category.title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+                        Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 1.dp))
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     when (category) {
                         SettingsCategory.SOURCE -> SourceSettings(
                             settings, refreshState, channelCount, vm, onEditSource,
@@ -1027,6 +1037,16 @@ fun IconBadge(icon: ImageVector, size: androidx.compose.ui.unit.Dp = 30.dp, high
     }
 }
 
+/** Colours shared by every row: quiet at rest, a bright pill with dark text when focused (Google TV style). */
+private object Rows {
+    val Rest = Color(0x0AFFFFFF)
+    val Focus = Color(0xFFECF1F6)
+    val Pressed = Color(0xFFD9E1EA)
+    val OnFocus = Color(0xFF0E141B)
+    val OnFocusDim = Color(0xFF4A5868)
+    val Shape = RoundedCornerShape(12.dp)
+}
+
 @Composable
 private fun CategoryRow(
     category: SettingsCategory,
@@ -1035,39 +1055,51 @@ private fun CategoryRow(
     onFocus: () -> Unit,
     onTap: () -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
+    val content = when {
+        focused -> Rows.OnFocus
+        selected -> Color.White
+        else -> Color(0xFF9AA6B4)
+    }
     Surface(
         onClick = onTap,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
-            .onFocusChanged { if (it.isFocused) onFocus() }
+            .padding(vertical = 2.dp)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
             .tap(onClick = onTap),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(Rows.Shape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) Color(0x1AFFFFFF) else Color.Transparent,
+            containerColor = if (selected) Color(0x14FFFFFF) else Color.Transparent,
             contentColor = Palette.Text,
-            focusedContainerColor = Color(0x29FFFFFF),
-            focusedContentColor = Color.White,
-            pressedContainerColor = Color(0x33FFFFFF),
+            focusedContainerColor = Rows.Focus,
+            focusedContentColor = Rows.OnFocus,
+            pressedContainerColor = Rows.Pressed,
         ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
-                shape = RoundedCornerShape(8.dp),
-            ),
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
     ) {
         Row(
-            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
+            Modifier.fillMaxWidth().height(46.dp).padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppIcon(category.icon(), tint = if (selected) Color.White else Color(0xFF9AA6B4), size = 18.dp)
-            Spacer(Modifier.width(12.dp))
+            // Thin accent bar marks the open section.
+            Box(
+                Modifier
+                    .padding(start = 4.dp)
+                    .size(width = 3.dp, height = 18.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (selected && !focused) Palette.Accent else Color.Transparent)
+            )
+            Spacer(Modifier.width(11.dp))
+            AppIcon(category.icon(), tint = content, size = 18.dp)
+            Spacer(Modifier.width(14.dp))
             Text(
                 category.title, fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) Color.White else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+                color = content, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1093,45 +1125,50 @@ private fun SettingCard(
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .tap(onClick = onClick),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(Rows.Shape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (highlight) Color(0x263D8BFD) else Color(0x0DFFFFFF),
+            containerColor = if (highlight) Color(0x223D8BFD) else Rows.Rest,
             contentColor = Palette.Text,
-            focusedContainerColor = Color(0x21FFFFFF),
-            focusedContentColor = Color.White,
-            pressedContainerColor = Color(0x2EFFFFFF),
+            focusedContainerColor = Rows.Focus,
+            focusedContentColor = Rows.OnFocus,
+            pressedContainerColor = Rows.Pressed,
         ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, Palette.Accent),
-                shape = RoundedCornerShape(8.dp),
-            ),
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.015f),
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .padding(horizontal = 16.dp, vertical = 9.dp),
+                .heightIn(min = 58.dp)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
+                Text(
+                    title, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                    color = if (focused) Rows.OnFocus else Palette.Text,
+                )
                 if (!description.isNullOrBlank()) {
                     Text(
-                        description, fontSize = 12.sp, color = Palette.TextDim, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+                        description, fontSize = 12.sp, lineHeight = 16.sp,
+                        color = if (focused) Rows.OnFocusDim else Palette.TextDim, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp),
                     )
                 }
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(18.dp))
             when {
                 toggle != null -> ToggleSwitch(toggle)
-                value != null -> Text(
-                    "$value  ›", fontSize = 13.sp, maxLines = 1,
-                    color = if (focused) Palette.Text else Palette.TextDim,
-                )
+                value != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        value, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 220.dp),
+                        color = if (focused) Rows.OnFocusDim else Palette.TextDim,
+                    )
+                    Text(
+                        "  ›", fontSize = 18.sp,
+                        color = if (focused) Rows.OnFocus else Color(0xFF6B7888),
+                    )
+                }
             }
         }
     }
@@ -1143,30 +1180,41 @@ private fun InfoCard(title: String, text: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x0DFFFFFF))
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .clip(Rows.Shape)
+            .background(Rows.Rest)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
-        Text(title, fontSize = 12.sp, color = Palette.TextDim)
-        Text(text, fontSize = 14.sp, color = Palette.Text, modifier = Modifier.padding(top = 2.dp))
+        Text(title.uppercase(), fontSize = 10.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF7D8A9A))
+        Text(text, fontSize = 14.sp, color = Palette.Text, modifier = Modifier.padding(top = 3.dp))
     }
 }
 
+/** Animated on/off switch. */
 @Composable
 private fun ToggleSwitch(on: Boolean) {
+    val track by androidx.compose.animation.animateColorAsState(
+        if (on) Palette.Accent else Color(0xFF465263), label = "track",
+    )
+    val thumbX by androidx.compose.animation.core.animateDpAsState(if (on) 20.dp else 0.dp, label = "thumb")
     Box(
         Modifier
-            .size(width = 40.dp, height = 22.dp)
+            .size(width = 44.dp, height = 24.dp)
             .clip(RoundedCornerShape(50))
-            .background(if (on) Palette.Accent else Color(0xFF3A4554))
+            .background(track)
             .padding(3.dp),
-        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+        contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.size(16.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color.White))
+        Box(
+            Modifier
+                .offset(x = thumbX)
+                .size(18.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Color.White)
+        )
     }
 }
 
-/** Pick-one list with a radio dot – used for every multiple-choice setting. */
+/** Pick-one list with a radio button – used for every multiple-choice setting. */
 @Composable
 private fun ChoiceList(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
     val first = remember { FocusRequester() }
@@ -1180,33 +1228,33 @@ private fun ChoiceList(options: List<Pair<String, String>>, selected: String, on
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         options.forEachIndexed { i, (key, label) ->
             val isSelected = key == selected
+            var focused by remember { mutableStateOf(false) }
             Surface(
                 onClick = { onSelect(key) },
                 modifier = (if (isSelected || (i == 0 && options.none { it.first == selected })) Modifier.focusRequester(first) else Modifier)
                     .fillMaxWidth()
+                    .onFocusChanged { focused = it.isFocused }
                     .tap { onSelect(key) },
-                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                shape = ClickableSurfaceDefaults.shape(Rows.Shape),
                 colors = ClickableSurfaceDefaults.colors(
-                    containerColor = Palette.Surface,
+                    containerColor = Rows.Rest,
                     contentColor = Palette.Text,
-                    focusedContainerColor = Palette.SurfaceLive,
-                    focusedContentColor = Palette.Text,
-                    pressedContainerColor = Palette.SurfaceLive,
+                    focusedContainerColor = Rows.Focus,
+                    focusedContentColor = Rows.OnFocus,
+                    pressedContainerColor = Rows.Pressed,
                 ),
-                border = ClickableSurfaceDefaults.border(
-                    focusedBorder = androidx.tv.material3.Border(
-                        border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
-                        shape = RoundedCornerShape(8.dp),
-                    ),
-                ),
-                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.015f),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 18.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(label, fontSize = 15.sp, color = Palette.Text, modifier = Modifier.weight(1f))
-                    RadioDot(isSelected)
+                    Text(
+                        label, fontSize = 15.sp, modifier = Modifier.weight(1f),
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (focused) Rows.OnFocus else Palette.Text,
+                    )
+                    RadioDot(isSelected, focused)
                 }
             }
         }
@@ -1214,20 +1262,20 @@ private fun ChoiceList(options: List<Pair<String, String>>, selected: String, on
 }
 
 @Composable
-private fun RadioDot(on: Boolean) {
+private fun RadioDot(on: Boolean, focused: Boolean = false) {
+    val ring = when {
+        on -> Palette.Accent
+        focused -> Color(0xFF8995A5)
+        else -> Color(0xFF4A5666)
+    }
     Box(
         Modifier
             .size(20.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (on) Palette.Accent else Color(0xFF3A4554))
-            .padding(if (on) 6.dp else 2.dp),
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .border(2.dp, ring, androidx.compose.foundation.shape.CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (on) Color.White else Palette.Surface)
-        )
+        if (on) Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Accent))
     }
 }
 
@@ -1242,6 +1290,6 @@ private fun BackLink(label: String, onBack: () -> Unit) {
             .padding(vertical = 4.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("‹  $label", fontSize = 13.sp, color = Palette.TextDim)
+        Text("‹  $label", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Palette.TextDim)
     }
 }
