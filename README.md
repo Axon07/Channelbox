@@ -58,7 +58,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Audio, quality & subtitles** | While watching (hold OK, Menu, or tap → Audio & quality): pick the quality, audio language/track and subtitles or closed captions; CC button toggles captions. Picture size: fit, zoom or stretch. Optional maximum quality for slow connections |
 | **Audio formats** | Bundled FFmpeg decoder plays Dolby Digital (AC3), Dolby Digital+ (E-AC3), DTS and TrueHD on boxes that can't – no more silent sports channels. Optional "decode all audio in software" setting |
 | **Network & VPN** | Built-in **WireGuard VPN** (paste or load a config from any VPN provider; only Channelbox or the whole box), **HTTP / SOCKS5 proxy**, **encrypted DNS** (DNS-over-HTTPS: Cloudflare, Google, Quad9, AdGuard or custom) and a **user agent** setting – for privacy and for networks that interfere with streaming |
-| **Multi-view** | Watch 2 or 4 channels at once (Groups menu → Multi-view, or the green button). Sound follows the highlighted tile |
+| **Multi-view** | Watch up to 4 channels at once (Groups menu → Multi-view, or the green button): starts 2 side by side, add more with Menu. Hold OK / long-press a tile for full screen, change, add or remove. Sound follows the highlighted tile |
 | **Mini player** | Picture-in-picture when you press Home (optional) or from the on-screen buttons |
 | **Stream info** | The info banner shows resolution, frame rate, codec, audio format, bitrate, available caption languages and VPN status |
 | **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play, stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
@@ -67,7 +67,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Channel list** | Press OK while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
 | **Set-top box mode** | Optional start on boot, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → "Exit?"; the last step can also be set to never exit, or exit straight away |
-| **Touch & mouse** | Tap the picture for on-screen buttons (Channels, Guide, CH±, Favourite, Settings, Exit); swipe up/down to change channel; tap anything in the list or guide |
+| **Touch & mouse** | Tap the picture for the controls along the bottom (pause, live, record, favourite, captions, audio, mini player, multi-view); swipe up/down to change channel; tap anything in the list or guide |
 | **Background refresh** | Playlist and guide reload every 6/12/24/48 hours, or only when you choose |
 
 ## Remote control
@@ -103,7 +103,7 @@ hold OK for audio & subtitles, Back returns to the list.
 
 ### Touch screen / mouse
 
-Tap the picture to show the on-screen buttons. Swipe up for the next channel, down for the previous one. In the channel list and guide, tap to watch and press-and-hold to mark a favourite. In the guide, **◀ Now ▶** move through time, and tapping the small video goes back to full screen.
+Tap the picture to show the controls along the bottom. Swipe up for the next channel, down for the previous one. In the channel list and guide, tap to watch and press-and-hold to mark a favourite. In the guide, **◀ Now ▶** move through time, and tapping the small video goes back to full screen.
 
 ## Building
 
