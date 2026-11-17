@@ -90,6 +90,16 @@ interface VodDao {
     @Query("DELETE FROM vod WHERE playlistId = :playlistId")
     fun deleteForPlaylistBlocking(playlistId: String)
 
+    @Query("DELETE FROM vod WHERE playlistId = :playlistId")
+    suspend fun deleteForPlaylist(playlistId: String)
+
+    /** Watch positions of a playlist's movies, episodes and shows. Call before [deleteForPlaylist]. */
+    @Query(
+        """DELETE FROM vod_progress WHERE id IN (SELECT id FROM vod WHERE playlistId = :playlistId)
+           OR showId IN (SELECT id FROM vod WHERE playlistId = :playlistId)"""
+    )
+    suspend fun deleteProgressForPlaylist(playlistId: String)
+
     @Query("DELETE FROM vod WHERE playlistId NOT IN (:keep)")
     suspend fun deleteOtherPlaylists(keep: List<String>)
 
@@ -186,7 +196,7 @@ class VodBuilder(private val playlistId: String) {
 
 /**
  * Saves a playlist's movies & shows in batches while it downloads, replacing the old ones.
- * Blocking: call from the download's IO thread.
+ * Blocking: call from an IO thread, never the main thread (Room refuses).
  */
 class VodWriter(private val db: AppDatabase, private val playlistId: String) {
     private val batch = ArrayList<VodEntity>(BATCH)

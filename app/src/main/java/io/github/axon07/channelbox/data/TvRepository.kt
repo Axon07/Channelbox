@@ -1,8 +1,10 @@
 package io.github.axon07.channelbox.data
 
+import android.database.sqlite.SQLiteFullException
 import android.util.Xml
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.IOException
 
@@ -59,9 +62,53 @@ class TvRepository(
         else db.channels().removeFavorite(channelId)
     }
 
-    /** Reloads every enabled playlist and the TV guide. Returns true when at least one playlist loaded. */
-    suspend fun refresh(): Boolean = mutex.withLock {
+    /**
+     * Deletes everything a removed playlist stored on the device (channels, movies & shows, watch
+     * positions) and gives the space back. Favourites and recordings are kept.
+     */
+    suspend fun forgetPlaylist(playlistId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            db.withTransaction {
+                db.channels().deleteForPlaylist(playlistId)
+                db.vod().deleteProgressForPlaylist(playlistId)
+                db.vod().deleteForPlaylist(playlistId)
+            }
+            _playlistErrors.value = _playlistErrors.value - playlistId
+            compact(force = true)
+        }
+    }
+
+    /**
+     * SQLite keeps the file at its biggest size after rows are deleted, so a huge playlist that was
+     * replaced or removed would keep holding the space. This rewrites the file to its real size when
+     * there's a lot to gain (or always, with [force]). Needs free space while it runs; skipped if short.
+     */
+    private fun compact(force: Boolean = false) {
         try {
+            val sql = db.openHelper.writableDatabase
+            fun pragma(name: String): Long = sql.query("PRAGMA $name").use { if (it.moveToFirst()) it.getLong(0) else 0L }
+            val free = pragma("freelist_count") * pragma("page_size")
+            if (free < COMPACT_MIN_BYTES && !(force && free > 0)) return
+            _state.value = RefreshState.Running("Freeing up storage…")
+            sql.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+            sql.execSQL("VACUUM")
+            sql.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Busy or not enough room to rewrite – the space is reused by the next load anyway.
+        } finally {
+            if (_state.value is RefreshState.Running) _state.value = RefreshState.Idle
+        }
+    }
+
+    /** Reloads every enabled playlist and the TV guide. Returns true when at least one playlist loaded. */
+    suspend fun refresh(): Boolean = withContext(Dispatchers.IO) { mutex.withLock { refreshLocked() } }
+
+    // Runs on an IO thread: Room's blocking calls (movies & shows are written while streaming) aren't
+    // allowed on the main thread.
+    private suspend fun refreshLocked(): Boolean {
+        return try {
             val s = settings.current()
             val sources = s.playlists.filter { it.enabled }
             if (sources.isEmpty()) {
@@ -69,7 +116,8 @@ class TvRepository(
                 db.programs().clear()
                 db.vod().deleteOtherPlaylists(emptyList())
                 _state.value = RefreshState.Idle
-                return@withLock false
+                compact()
+                return false
             }
 
             val lineup = Lineup() // live channels, numbered as they arrive
@@ -129,8 +177,15 @@ class TvRepository(
                 } catch (e: Throwable) {
                     // Also catches running out of memory, so one huge playlist can't crash the app.
                     lineup.rollback(start)
-                    val why = if (e is OutOfMemoryError) "too big for this device's memory"
-                    else e.message ?: e.javaClass.simpleName
+                    val why = when (e) {
+                        is OutOfMemoryError -> "too big for this device's memory"
+                        is SQLiteFullException -> {
+                            // Don't leave a half-saved list filling the device.
+                            runCatching { db.vod().deleteForPlaylist(p.id) }
+                            "not enough storage on this device – turn off \"Include movies & shows\" for this playlist"
+                        }
+                        else -> e.message ?: e.javaClass.simpleName
+                    }
                     failures += "${p.displayName}: $why"
                     errors[p.id] = why
                     kept += db.channels().forPlaylist(p.id).map { it.copy(playlistId = p.id) }
@@ -152,6 +207,7 @@ class TvRepository(
                 programmes = importEpg(guides, entities, lineup.tvgNames)
             }
             settings.setLastRefresh(System.currentTimeMillis())
+            compact() // only does work when a much smaller list replaced a big one
             _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
             else RefreshState.Failed(
                 "Couldn't load " + failures.joinToString("; ") +
@@ -307,6 +363,8 @@ class TvRepository(
     companion object {
         const val HOUR = 3_600_000L
         private const val BATCH = 2_000
+        /** Free space inside the database worth rewriting the file for. */
+        private const val COMPACT_MIN_BYTES = 64L * 1024 * 1024
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
     }
 }

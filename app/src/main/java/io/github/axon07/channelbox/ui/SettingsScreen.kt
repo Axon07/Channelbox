@@ -817,7 +817,7 @@ private fun SubPage(
                 }
                 SettingCard(
                     title = if (confirmRemove) "Press again to remove" else "Remove playlist",
-                    description = "Its channels leave the guide. Favourites and recordings are kept.",
+                    description = "Deletes its channels, movies & shows and guide from this device. Favourites and recordings are kept.",
                     highlight = confirmRemove,
                     onClick = {
                         if (confirmRemove) {

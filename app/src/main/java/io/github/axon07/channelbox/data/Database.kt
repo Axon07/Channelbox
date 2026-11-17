@@ -133,6 +133,9 @@ abstract class ChannelDao {
     @Query("SELECT * FROM channels WHERE playlistId = :playlistId OR (playlistId IS NULL AND :playlistId = 'main')")
     abstract suspend fun forPlaylist(playlistId: String): List<ChannelEntity>
 
+    @Query("DELETE FROM channels WHERE playlistId = :playlistId OR (playlistId IS NULL AND :playlistId = 'main')")
+    abstract suspend fun deleteForPlaylist(playlistId: String)
+
     @Query("UPDATE channels SET epgId = :epgId WHERE id = :id")
     abstract suspend fun setEpgId(id: String, epgId: String)
 

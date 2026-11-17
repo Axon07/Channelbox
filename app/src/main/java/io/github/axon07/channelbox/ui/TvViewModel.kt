@@ -682,7 +682,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun savePlaylist(p: Playlist) = reload { c.settings.savePlaylist(p) }
 
-    fun removePlaylist(id: String) = reload { c.settings.removePlaylist(id) }
+    fun removePlaylist(id: String) = reload {
+        c.settings.removePlaylist(id)
+        repo.forgetPlaylist(id)
+    }
 
     fun setPlaylistEnabled(id: String, on: Boolean) = reload { c.settings.setPlaylistEnabled(id, on) }
 
