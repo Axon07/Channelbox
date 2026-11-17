@@ -76,7 +76,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 
 | Button | Watching TV | Channel list | Guide |
 |---|---|---|---|
-| ▲ / ▼, CH+ / CH− | Change channel | Move | Move (CH± = page) |
+| ▲ / ▼, CH+ / CH− | Change channel (▼ with the info banner open: the control buttons – pause, record, CC, multi-view, ⋯) | Move | Move (CH± = page) |
 | ◀ | Open channel list | Previous group | Earlier |
 | ▶ / Info | Show/hide info banner | Next group | Later |
 | OK | Open channel list | Watch | On now: watch · finished: catch-up · future: record menu |
@@ -96,12 +96,12 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 **Groups menu:** ▲▼ choose, OK select, ▶ or Back to the guide, hold OK on a group to rename / move / hide / lock it.
 Search, Movies, TV Shows, Recordings and Settings are in the shortcut bar.
 **Guide:** hold OK on a programme → *Edit channel…* to rename, renumber, hide or lock the channel.
-**Playing a movie, episode, recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead,
+**Playing a movie, episode, recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, ▼ to move onto the buttons (◀ ▶ choose, OK press, ▲ back),
 CC for captions, hold OK for the ⋯ menu, Back hides the controls and then returns to the list.
 
 ### Where recordings are saved
 
-By default `Android/data/io.github.axon07.channelbox/files/recordings/` on the box (`.ts`, `.mp4` for fMP4 HLS, or a folder with `manifest.mpd` for DASH). Change it in **Settings → Recordings**. Recordings on the box are removed if the app is uninstalled. DASH recordings stay on the box or USB / SD card. Scheduled recordings only happen if the box is on; a box in deep sleep may start late.
+By default `Android/data/io.github.axon07.channelbox/files/recordings/` on the box (`.ts`, `.mp4` for fMP4 HLS, or a folder with `index.m3u8` / `manifest.mpd` for HLS channels with separate audio and DASH). Change it in **Settings → Recordings**. Recordings on the box are removed if the app is uninstalled. Folder recordings stay on the box or USB / SD card. Scheduled recordings only happen if the box is on; a box in deep sleep may start late.
 
 ### Touch screen / mouse
 

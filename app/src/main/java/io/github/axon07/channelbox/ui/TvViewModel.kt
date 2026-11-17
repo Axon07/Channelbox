@@ -674,6 +674,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val st = settings.value?.storage ?: StorageSettings()
         when {
             // DASH recording (maybe protected): same DRM / licence step as the live channel.
+            path.endsWith(io.github.axon07.channelbox.data.HlsFolderRecorder.INDEX) -> {
+                val live = StreamSpecs.from(recording)
+                player.playOnDemand(
+                    StreamSpec(android.net.Uri.fromFile(java.io.File(path)).toString(), live.headers, live.drm, StreamSpecs.MIME_HLS)
+                )
+            }
             path.endsWith(io.github.axon07.channelbox.data.DashRecorder.MANIFEST) -> {
                 val live = StreamSpecs.from(recording)
                 player.playOnDemand(

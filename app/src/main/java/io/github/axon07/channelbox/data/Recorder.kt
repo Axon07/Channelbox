@@ -88,7 +88,7 @@ class Recorder(
         val now = System.currentTimeMillis()
         dao.getAll().filter { it.status == RecStatus.RECORDING && it.stop < now }.forEach {
             val size = it.filePath?.takeIf { p -> p.startsWith("/") }?.let { p ->
-                if (p.endsWith(DashRecorder.MANIFEST)) DashRecorder.sizeOf(File(p)) else File(p).length()
+                if (File(p).name in FOLDER_INDEXES) DashRecorder.sizeOf(File(p)) else File(p).length()
             } ?: it.sizeBytes
             dao.update(it.copy(status = if (size > 0) RecStatus.DONE else RecStatus.FAILED, sizeBytes = size))
         }
@@ -111,6 +111,18 @@ class Recorder(
         if (spec.mime == StreamSpecs.MIME_DASH) {
             recordDash(rec, spec)
             return@withContext
+        }
+        // HLS whose audio is a separate playlist: save both, or the recording has no sound.
+        if (spec.mime == StreamSpecs.MIME_HLS || spec.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) {
+            val text = runCatching { fetchText(spec, spec.url) }.getOrNull()
+            if (text != null && Hls.isMaster(text)) {
+                val variant = Hls.variants(text, spec.url).maxByOrNull { it.bandwidth }
+                val audio = variant?.let { Hls.audioRendition(text, spec.url, it) }
+                if (variant != null && audio != null) {
+                    recordHlsFolder(rec, spec, variant, audio.first, audio.second)
+                    return@withContext
+                }
+            }
         }
 
         val session = Session(rec.copy(status = RecStatus.RECORDING))
@@ -171,6 +183,64 @@ class Recorder(
                 },
                 filePath = if (path.exists()) path.absolutePath else rec.filePath,
                 sizeBytes = dash.bytesWritten,
+                error = error,
+            )
+        )
+    }
+
+    private suspend fun recordHlsFolder(
+        start: RecordingEntity,
+        spec: StreamSpec,
+        variant: Hls.Variant,
+        audioUrl: String,
+        audioAttrs: Map<String, String>,
+    ) {
+        var rec = start.copy(status = RecStatus.RECORDING)
+        dao.update(rec)
+        val folder = storage.folderFor(fileName(rec))
+        var lastUpdate = 0L
+        val hls = HlsFolderRecorder(
+            folder = folder,
+            variant = variant,
+            audioUrl = audioUrl,
+            audioAttrs = audioAttrs,
+            keepEncrypted = spec.drm != null,
+            fetch = { url -> fetchBytes(spec, url) },
+            decrypt = { data, key, iv, seq -> decrypt(data, key, iv, seq) },
+            onProgress = { bytes, path ->
+                val now = System.currentTimeMillis()
+                if (rec.filePath == null || now - lastUpdate > 10_000) {
+                    lastUpdate = now
+                    rec = rec.copy(filePath = path, sizeBytes = bytes)
+                    dao.update(rec)
+                }
+            },
+        )
+        var problem: String? = null
+        try {
+            hls.run { System.currentTimeMillis() < rec.stop }
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) { finishFolder(rec, File(folder, HlsFolderRecorder.INDEX), hls.bytesWritten, null) { hls.writePlaylists(done = true) } }
+            throw e
+        } catch (e: Exception) {
+            problem = e.message ?: e.javaClass.simpleName
+        }
+        withContext(NonCancellable) { finishFolder(rec, File(folder, HlsFolderRecorder.INDEX), hls.bytesWritten, problem) { hls.writePlaylists(done = true) } }
+    }
+
+    private suspend fun finishFolder(current: RecordingEntity, index: File, bytes: Long, error: String?, close: () -> Unit) {
+        val rec = dao.get(current.id) ?: current
+        runCatching { close() }
+        val saved = index.exists() && bytes > 0
+        dao.update(
+            rec.copy(
+                status = when {
+                    saved -> RecStatus.DONE
+                    error != null -> RecStatus.FAILED
+                    else -> RecStatus.CANCELLED
+                },
+                filePath = if (index.exists()) index.absolutePath else rec.filePath,
+                sizeBytes = bytes,
                 error = error,
             )
         )
@@ -383,5 +453,10 @@ class Recorder(
         val date = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date(rec.start))
         val label = "${rec.channelName} - ${rec.title}".replace(Regex("[^A-Za-z0-9 ._-]"), "_").take(80).trim()
         return "${date}_${label}_${rec.id}"
+    }
+
+    companion object {
+        /** File names that mark a recording saved as a folder (index + segments). */
+        val FOLDER_INDEXES = setOf(DashRecorder.MANIFEST, HlsFolderRecorder.INDEX)
     }
 }

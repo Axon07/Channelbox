@@ -55,6 +55,17 @@ data class PlaybackUi(
  * Player bar for movies, episodes, recordings and catch-up. Remote: OK play/pause, ◀ ▶ skip,
  * hold OK for audio & subtitles, Back to close. Touch/mouse: tap the buttons.
  */
+/** Buttons on the movie / recording controls, in remote order (◀ ▶ move between them). */
+enum class PlaybackSlot { REWIND, PLAY, FORWARD, CAPTIONS, OPTIONS }
+
+/** Buttons on the live TV controls, in remote order. */
+enum class LiveSlot { FAVORITE, RECORD, PAUSE, LIVE, CAPTIONS, MULTIVIEW, PIP, OPTIONS }
+
+/** The live buttons actually shown (LIVE only after a pause, PiP only where the box supports it). */
+fun liveSlots(behindLive: Boolean, pip: Boolean): List<LiveSlot> = LiveSlot.entries.filter {
+    (it != LiveSlot.LIVE || behindLive) && (it != LiveSlot.PIP || pip)
+}
+
 @Composable
 fun BoxScope.PlaybackControls(
     ui: PlaybackUi,
@@ -67,12 +78,15 @@ fun BoxScope.PlaybackControls(
     /** Captions on/off. */
     onCaptions: () -> Unit = onOptions,
     captionsOn: Boolean = false,
+    /** Button highlighted for the remote (▼ moves into the buttons), or null. */
+    focused: PlaybackSlot? = null,
 ) {
     // Big centre button while paused, finished or loading.
     if (visible || !ui.playing || ui.buffering) {
         Box(Modifier.align(Alignment.Center)) {
             when {
                 ui.buffering && ui.playing -> LoadingRing()
+                focused != null -> Unit // the remote is on the buttons below
                 !ui.playing || ui.ended -> RoundButton(
                     icon = if (ui.ended) AppIcons.Refresh else AppIcons.Play,
                     size = 76.dp, onClick = onToggle,
@@ -124,7 +138,7 @@ fun BoxScope.PlaybackControls(
             Box(Modifier.fillMaxWidth()) {
                 if (!touch) {
                     Text(
-                        "OK pause · ◀ ▶ skip · Hold OK audio & subtitles",
+                        if (focused != null) "◀ ▶ choose · OK select · ▲ back" else "OK pause · ◀ ▶ skip · ▼ buttons",
                         fontSize = 11.sp, color = Palette.TextDim, maxLines = 1,
                         modifier = Modifier.align(Alignment.CenterStart),
                     )
@@ -134,20 +148,20 @@ fun BoxScope.PlaybackControls(
                     horizontalArrangement = Arrangement.spacedBy(28.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconTap(AppIcons.Rewind, size = 26.dp, badge = "10") { onSeek(-10_000L) }
+                    IconTap(AppIcons.Rewind, size = 26.dp, badge = "10", selected = focused == PlaybackSlot.REWIND) { onSeek(-10_000L) }
                     IconTap(
                         if (ui.ended) AppIcons.Refresh else if (ui.playing) AppIcons.Pause else AppIcons.Play,
-                        size = 38.dp, onClick = onToggle,
+                        size = 38.dp, selected = focused == PlaybackSlot.PLAY, onClick = onToggle,
                     )
-                    IconTap(AppIcons.Forward, size = 26.dp, badge = "30") { onSeek(30_000L) }
+                    IconTap(AppIcons.Forward, size = 26.dp, badge = "30", selected = focused == PlaybackSlot.FORWARD) { onSeek(30_000L) }
                 }
                 Row(
                     Modifier.align(Alignment.CenterEnd),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, onClick = onCaptions)
-                    IconTap(AppIcons.More, size = 22.dp, onClick = onOptions)
+                    IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, selected = focused == PlaybackSlot.CAPTIONS, onClick = onCaptions)
+                    IconTap(AppIcons.More, size = 22.dp, selected = focused == PlaybackSlot.OPTIONS, onClick = onOptions)
                 }
             }
         }
@@ -185,12 +199,22 @@ private fun Scrubber(ui: PlaybackUi, onSeekTo: (Long) -> Unit) {
 
 /** A plain white icon you can tap; [badge] = small number under it (skip seconds). */
 @Composable
-internal fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, active: Boolean = false, onClick: () -> Unit) {
+internal fun IconTap(
+    icon: ImageVector,
+    size: Dp,
+    badge: String? = null,
+    active: Boolean = false,
+    /** Highlighted for the remote. */
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
     Box(
         Modifier
             .clip(CircleShape)
+            .background(if (selected) Color(0x33FFFFFF) else Color.Transparent)
+            .border(2.dp, if (selected) Color.White else Color.Transparent, CircleShape)
             .tap(onClick = onClick)
-            .padding(6.dp),
+            .padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -269,6 +293,8 @@ fun BoxScope.LiveControls(
     onMultiView: () -> Unit,
     onCaptions: () -> Unit,
     captionsOn: Boolean,
+    /** Button highlighted for the remote, or null. */
+    focused: LiveSlot? = null,
 ) {
     Column(
         Modifier
@@ -311,16 +337,16 @@ fun BoxScope.LiveControls(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconTapTint(if (favorite) AppIcons.Star else AppIcons.StarOutline, if (favorite) Palette.Favorite else Color.White, onFavorite)
+                IconTapTint(if (favorite) AppIcons.Star else AppIcons.StarOutline, if (favorite) Palette.Favorite else Color.White, onFavorite, selected = focused == LiveSlot.FAVORITE)
             }
             Row(
                 Modifier.align(Alignment.Center),
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconTapTint(if (recording) AppIcons.Stop else AppIcons.Record, Palette.Recording, onRecord, size = 24.dp)
-                IconTap(if (paused) AppIcons.Play else AppIcons.Pause, size = 38.dp, onClick = onPause)
-                if (behindLive) IconTap(AppIcons.Forward, size = 26.dp, badge = "LIVE", onClick = onLive)
+                IconTapTint(if (recording) AppIcons.Stop else AppIcons.Record, Palette.Recording, onRecord, size = 24.dp, selected = focused == LiveSlot.RECORD)
+                IconTap(if (paused) AppIcons.Play else AppIcons.Pause, size = 38.dp, selected = focused == LiveSlot.PAUSE, onClick = onPause)
+                if (behindLive) IconTap(AppIcons.Forward, size = 26.dp, badge = "LIVE", selected = focused == LiveSlot.LIVE, onClick = onLive)
                 else Spacer(Modifier.width(38.dp))
             }
             Row(
@@ -328,18 +354,26 @@ fun BoxScope.LiveControls(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, onClick = onCaptions)
-                IconTap(AppIcons.Grid, size = 22.dp, onClick = onMultiView)
-                if (onPip != null) IconTap(AppIcons.Pip, size = 22.dp, onClick = onPip)
-                IconTap(AppIcons.More, size = 22.dp, onClick = onOptions)
+                IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, selected = focused == LiveSlot.CAPTIONS, onClick = onCaptions)
+                IconTap(AppIcons.Grid, size = 22.dp, selected = focused == LiveSlot.MULTIVIEW, onClick = onMultiView)
+                if (onPip != null) IconTap(AppIcons.Pip, size = 22.dp, selected = focused == LiveSlot.PIP, onClick = onPip)
+                IconTap(AppIcons.More, size = 22.dp, selected = focused == LiveSlot.OPTIONS, onClick = onOptions)
             }
         }
     }
 }
 
 @Composable
-private fun IconTapTint(icon: ImageVector, tint: Color, onClick: () -> Unit, size: Dp = 22.dp) {
-    Box(Modifier.clip(CircleShape).tap(onClick = onClick).padding(6.dp), contentAlignment = Alignment.Center) {
+private fun IconTapTint(icon: ImageVector, tint: Color, onClick: () -> Unit, size: Dp = 22.dp, selected: Boolean = false) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (selected) Color(0x33FFFFFF) else Color.Transparent)
+            .border(2.dp, if (selected) Color.White else Color.Transparent, CircleShape)
+            .tap(onClick = onClick)
+            .padding(8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         AppIcon(icon, tint = tint, size = size)
     }
 }

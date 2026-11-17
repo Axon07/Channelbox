@@ -181,6 +181,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var digits by remember { mutableStateOf("") }
     var bannerVisible by remember { mutableStateOf(false) }
     var touchBar by remember { mutableStateOf(false) }
+    /** Remote: the live control button that's highlighted (▼ from the info banner), or null. */
+    var liveFocus by remember { mutableStateOf<LiveSlot?>(null) }
+    /** The info banner was opened with ▶ / Info (not by changing channel), so ▼ goes into the controls. */
+    var bannerByKey by remember { mutableStateOf(false) }
     var touchBarToken by remember { mutableIntStateOf(0) }
     var listIndex by remember { mutableIntStateOf(0) }
     var groupsIndex by remember { mutableIntStateOf(0) }
@@ -203,6 +207,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var playbackTitle by remember { mutableStateOf("") }
     var playbackToken by remember { mutableIntStateOf(0) }
     var playbackOverlay by remember { mutableStateOf(true) }
+    /** Remote: the movie / recording control button that's highlighted (▼), or null. */
+    var pbFocus by remember { mutableStateOf<PlaybackSlot?>(null) }
     var pbPosition by remember { mutableLongStateOf(0L) }
     var pbDuration by remember { mutableLongStateOf(0L) }
     var pbPlaying by remember { mutableStateOf(false) }
@@ -600,9 +606,46 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     // ---- Remote control ------------------------------------------------------------------------
 
+    val pipSupported = io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)
+
+    fun pressPlaybackSlot(slot: PlaybackSlot) {
+        playbackToken++
+        when (slot) {
+            PlaybackSlot.REWIND -> seekBy(-10_000L)
+            PlaybackSlot.PLAY -> togglePause()
+            PlaybackSlot.FORWARD -> seekBy(30_000L)
+            PlaybackSlot.CAPTIONS -> { toggleCaptions(); captionsTick++ }
+            PlaybackSlot.OPTIONS -> { pbFocus = null; openOptions() }
+        }
+    }
+
+    fun pressLiveSlot(slot: LiveSlot) {
+        val cur = current ?: return
+        touchBarToken++
+        when (slot) {
+            LiveSlot.FAVORITE -> vm.toggleFavorite(cur)
+            LiveSlot.RECORD -> vm.toggleRecordCurrent()
+            LiveSlot.PAUSE -> vm.playPauseLive()
+            LiveSlot.LIVE -> { vm.goLive(); liveFocus = LiveSlot.PAUSE }
+            LiveSlot.CAPTIONS -> { toggleCaptions(); captionsTick++ }
+            LiveSlot.MULTIVIEW -> { touchBar = false; openMultiView() }
+            LiveSlot.PIP -> { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
+            LiveSlot.OPTIONS -> { touchBar = false; openOptions() }
+        }
+    }
+
+    /** Moves the live-controls highlight left / right. */
+    fun moveLiveFocus(delta: Int) {
+        val slots = liveSlots(shift != null, pipSupported)
+        val i = slots.indexOf(liveFocus).coerceAtLeast(0)
+        liveFocus = slots[(i + delta).coerceIn(0, slots.lastIndex)]
+        touchBarToken++
+    }
+
     fun onShortOk() {
         when (mode) {
             Mode.PLAYER -> when {
+                liveFocus != null && touchBar -> liveFocus?.let { pressLiveSlot(it) }
                 digits.isNotEmpty() -> commitDigits()
                 allChannels.isEmpty() -> mode = Mode.SETTINGS
                 else -> openList()
@@ -618,7 +661,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.GROUPS -> selectGroupItem(groupsIndex)
             Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let { openRecording(it) }
-            Mode.PLAYBACK -> togglePause()
+            Mode.PLAYBACK -> pbFocus?.let { pressPlaybackSlot(it) } ?: togglePause()
             Mode.MULTIVIEW -> if (multiPicking) {
                 visible.getOrNull(multiPickIndex)?.let { multi.assign(vm, multi.pickTarget, it) }
                 multiPicking = false
@@ -655,15 +698,48 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
         }
         val up = if (settings.invertChannelKeys) -1 else 1
+        // Remote on the live control buttons: ◀ ▶ move, ▲ leaves, OK presses (in onShortOk).
+        if (mode == Mode.PLAYER && liveFocus != null && touchBar) {
+            when (code) {
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { moveLiveFocus(-1); return true }
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { moveLiveFocus(1); return true }
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> { liveFocus = null; touchBar = false; return true }
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> { touchBarToken++; return true }
+            }
+        }
+        // Remote on the movie / recording buttons.
+        if (mode == Mode.PLAYBACK && pbFocus != null) {
+            val slots = PlaybackSlot.entries
+            when (code) {
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> { pbFocus = slots[(pbFocus!!.ordinal - 1).coerceAtLeast(0)]; playbackToken++; return true }
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> { pbFocus = slots[(pbFocus!!.ordinal + 1).coerceAtMost(slots.lastIndex)]; playbackToken++; return true }
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> { pbFocus = null; playbackToken++; return true }
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> { playbackToken++; return true }
+            }
+        }
         when (mode) {
             Mode.PLAYER -> when (code) {
-                AndroidKeyEvent.KEYCODE_DPAD_UP -> vm.zap(up)
-                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> vm.zap(-up)
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> { bannerByKey = false; vm.zap(up) }
+                // ▼ with the info banner open (from ▶ / Info): into the control buttons.
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (bannerVisible && bannerByKey && current != null) {
+                    bannerVisible = false
+                    bannerByKey = false
+                    liveFocus = LiveSlot.PAUSE
+                    touchBarToken++
+                } else {
+                    bannerByKey = false
+                    vm.zap(-up)
+                }
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> vm.zap(1)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> vm.zap(-1)
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> openList()
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_INFO -> {
-                    if (bannerVisible) bannerVisible = false else vm.showBanner()
+                    if (bannerVisible) {
+                        bannerVisible = false
+                    } else {
+                        vm.showBanner()
+                        bannerByKey = true
+                    }
                 }
                 AndroidKeyEvent.KEYCODE_GUIDE -> openGuide()
                 AndroidKeyEvent.KEYCODE_SEARCH -> openSearch()
@@ -779,7 +855,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> { vm.player.exo.pause(); playbackToken++ }
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> seekBy(-10_000L)
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekBy(30_000L)
-                AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_INFO -> playbackToken++
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                    pbFocus = PlaybackSlot.PLAY
+                    playbackToken++
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_INFO -> playbackToken++
                 AndroidKeyEvent.KEYCODE_MENU -> openOptions()
                 AndroidKeyEvent.KEYCODE_CAPTIONS -> toggleCaptions()
                 else -> return false
@@ -851,6 +931,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             delay(1_000)
         }
     }
+    LaunchedEffect(touchBar) { if (!touchBar) liveFocus = null }
+    LaunchedEffect(playbackOverlay, mode) { if (!playbackOverlay || mode != Mode.PLAYBACK) pbFocus = null }
+    LaunchedEffect(bannerVisible) { if (!bannerVisible) bannerByKey = false }
     LaunchedEffect(touchBarToken) {
         if (touchBarToken > 0) {
             touchBar = true
@@ -981,7 +1064,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDINGS -> openGroups(tile = 1)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             // First Back hides the controls, the next one leaves.
-            Mode.PLAYBACK -> if (playbackOverlay && pbPlaying) playbackOverlay = false else leavePlayback()
+            Mode.PLAYBACK -> when {
+                pbFocus != null -> pbFocus = null
+                playbackOverlay && pbPlaying -> playbackOverlay = false
+                else -> leavePlayback()
+            }
             Mode.MULTIVIEW -> if (multiPicking && multi.count > 0) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
             Mode.SEARCH -> openGroups(tile = 5)
@@ -1014,7 +1101,16 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             .background(Color.Black)
             .onPreviewKeyEvent {
                 lastInput = android.os.SystemClock.uptimeMillis()
-                if (weOwnKeys) handleKey(it) else false
+                val native = it.nativeKeyEvent
+                // After a long OK opened a menu, the rest of that press (repeats and the release)
+                // must not reach the menu, or it picks the first item and closes straight away.
+                if (ok.longFired && native.keyCode in OK_KEYS) {
+                    if (native.action == AndroidKeyEvent.ACTION_UP) {
+                        ok.armed = false
+                        ok.longFired = false
+                    }
+                    true
+                } else if (weOwnKeys) handleKey(it) else false
             }
             .pointerInput(Unit) {
                 // Watch every touch (without consuming it) so the idle timer restarts.
@@ -1209,6 +1305,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     onClose = { leavePlayback() },
                     onCaptions = { playbackToken++; toggleCaptions(); captionsTick++ },
                     captionsOn = remember(captionsTick, playbackToken) { vm.player.captionsOn },
+                    focused = pbFocus,
                 )
             }
             Mode.SEARCH -> GuideSearchScreen(
@@ -1433,6 +1530,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         onMultiView = { touchBar = false; openMultiView() },
                         onCaptions = { touchBarToken++; toggleCaptions(); captionsTick++ },
                         captionsOn = remember(captionsTick, touchBarToken) { vm.player.captionsOn },
+                        focused = liveFocus,
                     )
                 }
                 if (mode == Mode.CHANNEL_LIST) {

@@ -5,8 +5,17 @@ import java.net.URI
 /** Just enough HLS playlist parsing to record a live stream. */
 object Hls {
 
-    data class Key(val method: String, val uri: String?, val iv: String?)
-    data class Segment(val sequence: Long, val uri: String, val key: Key?)
+    /** [line] is the original tag with its URI made absolute, to copy into a saved playlist. */
+    data class Key(val method: String, val uri: String?, val iv: String?, val line: String = "")
+    data class Segment(
+        val sequence: Long,
+        val uri: String,
+        val key: Key?,
+        val duration: Double = 0.0,
+        val discontinuity: Boolean = false,
+    )
+    /** A variant of a master playlist; [attrs] are its #EXT-X-STREAM-INF attributes. */
+    data class Variant(val uri: String, val bandwidth: Long, val attrs: Map<String, String>)
     data class Media(
         val targetDuration: Int,
         val segments: List<Segment>,
@@ -22,6 +31,39 @@ object Hls {
 
     private fun attributes(line: String): Map<String, String> =
         attrRegex.findAll(line.substringAfter(':')).associate { it.groupValues[1] to it.groupValues[2].trim('"') }
+
+    /** All variants of a master playlist. */
+    fun variants(text: String, baseUrl: String): List<Variant> {
+        val out = ArrayList<Variant>()
+        var pending: Map<String, String>? = null
+        text.lineSequence().map { it.trim() }.forEach { line ->
+            when {
+                line.startsWith("#EXT-X-STREAM-INF") -> pending = attributes(line)
+                line.isNotEmpty() && !line.startsWith("#") && pending != null -> {
+                    val a = pending!!
+                    out += Variant(resolve(baseUrl, line), a["BANDWIDTH"]?.toLongOrNull() ?: 0L, a)
+                    pending = null
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * The separate audio playlist a variant uses (#EXT-X-MEDIA TYPE=AUDIO with a URI), or null if
+     * the audio is muxed into the video segments. Prefers the DEFAULT rendition.
+     * Returns the URL and the rendition's attributes.
+     */
+    fun audioRendition(text: String, baseUrl: String, variant: Variant): Pair<String, Map<String, String>>? {
+        val group = variant.attrs["AUDIO"] ?: return null
+        val renditions = text.lineSequence().map { it.trim() }
+            .filter { it.startsWith("#EXT-X-MEDIA:") }
+            .map { attributes(it) }
+            .filter { it["TYPE"] == "AUDIO" && it["GROUP-ID"] == group && !it["URI"].isNullOrBlank() }
+            .toList()
+        val pick = renditions.firstOrNull { it["DEFAULT"] == "YES" } ?: renditions.firstOrNull() ?: return null
+        return resolve(baseUrl, pick.getValue("URI")) to pick
+    }
 
     /** Highest-bandwidth variant of a master playlist. */
     fun bestVariant(text: String, baseUrl: String): String? {
@@ -52,6 +94,8 @@ object Hls {
         var map: String? = null
         var ended = false
         var expectUri = false
+        var duration = 0.0
+        var discontinuity = false
         val segments = ArrayList<Segment>()
         text.lineSequence().map { it.trim() }.forEach { line ->
             when {
@@ -62,14 +106,22 @@ object Hls {
                 line.startsWith("#EXT-X-KEY:") -> {
                     val a = attributes(line)
                     val method = a["METHOD"] ?: "NONE"
-                    key = if (method == "NONE") null else Key(method, a["URI"]?.let { resolve(baseUrl, it) }, a["IV"])
+                    val uri = a["URI"]?.let { resolve(baseUrl, it) }
+                    val fixed = if (uri != null) line.replace(Regex("""URI="[^"]*""""), Regex.escapeReplacement("URI=\"$uri\"")) else line
+                    key = if (method == "NONE") null else Key(method, uri, a["IV"], fixed)
                 }
                 line.startsWith("#EXT-X-MAP:") -> map = attributes(line)["URI"]?.let { resolve(baseUrl, it) }
                 line.startsWith("#EXT-X-ENDLIST") -> ended = true
-                line.startsWith("#EXTINF") -> expectUri = true
+                line.startsWith("#EXT-X-DISCONTINUITY") && !line.startsWith("#EXT-X-DISCONTINUITY-SEQUENCE") ->
+                    discontinuity = true
+                line.startsWith("#EXTINF") -> {
+                    expectUri = true
+                    duration = line.substringAfter(':').substringBefore(',').trim().toDoubleOrNull() ?: 0.0
+                }
                 line.isEmpty() || line.startsWith("#") -> Unit
                 expectUri -> {
-                    segments += Segment(sequence, resolve(baseUrl, line), key)
+                    segments += Segment(sequence, resolve(baseUrl, line), key, duration, discontinuity)
+                    discontinuity = false
                     sequence++
                     expectUri = false
                 }

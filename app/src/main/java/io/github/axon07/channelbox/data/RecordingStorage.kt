@@ -99,8 +99,8 @@ class RecordingStorage(
             }
             else -> runCatching {
                 val file = File(location)
-                // A DASH recording is a folder: manifest.mpd plus its segments.
-                if (file.name == DashRecorder.MANIFEST) file.parentFile?.deleteRecursively() else file.delete()
+                // DASH and split-audio HLS recordings are folders: an index plus segments.
+                if (file.name in Recorder.FOLDER_INDEXES) file.parentFile?.deleteRecursively() else file.delete()
             }
         }
         Unit
