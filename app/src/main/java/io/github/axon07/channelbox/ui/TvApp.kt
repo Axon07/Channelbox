@@ -300,6 +300,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         mode = Mode.VOD
     }
 
+    /** Settings, behind the PIN when that's turned on. */
+    fun openSettings() {
+        if (settings.pinForSettings) vm.requirePin("Enter your PIN to open Settings") { mode = Mode.SETTINGS }
+        else mode = Mode.SETTINGS
+    }
+
     fun selectGroupItem(i: Int) {
         when {
             i == tileMovies -> openVod(VodKind.MOVIE)
@@ -319,12 +325,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             else -> openSettings()
         }
-    }
-
-    /** Settings, behind the PIN when that's turned on. */
-    fun openSettings() {
-        if (settings.pinForSettings) vm.requirePin("Enter your PIN to open Settings") { mode = Mode.SETTINGS }
-        else mode = Mode.SETTINGS
     }
 
     /** Hold OK on a channel → change how it shows up. */
