@@ -143,6 +143,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var setupPlaylistId by remember { mutableStateOf<String?>(null) }
     /** When the groups menu was opened (for [groupsBack]). */
     var groupsOpenedAt by remember { mutableLongStateOf(0L) }
+    /** Last key press or touch, for closing the guide/menus when idle. */
+    var lastInput by remember { mutableLongStateOf(android.os.SystemClock.uptimeMillis()) }
     var digits by remember { mutableStateOf("") }
     var bannerVisible by remember { mutableStateOf(false) }
     var touchBar by remember { mutableStateOf(false) }
@@ -587,6 +589,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             runCatching { rootFocus.requestFocus() }
         }
     }
+    // Guide and menus close back to TV after a while with no button pressed.
+    val idleModes = mode == Mode.GUIDE || mode == Mode.GROUPS || mode == Mode.CHANNEL_LIST || mode == Mode.PROGRAM_MENU
+    LaunchedEffect(mode, lastInput, settings.idleCloseSeconds) {
+        val seconds = settings.idleCloseSeconds
+        if (!idleModes || seconds <= 0 || current == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(seconds * 1000L)
+        mode = Mode.PLAYER
+    }
     // "Update available" prompt: shown over whatever screen is open (but not during first setup).
     // Keyed on setup too, so a prompt that arrived during setup shows as soon as setup is done.
     LaunchedEffect(updatePrompt, mode == Mode.SETUP) {
@@ -677,7 +687,19 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .onPreviewKeyEvent { if (weOwnKeys) handleKey(it) else false }
+            .onPreviewKeyEvent {
+                lastInput = android.os.SystemClock.uptimeMillis()
+                if (weOwnKeys) handleKey(it) else false
+            }
+            .pointerInput(Unit) {
+                // Watch every touch (without consuming it) so the idle timer restarts.
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        lastInput = android.os.SystemClock.uptimeMillis()
+                    }
+                }
+            }
             .focusRequester(rootFocus)
             // Only focusable while we handle the remote ourselves, so Settings/dialogs get normal focus.
             .focusable(enabled = weOwnKeys)

@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -161,16 +163,27 @@ fun GuideScreen(
             Box(Modifier.width(PREVIEW_WIDTH + PREVIEW_PADDING * 2).fillMaxHeight().tap(onClick = onClose))
         }
 
+        // Buttons are only for touch and mouse; with a remote, Back and ◀ ▶ do the same.
+        val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
         // Header: current group (tap or Back for the group menu), clock, back to TV.
         Row(
             Modifier.fillMaxWidth().height(34.dp).background(Palette.Background).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(timeFormat(now), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, modifier = Modifier.width(CHANNEL_COLUMN - 16.dp))
-            HeaderButton("☰  $filterLabel", onClick = onGroups)
-            Spacer(Modifier.width(10.dp))
-            Text("Back: groups, recordings & settings", fontSize = 12.sp, color = Palette.TextDim, maxLines = 1, modifier = Modifier.weight(1f))
-            HeaderButton("✕ Back to TV", onClick = onClose)
+            if (touch) {
+                HeaderButton("☰  $filterLabel", onClick = onGroups)
+                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.weight(1f))
+                HeaderButton("✕ Back to TV", onClick = onClose)
+            } else {
+                Text(filterLabel, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1)
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    "Back: groups, recordings & settings", fontSize = 12.sp, color = Palette.TextDim, maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         // Time ruler, with earlier / now / later buttons for touch and mouse.
@@ -179,9 +192,11 @@ fun GuideScreen(
                 Modifier.width(CHANNEL_COLUMN).fillMaxHeight().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RulerButton("◀", Modifier.weight(1f)) { onShift(-GUIDE_STEP) }
-                RulerButton("Now", Modifier.weight(1f), onClick = onNow)
-                RulerButton("▶", Modifier.weight(1f)) { onShift(GUIDE_STEP) }
+                if (touch) {
+                    RulerButton("◀", Modifier.weight(1f)) { onShift(-GUIDE_STEP) }
+                    RulerButton("Now", Modifier.weight(1f), onClick = onNow)
+                    RulerButton("▶", Modifier.weight(1f)) { onShift(GUIDE_STEP) }
+                }
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                 val total = maxWidth

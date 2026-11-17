@@ -100,7 +100,7 @@ private enum class Page(val title: String) {
     SMB("Network share (SMB)"), WEBDAV("WebDAV folder"),
     // Pick-one lists
     SCALE("Picture size"), QUALITY("Maximum quality"), REFRESH("Reload automatically"),
-    BACK("Back button on the groups menu"), STORAGE("Save recordings to"),
+    BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"),
     PLAYLIST("Playlist"),
 }
 
@@ -278,6 +278,15 @@ private fun SourceSettings(
     )
 }
 
+private val IDLE_CHOICES = listOf(30, 60, 120, 300, 0)
+
+private fun idleLabel(seconds: Int) = when {
+    seconds <= 0 -> "Never"
+    seconds < 60 -> "After $seconds seconds"
+    seconds == 60 -> "After 1 minute"
+    else -> "After ${seconds / 60} minutes"
+}
+
 private val QUALITY_CHOICES = listOf(
     0 to "Best available",
     1080 to "Up to 1080p",
@@ -306,6 +315,12 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (
         description = "Try this if some channels play without sound. Takes effect after restarting the app.",
         toggle = settings.preferSoftwareAudio,
         onClick = { vm.setPreferSoftwareAudio(!settings.preferSoftwareAudio) },
+    )
+    SettingCard(
+        title = "Back to TV when idle",
+        description = "Close the guide and menus if no button is pressed for a while",
+        value = idleLabel(settings.idleCloseSeconds),
+        onClick = { openPage(Page.IDLE) },
     )
     if (SetTopBox.supportsPip(context)) {
         SettingCard(
@@ -718,6 +733,14 @@ private fun SubPage(
                 options = SCALE_LABELS.mapIndexed { i, label -> i.toString() to label },
                 selected = settings.videoScale.toString(),
                 onSelect = { vm.setVideoScale(it.toInt()); onClose() },
+            )
+        }
+        Page.IDLE -> {
+            PageHeader("Back to TV when idle", "If the guide, channel list or a menu is left open with no button pressed, go back to the channel that's playing.")
+            ChoiceList(
+                options = IDLE_CHOICES.map { it.toString() to idleLabel(it) },
+                selected = settings.idleCloseSeconds.toString(),
+                onSelect = { vm.setIdleClose(it.toInt()); onClose() },
             )
         }
         Page.QUALITY -> {

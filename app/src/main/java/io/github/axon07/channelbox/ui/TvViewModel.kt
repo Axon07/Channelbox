@@ -401,6 +401,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setVideoScale(scale: Int) = viewModelScope.launch { c.settings.setVideoScale(scale) }
     fun setMaxQuality(height: Int) = viewModelScope.launch { c.settings.setMaxQuality(height) }
     fun setPipOnLeave(on: Boolean) = viewModelScope.launch { c.settings.setPipOnLeave(on) }
+    fun setIdleClose(seconds: Int) = viewModelScope.launch { c.settings.setIdleClose(seconds) }
 
     // ---- Network: VPN, proxy, DNS, user agent ----------------------------------------------
 

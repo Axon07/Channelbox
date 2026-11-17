@@ -133,6 +133,8 @@ data class AppSettings(
     val maxQuality: Int = 0,
     /** Keep playing in a small window when you press Home. */
     val pipOnLeave: Boolean = false,
+    /** Seconds without a key press before the guide/menus close back to TV; 0 = never. */
+    val idleCloseSeconds: Int = 60,
     val network: NetworkSettings = NetworkSettings(),
     val storage: StorageSettings = StorageSettings(),
     /** Version the user chose "Skip this version" for. */
@@ -171,6 +173,7 @@ class SettingsStore(private val context: Context) {
         val VIDEO_SCALE = intPreferencesKey("video_scale")
         val MAX_QUALITY = intPreferencesKey("max_quality")
         val PIP = booleanPreferencesKey("pip_on_leave")
+        val IDLE_CLOSE = intPreferencesKey("idle_close_seconds")
         val DNS = stringPreferencesKey("net_dns")
         val DNS_URL = stringPreferencesKey("net_dns_url")
         val PROXY_TYPE = stringPreferencesKey("net_proxy_type")
@@ -230,6 +233,7 @@ class SettingsStore(private val context: Context) {
         videoScale = this[Keys.VIDEO_SCALE] ?: 0,
         maxQuality = this[Keys.MAX_QUALITY] ?: 0,
         pipOnLeave = this[Keys.PIP] ?: false,
+        idleCloseSeconds = this[Keys.IDLE_CLOSE] ?: 60,
         network = NetworkSettings(
             dns = this[Keys.DNS] ?: "system",
             dnsCustomUrl = this[Keys.DNS_URL].orEmpty(),
@@ -303,6 +307,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setVideoScale(scale: Int) = context.dataStore.edit { it[Keys.VIDEO_SCALE] = scale }
     suspend fun setMaxQuality(height: Int) = context.dataStore.edit { it[Keys.MAX_QUALITY] = height }
     suspend fun setPipOnLeave(on: Boolean) = context.dataStore.edit { it[Keys.PIP] = on }
+    suspend fun setIdleClose(seconds: Int) = context.dataStore.edit { it[Keys.IDLE_CLOSE] = seconds }
 
     suspend fun saveNetwork(n: NetworkSettings) = context.dataStore.edit {
         it[Keys.DNS] = n.dns
