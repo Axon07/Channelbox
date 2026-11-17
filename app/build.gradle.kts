@@ -123,6 +123,7 @@ dependencies {
     implementation(libs.wireguard.tunnel)
     implementation(libs.smbj)
     implementation(libs.coil.compose)
+    implementation(libs.zxing.core) // QR code for "add a playlist from your phone"
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

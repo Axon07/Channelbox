@@ -37,6 +37,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
 import androidx.tv.material3.Button
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
@@ -72,6 +79,24 @@ fun SetupScreen(
     var submitted by remember { mutableStateOf(false) }
     var sawRunning by remember { mutableStateOf(false) }
 
+    // "Use your phone": a small web page on the home network fills in this form.
+    var phoneUrl by remember { mutableStateOf<String?>(null) }
+    var fromPhone by remember { mutableStateOf(false) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val link = io.github.axon07.channelbox.system.PhoneLink { f ->
+            type = if (f["type"] == "xtream") SourceType.XTREAM else SourceType.M3U
+            f["name"]?.takeIf { it.isNotBlank() }?.let { name = it.trim() }
+            f["url"]?.let { m3uUrl = it.trim() }
+            f["server"]?.let { server = it.trim() }
+            f["user"]?.let { user = it.trim() }
+            f["pass"]?.let { pass = it }
+            f["epg"]?.let { epgUrl = it.trim() }
+            fromPhone = true
+        }
+        phoneUrl = runCatching { link.start() }.getOrNull()
+        onDispose { link.stop() }
+    }
+
     // Only leave once *this* save has finished loading (not an older refresh result).
     LaunchedEffect(refreshState, submitted) {
         if (!submitted) return@LaunchedEffect
@@ -85,10 +110,11 @@ fun SetupScreen(
         runCatching { first.requestFocus() }
     }
 
+    Row(Modifier.fillMaxSize().background(Palette.Background)) {
     Column(
         Modifier
-            .fillMaxSize()
-            .background(Palette.Background)
+            .weight(1f)
+            .fillMaxHeight()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 40.dp, vertical = 24.dp)
     ) {
@@ -143,6 +169,13 @@ fun SetupScreen(
                 )
             }
         }
+        // Sent from the phone: save straight away.
+        LaunchedEffect(fromPhone) {
+            if (fromPhone) {
+                fromPhone = false
+                save()
+            }
+        }
         Button(
             onClick = save,
             enabled = canSave,
@@ -168,6 +201,52 @@ fun SetupScreen(
         OutlinedButton(onClick = onNetwork, modifier = Modifier.tap(onClick = onNetwork)) {
             Text("Network & VPN settings")
         }
+    }
+    PhonePanel(phoneUrl)
+    }
+}
+
+/** QR code + address of the "add a playlist from your phone" page. */
+@Composable
+private fun PhonePanel(url: String?) {
+    Column(
+        Modifier
+            .width(320.dp)
+            .fillMaxHeight()
+            .background(Color(0xFF111821))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AppIcon(AppIcons.Phone, tint = Palette.Text, size = 28.dp)
+        Spacer(Modifier.height(8.dp))
+        Text("Use your phone", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+        Spacer(Modifier.height(6.dp))
+        if (url == null) {
+            Text(
+                "Connect this box to your home Wi-Fi or network to type the playlist on your phone instead.",
+                fontSize = 13.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+            )
+            return@Column
+        }
+        Text(
+            "Scan with your phone's camera and type the link there – much easier than with the remote.",
+            fontSize = 13.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        val qr = remember(url) { io.github.axon07.channelbox.system.PhoneLink.qrCode(url).asImageBitmap() }
+        androidx.compose.foundation.Image(
+            bitmap = qr, contentDescription = "QR code",
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(10.dp)),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("or open", fontSize = 12.sp, color = Palette.TextDim)
+        Text(url, fontSize = 13.sp, color = Palette.Text, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Your phone must be on the same Wi-Fi. The page only works while this screen is open.",
+            fontSize = 12.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+        )
     }
 }
 
