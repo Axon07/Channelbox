@@ -194,7 +194,7 @@ private fun LibraryScreen(
                                 b.query = ""
                                 b.category = id
                             }
-                            if (locked) vm.requirePin("Enter your PIN to open $label", open) else open()
+                            if (locked) vm.requirePin("Enter your PIN to open $label", action = open) else open()
                         },
                         onLongClick = if (real) ({ vm.setVodCategoryLocked(b.kind, id!!, !locked) }) else null,
                     )

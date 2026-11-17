@@ -283,6 +283,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         mode = Mode.MULTIVIEW
     }
 
+    /** Leaves multi-view; [watch] = the channel to continue full screen. */
+    fun closeMultiView(watch: ChannelEntity? = null) {
+        multi.release()
+        multiPicking = false
+        if (watch != null) vm.tune(watch) else vm.resumeLive()
+        mode = Mode.PLAYER
+    }
+
     /** Pick a channel for [tile] (== count adds a tile). */
     fun pickForTile(tile: Int) {
         if (tile >= multi.count && !multi.canAdd) {
@@ -320,14 +328,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 add(DialogAction("Close") { popup = null })
             },
         )
-    }
-
-    /** Leaves multi-view; [watch] = the channel to continue full screen. */
-    fun closeMultiView(watch: ChannelEntity? = null) {
-        multi.release()
-        multiPicking = false
-        if (watch != null) vm.tune(watch) else vm.resumeLive()
-        mode = Mode.PLAYER
     }
 
     fun toggleCaptions() {
