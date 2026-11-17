@@ -32,7 +32,8 @@ box they're used to.
 Grab the latest `channelbox.apk` from **[Releases](https://github.com/Axon07/Channelbox/releases)**, or the
 newest test build from the **[Actions](https://github.com/Axon07/Channelbox/actions)** tab (*channelbox-apks* artifact).
 
-Install it on the box with the **Downloader** app, a USB stick, or `adb install channelbox.apk`.
+**Fire TV / Android TV:** open the **Downloader** app and enter code **`5502923`** – it always gets the latest version.
+You can also use a USB stick, or `adb install channelbox.apk`.
 The latest version is always at `https://github.com/Axon07/Channelbox/releases/latest/download/channelbox.apk`.
 
 **Updates:** Channelbox checks for a new release when it starts and offers to install it (turn that off in Settings).
