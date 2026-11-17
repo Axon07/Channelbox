@@ -60,6 +60,8 @@ fun GroupsPanel(
     selected: Int,
     listState: LazyListState,
     recordingCount: Int,
+    movieCount: Int,
+    showCount: Int,
     onSelect: (Int) -> Unit,
 ) {
     LaunchedEffect(selected) {
@@ -94,6 +96,18 @@ fun GroupsPanel(
             }
         }
         Spacer(Modifier.height(12.dp))
+        // Movies & TV Shows (when the playlists have any), then the shortcuts.
+        if (movieCount > 0 || showCount > 0) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (movieCount > 0) LibraryTile("Movies", movieCount, AppIcons.Film, selected == filters.size + 3, Modifier.weight(1f)) {
+                    onSelect(filters.size + 3)
+                }
+                if (showCount > 0) LibraryTile("TV Shows", showCount, AppIcons.Tv, selected == filters.size + 4, Modifier.weight(1f)) {
+                    onSelect(filters.size + 4)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QuickTile("Multi-view", AppIcons.Grid, selected == filters.size, Modifier.weight(1f)) {
                 onSelect(filters.size)
@@ -172,6 +186,33 @@ private fun LetterBadge(label: String, highlight: Boolean) {
             label.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#",
             fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) Color.White else Color(0xFFAEB8C4),
         )
+    }
+}
+
+@Composable
+private fun LibraryTile(
+    label: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) Color(0x29FFFFFF) else Color(0x12FFFFFF))
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .tap(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(icon, size = 32.dp, highlight = selected)
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1)
+            Text(count.toString(), fontSize = 11.sp, color = Palette.TextDim, maxLines = 1)
+        }
     }
 }
 

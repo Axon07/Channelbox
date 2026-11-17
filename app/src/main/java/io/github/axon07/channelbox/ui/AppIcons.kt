@@ -62,6 +62,8 @@ object AppIcons {
     val Home = icon("home", stroke("M4,11L12,4L20,11 M6.5,9V20H17.5V9"))
     val Download = icon("download", stroke("M12,4V15 M7.5,10.5L12,15L16.5,10.5 M5,20H19"))
     val Globe = icon("globe", stroke("M12,3A9,9 0 1,1 11.99,3Z M3,12H21 M12,3C9.5,6 9.5,18 12,21 M12,3C14.5,6 14.5,18 12,21"))
+    val Film = icon("film", stroke("M4,5H20V19H4Z M8,5V19 M16,5V19 M4,9.5H8 M4,14.5H8 M16,9.5H20 M16,14.5H20"))
+    val Tv = icon("tv", stroke("M3,6H21V17H3Z M8,21H16 M12,17V21"))
     val Star = star(true)
     val StarOutline = star(false)
     val Settings = gear()

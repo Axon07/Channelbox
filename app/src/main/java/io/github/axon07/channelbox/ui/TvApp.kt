@@ -15,6 +15,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import io.github.axon07.channelbox.data.VodKind
+import io.github.axon07.channelbox.data.VodEntity
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -58,6 +62,8 @@ enum class Mode {
     PLAYER, CHANNEL_LIST, GUIDE, GROUPS, PROGRAM_MENU,
     RECORDINGS, RECORDING_MENU, PLAYBACK,
     SETTINGS, SETUP, EXIT_CONFIRM, UPDATE, OPTIONS, MULTIVIEW,
+    /** Movies / TV Shows (normal focus, like Settings). */
+    VOD,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
@@ -145,6 +151,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var settingsFromSetup by remember { mutableStateOf(false) }
     /** When the groups menu was opened (for [groupsBack]). */
     var groupsOpenedAt by remember { mutableLongStateOf(0L) }
+    val vodBrowser = remember { VodBrowser() }
+    val movieCount by vm.movieCount.collectAsStateWithLifecycle()
+    val showCount by vm.showCount.collectAsStateWithLifecycle()
+    /** Movie/episode waiting for "Resume or start over?", with where you stopped. */
+    var vodResume by remember { mutableStateOf<Triple<VodEntity, VodEntity?, Long>?>(null) }
+    val scope = rememberCoroutineScope()
     /** Last key press or touch, for closing the guide/menus when idle. */
     var lastInput by remember { mutableLongStateOf(android.os.SystemClock.uptimeMillis()) }
     var digits by remember { mutableStateOf("") }
@@ -183,7 +195,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val swipeThreshold = with(LocalDensity.current) { 60.dp.toPx() }
 
     val weOwnKeys = mode in OWN_KEY_MODES
-    val groupItemCount = filters.size + 3 // + Multi-view, Recordings, Settings
 
     // ---- Navigation helpers --------------------------------------------------------------------
 
@@ -253,8 +264,21 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
 
+    // Groups menu layout: groups 0 until F, then Multi-view F, Recordings F+1, Settings F+2,
+    // Movies F+3, TV Shows F+4 (shown above the shortcuts).
+    val tileMovies = filters.size + 3
+    val tileShows = filters.size + 4
+    val libraryTiles = listOfNotNull(tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 })
+
+    fun openVod(kind: String) {
+        vodBrowser.open(kind)
+        mode = Mode.VOD
+    }
+
     fun selectGroupItem(i: Int) {
         when {
+            i == tileMovies -> openVod(VodKind.MOVIE)
+            i == tileShows -> openVod(VodKind.SERIES)
             i < filters.size -> {
                 vm.setFilter(filters[i])
                 guide.row = 0
@@ -325,8 +349,31 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     fun leavePlayback() {
+        if (playbackReturn == Mode.VOD) {
+            vm.stopVod()
+            vodBrowser.focusToken++
+        }
         vm.resumeLive()
         mode = playbackReturn
+    }
+
+    fun startVod(item: VodEntity, show: VodEntity?, at: Long) {
+        vodResume = null
+        playbackTitle = if (show != null) {
+            val se = if (item.season > 0) "S${item.season} E${item.episode} · " else ""
+            "${show.title} · $se${item.title}"
+        } else item.title
+        playbackReturn = Mode.VOD
+        vm.playVod(item, at, show?.id)
+        playbackToken++
+        mode = Mode.PLAYBACK
+    }
+
+    fun playVod(item: VodEntity, show: VodEntity?) {
+        scope.launch {
+            val at = vm.vodResumeAt(item)
+            if (at != null) vodResume = Triple(item, show, at) else startVod(item, show, 0)
+        }
     }
 
     fun seekBy(delta: Long) {
@@ -462,16 +509,38 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
             }
             Mode.GROUPS -> when (code) {
-                AndroidKeyEvent.KEYCODE_DPAD_UP -> groupsIndex = (groupsIndex - 1).mod(groupItemCount)
-                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> groupsIndex = (groupsIndex + 1).mod(groupItemCount)
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                    val f = filters.size
+                    groupsIndex = when {
+                        groupsIndex in 1 until f -> groupsIndex - 1
+                        groupsIndex == 0 -> f // wrap to the shortcuts
+                        groupsIndex in libraryTiles -> (f - 1).coerceAtLeast(0)
+                        else -> libraryTiles.firstOrNull() ?: (f - 1).coerceAtLeast(0) // shortcuts
+                    }
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                    val f = filters.size
+                    groupsIndex = when {
+                        groupsIndex < f - 1 -> groupsIndex + 1
+                        groupsIndex == f - 1 -> libraryTiles.firstOrNull() ?: f
+                        groupsIndex in libraryTiles -> f
+                        else -> 0 // shortcuts: wrap to the top
+                    }
+                }
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
                     groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
-                    groupsIndex = (groupsIndex + 8).coerceAtMost(groupItemCount - 1)
-                AndroidKeyEvent.KEYCODE_DPAD_RIGHT ->
-                    if (groupsIndex >= filters.size && groupsIndex < filters.size + 2) groupsIndex++ else mode = Mode.GUIDE
-                AndroidKeyEvent.KEYCODE_DPAD_LEFT ->
-                    if (groupsIndex > filters.size) groupsIndex-- else Unit
+                    groupsIndex = (groupsIndex + 8).coerceAtMost((filters.size - 1).coerceAtLeast(0))
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> when {
+                    groupsIndex >= filters.size && groupsIndex < filters.size + 2 -> groupsIndex++
+                    groupsIndex == tileMovies && tileShows in libraryTiles -> groupsIndex = tileShows
+                    else -> mode = Mode.GUIDE
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> when {
+                    groupsIndex > filters.size && groupsIndex <= filters.size + 2 -> groupsIndex--
+                    groupsIndex == tileShows && tileMovies in libraryTiles -> groupsIndex = tileMovies
+                    else -> Unit
+                }
                 AndroidKeyEvent.KEYCODE_MENU -> mode = Mode.GUIDE
                 AndroidKeyEvent.KEYCODE_GUIDE -> mode = Mode.PLAYER
                 else -> return false
@@ -617,7 +686,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
     // Recording playback: poll the position for the progress bar, hide the controls when idle.
     LaunchedEffect(mode) {
+        var ticks = 0
         while (mode == Mode.PLAYBACK) {
+            if (playbackReturn == Mode.VOD && ++ticks % 60 == 0) vm.saveVodProgress()
             val exo = vm.player.exo
             pbPosition = exo.currentPosition
             pbDuration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
@@ -680,6 +751,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PLAYBACK -> leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(filters.size + 2)
+            Mode.VOD -> when {
+                vodResume != null -> {
+                    vodResume = null
+                    vodBrowser.focusToken++
+                }
+                vodBrowser.show != null -> vodBrowser.closeShow()
+                vodBrowser.query.isNotEmpty() -> vodBrowser.query = ""
+                else -> openGroups(if (vodBrowser.kind == VodKind.MOVIE) tileMovies else tileShows)
+            }
             Mode.SETUP -> mode = Mode.SETTINGS
         }
     }
@@ -792,6 +872,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         selected = groupsIndex,
                         listState = groupsListState,
                         recordingCount = recordings.count { it.status != RecStatus.CANCELLED },
+                        movieCount = movieCount,
+                        showCount = showCount,
                         onSelect = { selectGroupItem(it) },
                     )
                 }
@@ -868,6 +950,19 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         onToggle = { togglePause() },
                         onSeek = { seekBy(it) },
                         onClose = { leavePlayback() },
+                    )
+                }
+            }
+            Mode.VOD -> {
+                VodScreen(vodBrowser, vm, onPlay = { item, show -> playVod(item, show) })
+                vodResume?.let { (item, show, at) ->
+                    ActionDialog(
+                        title = item.title,
+                        subtitle = "You stopped at ${formatClock(at)}",
+                        actions = listOf(
+                            DialogAction("Resume from ${formatClock(at)}") { startVod(item, show, at) },
+                            DialogAction("Start over") { startVod(item, show, 0) },
+                        ),
                     )
                 }
             }
