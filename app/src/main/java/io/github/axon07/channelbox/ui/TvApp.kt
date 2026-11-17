@@ -187,6 +187,13 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var pbPosition by remember { mutableLongStateOf(0L) }
     var pbDuration by remember { mutableLongStateOf(0L) }
     var pbPlaying by remember { mutableStateOf(false) }
+    var pbBuffered by remember { mutableLongStateOf(0L) }
+    var pbBuffering by remember { mutableStateOf(false) }
+    var pbEnded by remember { mutableStateOf(false) }
+    var pbSubtitle by remember { mutableStateOf<String?>(null) }
+    /** Total of quick ◀ ▶ presses, shown as "−20 s" for a moment. */
+    var pbSkipped by remember { mutableLongStateOf(0L) }
+    var pbSkipToken by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val groupsListState = rememberLazyListState()
     val recListState = rememberLazyListState()
@@ -322,7 +329,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     /** Plays a past programme from the provider's archive. */
     fun watchCatchUp(channel: ChannelEntity, program: ProgramEntity) {
         if (vm.playCatchUp(channel, program)) {
-            playbackTitle = "↺ ${channel.name}: ${program.title}"
+            playbackTitle = program.title
+            pbSubtitle = "Catch-up · ${channel.name} · " + java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT,
+            ).format(java.util.Date(program.start))
             playbackReturn = Mode.GUIDE
             playbackToken++
             mode = Mode.PLAYBACK
@@ -347,6 +357,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         val path = r.filePath
         if (path != null && File(path).length() > 0) {
             playbackTitle = r.title
+            pbSubtitle = "Recording · ${r.channelName}"
             playbackReturn = Mode.RECORDINGS
             vm.playRecording(r)
             playbackToken++
@@ -370,10 +381,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun startVod(item: VodEntity, show: VodEntity?, at: Long) {
         vodResume = null
-        playbackTitle = if (show != null) {
-            val se = if (item.season > 0) "S${item.season} E${item.episode} · " else ""
-            "${show.title} · $se${item.title}"
-        } else item.title
+        playbackTitle = show?.title ?: item.title
+        pbSubtitle = if (show != null) {
+            (if (item.season > 0) "Season ${item.season} · Episode ${item.episode} · " else "") + item.title
+        } else listOfNotNull(item.year, item.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }
         playbackReturn = Mode.VOD
         vm.playVod(item, at, show?.id)
         playbackToken++
@@ -391,12 +402,37 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         val exo = vm.player.exo
         val duration = exo.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
         exo.seekTo((exo.currentPosition + delta).coerceIn(0L, duration))
+        pbPosition = exo.currentPosition
+        pbSkipped += delta
+        pbSkipToken++
         playbackToken++
     }
 
+    fun seekTo(position: Long) {
+        vm.player.exo.seekTo(position.coerceAtLeast(0))
+        pbPosition = position
+        playbackToken++
+    }
+
+    /**
+     * Play / pause. Uses "wants to play" rather than "is playing", so it works while the video is
+     * loading, and starts over when it has finished or retries after an error.
+     */
     fun togglePause() {
         val exo = vm.player.exo
-        if (exo.isPlaying) exo.pause() else exo.play()
+        when {
+            exo.playbackState == androidx.media3.common.Player.STATE_ENDED -> {
+                exo.seekTo(0)
+                exo.play()
+            }
+            exo.playbackState == androidx.media3.common.Player.STATE_IDLE -> {
+                exo.prepare()
+                exo.play()
+            }
+            exo.playWhenReady -> exo.pause()
+            else -> exo.play()
+        }
+        pbPlaying = exo.playWhenReady
         playbackToken++
     }
 
@@ -725,14 +761,21 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             val exo = vm.player.exo
             pbPosition = exo.currentPosition
             pbDuration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
-            pbPlaying = exo.isPlaying
-            delay(500)
+            pbBuffered = exo.bufferedPosition
+            pbEnded = exo.playbackState == androidx.media3.common.Player.STATE_ENDED
+            pbPlaying = exo.playWhenReady && !pbEnded
+            pbBuffering = exo.playbackState == androidx.media3.common.Player.STATE_BUFFERING
+            delay(250)
         }
     }
     LaunchedEffect(playbackToken) {
         playbackOverlay = true
         delay(4_000)
-        if (vm.player.exo.isPlaying) playbackOverlay = false
+        if (vm.player.exo.playWhenReady) playbackOverlay = false
+    }
+    LaunchedEffect(pbSkipToken) {
+        delay(900)
+        pbSkipped = 0
     }
 
     // ---- Touch / mouse -------------------------------------------------------------------------
@@ -974,17 +1017,25 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.PLAYBACK -> {
                 (playerStatus as? PlayerStatus.Error)?.let { StatusMessage(it, null, it.message) }
-                if (playbackOverlay || !pbPlaying) {
-                    PlaybackOverlay(
+                PlaybackControls(
+                    ui = PlaybackUi(
                         title = playbackTitle,
+                        subtitle = pbSubtitle,
                         position = pbPosition,
                         duration = pbDuration,
+                        buffered = pbBuffered,
                         playing = pbPlaying,
-                        onToggle = { togglePause() },
-                        onSeek = { seekBy(it) },
-                        onClose = { leavePlayback() },
-                    )
-                }
+                        buffering = pbBuffering,
+                        ended = pbEnded,
+                        skipped = pbSkipped,
+                    ),
+                    visible = playbackOverlay,
+                    onToggle = { togglePause() },
+                    onSeek = { seekBy(it) },
+                    onSeekTo = { seekTo(it) },
+                    onOptions = { openOptions() },
+                    onClose = { leavePlayback() },
+                )
             }
             Mode.VOD -> {
                 VodScreen(vodBrowser, vm, onPlay = { item, show -> playVod(item, show) })

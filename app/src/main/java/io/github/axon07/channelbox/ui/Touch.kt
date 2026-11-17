@@ -42,6 +42,14 @@ fun Modifier.tap(onLongClick: (() -> Unit)? = null, onClick: () -> Unit): Modifi
     }
 }
 
+/** Tap (touch/mouse) reporting where along the width it landed, 0..1 – for seek bars. */
+fun Modifier.tapAt(onTap: (Float) -> Unit): Modifier = composed {
+    val tap by rememberUpdatedState(onTap)
+    pointerInput(Unit) {
+        detectTapGestures { offset -> if (size.width > 0) tap((offset.x / size.width).coerceIn(0f, 1f)) }
+    }
+}
+
 fun Context.findActivity(): Activity? {
     var c: Context = this
     while (c is ContextWrapper) {
