@@ -188,7 +188,7 @@ private fun ResultRow(
 /** "Today", "Tomorrow", "Yesterday" or the weekday. */
 private fun dayLabel(time: Long, now: Long): String {
     fun dayOf(t: Long) = (t + java.util.TimeZone.getDefault().getOffset(t)) / 86_400_000L
-    return when (dayOf(time) - dayOf(now)) {
+    return when ((dayOf(time) - dayOf(now)).toInt()) {
         0 -> "Today"
         1 -> "Tomorrow"
         -1 -> "Yesterday"
