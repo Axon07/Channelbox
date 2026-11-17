@@ -211,6 +211,16 @@ class TvPlayer(
         _status.value = PlayerStatus.Idle
     }
 
+    /**
+     * Pause live TV: let go of the stream (many accounts allow only one connection, which the pause
+     * buffer now needs) while the paused picture stays on screen.
+     */
+    fun hold() {
+        handler.removeCallbacksAndMessages(null)
+        exo.pause()
+        exo.stop()
+    }
+
     fun release() {
         handler.removeCallbacksAndMessages(null)
         exo.release()

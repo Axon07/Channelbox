@@ -40,6 +40,10 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
 
     val active: Boolean get() = job != null
 
+    /** Why the buffer stopped early (e.g. the provider refused a connection), if it did. */
+    @Volatile var lastError: String? = null
+        private set
+
     fun canBuffer(spec: StreamSpec) = recorder.canCapture(spec)
 
     fun start(spec: StreamSpec, scope: CoroutineScope) {
@@ -48,6 +52,7 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
         dir.listFiles()?.forEach { it.delete() }
         startedAt = System.currentTimeMillis()
         writing = true
+        lastError = null
         job = scope.launch(Dispatchers.IO) {
             var out: OutputStream? = null
             var size = 0L
@@ -74,8 +79,11 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
                             dir.usableSpace > MIN_FREE_BYTES
                     },
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Stream stopped: what's buffered can still be watched.
+                lastError = e.message ?: e.javaClass.simpleName
             } finally {
                 writing = false
                 runCatching { out?.close() }

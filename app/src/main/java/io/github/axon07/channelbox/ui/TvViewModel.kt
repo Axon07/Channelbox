@@ -224,7 +224,13 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Parental PIN ---------------------------------------------------------------------
 
     /** Something waiting for the PIN. [setup]: choosing a new PIN (asked twice). */
-    data class PinRequest(val title: String, val setup: Boolean = false, val onSuccess: () -> Unit)
+    data class PinRequest(
+        val title: String,
+        val setup: Boolean = false,
+        /** Asked because a locked channel was chosen (Cancel then opens the menu). */
+        val forChannel: Boolean = false,
+        val onSuccess: () -> Unit,
+    )
 
     private val _pinRequest = MutableStateFlow<PinRequest?>(null)
     val pinRequest: StateFlow<PinRequest?> = _pinRequest.asStateFlow()
@@ -236,8 +242,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val unlocked: Boolean get() = !hasPin || System.currentTimeMillis() < unlockedUntil
 
     /** Runs [action] straight away, or after the PIN when one is set and things are locked. */
-    fun requirePin(title: String, action: () -> Unit) {
-        if (unlocked) action() else _pinRequest.value = PinRequest(title, onSuccess = action)
+    fun requirePin(title: String, forChannel: Boolean = false, action: () -> Unit) {
+        if (unlocked) action() else _pinRequest.value = PinRequest(title, forChannel = forChannel, onSuccess = action)
     }
 
     /** True if [pin] is right; runs what was waiting. */
@@ -284,6 +290,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         unlockedUntil = 0
         showToast("Locked")
     }
+
+    val lockedChannelIds: StateFlow<Set<String>> = combine(allChannels, overrides) { list, ov ->
+        if (ov.values.none { it.locked }) emptySet()
+        else list.filter { isLocked(it) }.map { it.id }.toSet()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     fun isLocked(ch: ChannelEntity): Boolean {
         val ov = overrides.value
@@ -939,7 +950,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val st = _shift.value
         when {
             st == null -> {
-                player.exo.pause()
+                player.hold()
                 val spec = StreamSpecs.from(ch)
                 val buffered = timeshift.canBuffer(spec)
                 if (buffered) timeshift.start(spec, viewModelScope)
@@ -955,13 +966,24 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 goLive()
             }
             !st.onBuffer -> {
-                val f = timeshift.file
-                if (f == null || f.length() == 0L) {
-                    showToast("Nothing was buffered – back to live")
-                    goLive()
-                } else {
-                    player.playTimeshift(f) { timeshift.writing }
-                    _shift.value = st.copy(paused = false, onBuffer = true)
+                _shift.value = st.copy(paused = false)
+                viewModelScope.launch {
+                    // The buffer may only just have started: give it a few seconds.
+                    var waited = 0
+                    while ((timeshift.file?.length() ?: 0L) < 64 * 1024 && timeshift.writing && waited < 8_000) {
+                        delay(250)
+                        waited += 250
+                    }
+                    if (_shift.value?.startedAt != st.startedAt) return@launch // went live meanwhile
+                    val f = timeshift.file
+                    if (f == null || f.length() == 0L) {
+                        val why = timeshift.lastError
+                        showToast(if (why != null) "Couldn't buffer this channel ($why) – back to live" else "Nothing was buffered – back to live")
+                        goLive()
+                    } else {
+                        player.playTimeshift(f) { timeshift.writing }
+                        _shift.value = st.copy(paused = false, onBuffer = true)
+                    }
                 }
             }
             else -> {
@@ -1007,7 +1029,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun tune(channel: ChannelEntity) {
         if (isLocked(channel) && !unlocked) {
-            requirePin("Enter your PIN to watch ${channel.name}") { tune(channel) }
+            requirePin("Enter your PIN to watch ${channel.name}", forChannel = true) { tune(channel) }
             return
         }
         if (_shift.value != null) {
@@ -1064,7 +1086,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val list = repo.allChannels()
         if (list.isEmpty()) return
         val last = c.settings.current().lastChannelId
-        tune(list.firstOrNull { it.id == last } ?: list.first())
+        // Starting up: never open on a locked channel (no PIN prompt for whoever turns the TV on).
+        val usable = if (unlocked) list else list.filter { !isLocked(it) }.ifEmpty { list }
+        tune(usable.firstOrNull { it.id == last } ?: usable.first())
     }
 
     fun onForeground() {

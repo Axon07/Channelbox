@@ -223,6 +223,10 @@ fun ChannelListPanel(
                                 ch.name, fontSize = 14.sp, color = Palette.Text, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
+                            if (ch.id in LocalLockedChannels.current) {
+                                Spacer(Modifier.width(4.dp))
+                                AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
+                            }
                             if (ch.id in favorites) Text(" ★", color = Palette.Favorite, fontSize = 12.sp)
                             if (ch.id == playingId) Text("  ▶", color = Palette.Text, fontSize = 11.sp)
                         }

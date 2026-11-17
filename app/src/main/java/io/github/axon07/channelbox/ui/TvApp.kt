@@ -114,9 +114,15 @@ fun TvApp(vm: TvViewModel) {
     if (s == null) {
         Box(Modifier.fillMaxSize().background(Color.Black))
     } else {
-        TvAppContent(vm, s)
+        val locked by vm.lockedChannelIds.collectAsStateWithLifecycle()
+        androidx.compose.runtime.CompositionLocalProvider(LocalLockedChannels provides locked) {
+            TvAppContent(vm, s)
+        }
     }
 }
+
+/** Ids of locked channels (parental PIN), for the little lock in the guide and channel list. */
+val LocalLockedChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -1035,6 +1041,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     isClickable = false
                     descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    // Keep the last picture when the stream stops (pause live TV, changing channel).
+                    setKeepContentOnPlayerReset(true)
                 }
             },
             update = { view ->
@@ -1448,7 +1456,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             pinRequest?.let { r ->
                 key(r) {
-                    PinDialog(r.title, r.setup, onSubmit = { vm.submitPin(it) }, onCancel = { vm.cancelPin() })
+                    PinDialog(r.title, r.setup, onSubmit = { vm.submitPin(it) }, onCancel = {
+                        vm.cancelPin()
+                        // Someone without the PIN: take them to the menu instead of a blank screen.
+                        if (r.forChannel && mode == Mode.PLAYER) openGroups()
+                    })
                 }
             }
             toast?.let { ToastMessage(it.text) }

@@ -138,13 +138,16 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
             Spacer(Modifier.height(8.dp))
             Text(message ?: " ", fontSize = 13.sp, color = Palette.Error)
             Spacer(Modifier.height(10.dp))
-            val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✕")
+            val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫")
             keys.chunked(3).forEachIndexed { row, chunk ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 5.dp)) {
                     chunk.forEachIndexed { col, k ->
+                        if (k.isEmpty()) {
+                            Spacer(Modifier.size(width = 72.dp, height = 52.dp))
+                            return@forEachIndexed
+                        }
                         val action = when (k) {
                             "⌫" -> ::back
-                            "✕" -> onCancel
                             else -> ({ type(k[0]) })
                         }
                         Surface(
@@ -168,6 +171,8 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onCancel, modifier = Modifier.tap(onClick = onCancel)) { Text("Cancel") }
         }
     }
 }

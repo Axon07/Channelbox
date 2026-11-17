@@ -284,7 +284,12 @@ private fun GuideRow(
             Text(
                 (if (playing) "▶ " else "") + channel.name + (if (favorite) " ★" else ""),
                 fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            if (channel.id in LocalLockedChannels.current) {
+                Spacer(Modifier.width(4.dp))
+                AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
+            }
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val total = maxWidth
