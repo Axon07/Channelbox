@@ -33,7 +33,10 @@ import javax.crypto.spec.SecretKeySpec
  *
  * - MPEG-TS / plain streams: the bytes are saved as they arrive (reconnecting if the stream drops).
  * - HLS: the playlist is polled and each new segment is appended (AES-128 encrypted HLS is decrypted).
- * - DASH and DRM-protected channels can't be recorded.
+ * - DASH (including DRM-protected channels): the segments are saved exactly as they arrive – still
+ *   encrypted – with a manifest next to them, and play back through the same DRM / licence step as
+ *   live TV. Nothing is ever decrypted to disk. See [DashRecorder].
+ * - Smooth Streaming can't be recorded yet.
  */
 class Recorder(
     private val context: Context,
@@ -84,7 +87,9 @@ class Recorder(
     suspend fun tidyUp() {
         val now = System.currentTimeMillis()
         dao.getAll().filter { it.status == RecStatus.RECORDING && it.stop < now }.forEach {
-            val size = it.filePath?.takeIf { p -> p.startsWith("/") }?.let { p -> File(p).length() } ?: it.sizeBytes
+            val size = it.filePath?.takeIf { p -> p.startsWith("/") }?.let { p ->
+                if (p.endsWith(DashRecorder.MANIFEST)) DashRecorder.sizeOf(File(p)) else File(p).length()
+            } ?: it.sizeBytes
             dao.update(it.copy(status = if (size > 0) RecStatus.DONE else RecStatus.FAILED, sizeBytes = size))
         }
     }
@@ -99,12 +104,12 @@ class Recorder(
             return@withContext
         }
         val spec = StreamSpecs.from(rec)
-        if (spec.drm != null) {
-            dao.update(rec.copy(status = RecStatus.FAILED, error = "Encrypted (DRM) channels can't be recorded"))
+        if (spec.mime == StreamSpecs.MIME_SS) {
+            dao.update(rec.copy(status = RecStatus.FAILED, error = "Smooth Streaming channels can't be recorded yet"))
             return@withContext
         }
-        if (spec.mime == StreamSpecs.MIME_DASH || spec.mime == StreamSpecs.MIME_SS) {
-            dao.update(rec.copy(status = RecStatus.FAILED, error = "Recording DASH (.mpd) channels isn't supported yet"))
+        if (spec.mime == StreamSpecs.MIME_DASH) {
+            recordDash(rec, spec)
             return@withContext
         }
 
@@ -120,6 +125,59 @@ class Recorder(
             withContext(NonCancellable) { session.close(e.message ?: e.javaClass.simpleName) }
         }
     }
+
+    /** DASH, protected or not: segments saved as delivered (never decrypted) plus a local manifest. */
+    private suspend fun recordDash(start: RecordingEntity, spec: StreamSpec) {
+        var rec = start.copy(status = RecStatus.RECORDING)
+        dao.update(rec)
+        val folder = storage.folderFor(fileName(rec))
+        var lastUpdate = 0L
+        val dash = DashRecorder(
+            folder = folder,
+            manifestUrl = spec.url,
+            fetch = { url, range -> fetchBytes(spec, url, range) },
+            onProgress = { bytes, path ->
+                val now = System.currentTimeMillis()
+                if (rec.filePath == null || now - lastUpdate > 10_000) {
+                    lastUpdate = now
+                    rec = rec.copy(filePath = path, sizeBytes = bytes)
+                    dao.update(rec)
+                }
+            },
+        )
+        var problem: String? = null
+        try {
+            dash.run { System.currentTimeMillis() < rec.stop }
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) { finishDash(rec, dash, null) } // stopped by the user: keep what we have
+            throw e
+        } catch (e: Exception) {
+            problem = e.message ?: e.javaClass.simpleName
+        }
+        withContext(NonCancellable) { finishDash(rec, dash, problem) }
+    }
+
+    private suspend fun finishDash(current: RecordingEntity, dash: DashRecorder, error: String?) {
+        val rec = dao.get(current.id) ?: current
+        runCatching { dash.writeManifest() }
+        val path = File(storage.folderFor(fileName(rec)), DashRecorder.MANIFEST)
+        val saved = path.exists() && dash.bytesWritten > 0
+        dao.update(
+            rec.copy(
+                status = when {
+                    saved -> RecStatus.DONE
+                    error != null -> RecStatus.FAILED
+                    else -> RecStatus.CANCELLED
+                },
+                filePath = if (path.exists()) path.absolutePath else rec.filePath,
+                sizeBytes = dash.bytesWritten,
+                error = error,
+            )
+        )
+    }
+
+    /** True if a channel with [spec] can be recorded (everything except Smooth Streaming). */
+    fun canRecord(spec: StreamSpec): Boolean = spec.mime != StreamSpecs.MIME_SS
 
     /** Where captured stream bytes go: a recording file, or the pause-live-TV buffer. */
     interface CaptureTarget {
@@ -245,7 +303,10 @@ class Recorder(
                 try {
                     var data = fetchBytes(spec, segment.uri)
                     val key = segment.key
-                    if (key != null) {
+                    if (key != null && key.method != "NONE" && key.method != "AES-128" && spec.drm != null) {
+                        // DRM (Widevine / PlayReady / ClearKey CENC): saved still encrypted, played back
+                        // through the same licence step as live TV.
+                    } else if (key != null && key.method != "NONE") {
                         if (key.method != "AES-128" || key.uri == null) {
                             throw IllegalStateException("Unsupported HLS encryption (${key.method})")
                         }
@@ -298,16 +359,17 @@ class Recorder(
 
     private suspend fun fetchText(spec: StreamSpec, url: String): String = fetchBytes(spec, url).decodeToString()
 
-    private suspend fun fetchBytes(spec: StreamSpec, url: String): ByteArray = execute(spec, url).use { response ->
+    private suspend fun fetchBytes(spec: StreamSpec, url: String, range: String? = null): ByteArray = execute(spec, url, range).use { response ->
         if (!response.isSuccessful) throw IOException("Server answered HTTP ${response.code}")
         response.body?.bytes() ?: throw IOException("Empty response")
     }
 
     /** Runs a request with the channel's headers; cancelling the coroutine aborts it. */
-    private suspend fun execute(spec: StreamSpec, url: String): Response {
+    private suspend fun execute(spec: StreamSpec, url: String, range: String? = null): Response {
         val builder = Request.Builder().url(url)
             .header("User-Agent", spec.header("User-Agent") ?: UserAgent.current)
         spec.headers.forEach { (k, v) -> if (!k.equals("User-Agent", ignoreCase = true)) builder.header(k, v) }
+        if (range != null) builder.header("Range", range)
         val call: Call = http.newCall(builder.build())
         val handle = currentCoroutineContext().job.invokeOnCompletion { call.cancel() }
         try {

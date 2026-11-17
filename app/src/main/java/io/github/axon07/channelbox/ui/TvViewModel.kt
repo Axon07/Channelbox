@@ -604,10 +604,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** Record (or stop recording) what's on the current channel now. */
-    /** Protected (DRM) and DASH channels can't be recorded: say so instead of adding a recording that fails. */
+    /** Smooth Streaming channels can't be recorded yet: say so instead of adding a recording that fails. */
     private fun canRecord(ch: ChannelEntity): Boolean {
-        if (recorder.canCapture(StreamSpecs.from(ch))) return true
-        showToast("${ch.name} is copy-protected, so it can't be recorded")
+        if (recorder.canRecord(StreamSpecs.from(ch))) return true
+        showToast("${ch.name} uses Smooth Streaming, which can't be recorded yet")
         return false
     }
 
@@ -673,7 +673,17 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val path = recording.filePath ?: return
         val st = settings.value?.storage ?: StorageSettings()
         when {
-            path.startsWith("/") -> player.playFile(path)
+            // DASH recording (maybe protected): same DRM / licence step as the live channel.
+            path.endsWith(io.github.axon07.channelbox.data.DashRecorder.MANIFEST) -> {
+                val live = StreamSpecs.from(recording)
+                player.playOnDemand(
+                    StreamSpec(android.net.Uri.fromFile(java.io.File(path)).toString(), live.headers, live.drm, StreamSpecs.MIME_DASH)
+                )
+            }
+            path.startsWith("/") -> StreamSpecs.from(recording).drm?.let { drm ->
+                // Protected HLS saved still encrypted: needs the channel's licence / key again.
+                player.playOnDemand(StreamSpec(android.net.Uri.fromFile(java.io.File(path)).toString(), emptyMap(), drm, null))
+            } ?: player.playFile(path)
             path.startsWith("http") -> player.playOnDemand(
                 StreamSpec(path, mapOf("Authorization" to okhttp3.Credentials.basic(st.davUser, st.davPass)), null, null)
             )

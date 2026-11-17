@@ -61,7 +61,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Multi-view** | Watch up to 4 channels at once (Groups menu → Multi-view, or the green button): starts 2 side by side, add more with Menu. Hold OK / long-press a tile for full screen, change, add or remove. Sound follows the highlighted tile |
 | **Mini player** | Picture-in-picture when you press Home (optional) or from the on-screen buttons |
 | **Stream info** | The info banner shows resolution, frame rate, codec, audio format, bitrate, available caption languages and VPN status |
-| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play, stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
+| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS, HLS (incl. AES-128) and DASH channels. DRM-protected channels are recorded exactly as delivered – still encrypted, never decrypted to disk – and play back through the same ClearKey key or licence server as live TV, so they only play if the licence allows it. DASH recordings are kept on this box or a USB drive / SD card. Recordings screen to play, stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
 | **Player controls** | Movies, episodes, recordings and catch-up: seek bar with buffered part, elapsed/remaining time, ⏪ 10 s / ⏯ / ⏩ 30 s, audio & subtitles; tap the bar to jump |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press OK while watching: channels by group with what's on now |
@@ -184,7 +184,7 @@ Stack: Kotlin, Jetpack Compose for TV, Media3 ExoPlayer, Room, DataStore, WorkMa
 
 ## Roadmap
 
-- [ ] Record DASH channels and series recording (every episode of a show)
+- [ ] Series recording (every episode of a show)
 - [ ] Play the next episode automatically
 - [ ] Optional TMDB artwork for providers that send poor pictures
 - [ ] Encrypted Client Hello once Android 17 boxes are common

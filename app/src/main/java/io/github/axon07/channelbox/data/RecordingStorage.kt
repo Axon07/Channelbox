@@ -76,6 +76,17 @@ class RecordingStorage(
         }
     }
 
+    /**
+     * A folder for a multi-file (DASH) recording. These stay on this box or the USB drive / SD card:
+     * with a network share chosen, they're kept on this box.
+     */
+    suspend fun folderFor(name: String): File = withContext(Dispatchers.IO) {
+        val st = settings.current().storage
+        val base = if (st.type == "removable") removableDirectories().getOrNull(st.removableIndex) ?: localDirectory()
+        else localDirectory()
+        File(base, name).also { it.mkdirs() }
+    }
+
     suspend fun delete(location: String) = withContext(Dispatchers.IO) {
         val st = settings.current().storage
         when {
@@ -86,7 +97,11 @@ class RecordingStorage(
                         .header("Authorization", Credentials.basic(st.davUser, st.davPass)).build()
                 ).execute().close()
             }
-            else -> runCatching { File(location).delete() }
+            else -> runCatching {
+                val file = File(location)
+                // A DASH recording is a folder: manifest.mpd plus its segments.
+                if (file.name == DashRecorder.MANIFEST) file.parentFile?.deleteRecursively() else file.delete()
+            }
         }
         Unit
     }
