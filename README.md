@@ -29,7 +29,7 @@ box they're used to.
 
 ## Download
 
-Grab the latest `channelbox-vX.Y.Z.apk` from **[Releases](https://github.com/Axon07/Channelbox/releases)**, or the
+Grab the latest `channelbox.apk` from **[Releases](https://github.com/Axon07/Channelbox/releases)**, or the
 newest test build from the **[Actions](https://github.com/Axon07/Channelbox/actions)** tab (*channelbox-apks* artifact).
 
 Install it on the box with the **Downloader** app, a USB stick, or `adb install channelbox.apk`.
