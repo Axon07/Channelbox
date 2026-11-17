@@ -256,66 +256,93 @@ fun RecordingsScreen(
         if (recordings.isNotEmpty()) listState.scrollToItem((selected - 3).coerceAtLeast(0))
     }
     val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
+    val touch = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode ==
+        androidx.compose.ui.input.InputMode.Touch
     Column(
         Modifier
             .fillMaxSize()
             .background(Palette.Background)
-            .padding(horizontal = 40.dp, vertical = 20.dp)
+            .padding(horizontal = 40.dp, vertical = 24.dp)
     ) {
-        Text("Recordings", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
-        Text(
-            "OK / tap to play · hold for options · Back to return",
-            fontSize = 13.sp, color = Palette.TextDim,
-        )
-        Spacer(Modifier.height(12.dp))
-        if (recordings.isEmpty()) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("Recordings", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+            val total = recordings.sumOf { it.sizeBytes }
             Text(
-                "No recordings yet.\n\nWhile watching, press the remote's ● Record (or red) button, or tap the picture → Record.\n" +
-                    "In the guide, open a programme (OK on a future show, or hold OK) and choose Record.",
-                fontSize = 15.sp, color = Palette.TextDim,
+                "  ${recordings.size}" + (if (total > 0) "  ·  ${formatSize(total)}" else ""),
+                fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(bottom = 3.dp),
             )
         }
-        LazyColumn(state = listState, modifier = Modifier.widthIn(max = 760.dp)) {
+        Text(
+            if (touch) "Tap to play · long-press for options" else "OK to play · hold OK for options",
+            fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        if (recordings.isEmpty()) {
+            Text(
+                "No recordings yet.\n\nWhile watching, press ● Record on the remote or tap the picture → record.\n" +
+                    "In the guide, choose a programme and Record.",
+                fontSize = 14.sp, color = Palette.TextDim,
+            )
+        }
+        LazyColumn(state = listState, modifier = Modifier.widthIn(max = 900.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(recordings, key = { _, r -> r.id }) { i, r ->
                 val isSelected = i == selected
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(vertical = 2.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (isSelected) Palette.Accent else Palette.Surface)
+                        .height(58.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Color(0x21FFFFFF) else Color(0x0AFFFFFF))
+                        .border(if (isSelected) 1.5.dp else 0.dp, if (isSelected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
                         .tap(onLongClick = { onMenu(r) }) { onPlay(r) }
                         .padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        statusIcon(r.status), fontSize = 18.sp, textAlign = TextAlign.Center,
-                        color = if (r.status == RecStatus.RECORDING) Palette.Recording else Palette.Text,
-                        modifier = Modifier.width(30.dp),
-                    )
+                    Box(Modifier.width(28.dp), contentAlignment = Alignment.CenterStart) { StatusGlyph(r.status) }
                     Column(Modifier.weight(1f)) {
-                        Text(r.title, fontSize = 16.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val failed = r.status == RecStatus.FAILED
                         Text(
-                            listOfNotNull(
+                            if (failed) (r.error ?: "Didn't record") + "  ·  " + r.channelName
+                            else listOfNotNull(
                                 r.channelName,
                                 dateFormat.format(Date(r.start)),
                                 formatDuration(r.stop - r.start).takeIf { r.status == RecStatus.SCHEDULED },
                                 formatSize(r.sizeBytes).takeIf { r.sizeBytes > 0 },
                             ).joinToString("  ·  "),
-                            fontSize = 12.sp, color = if (isSelected) Palette.Text else Palette.TextDim,
+                            fontSize = 12.sp, color = if (failed) Palette.Error.copy(alpha = 0.85f) else Palette.TextDim,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        statusLabel(r), fontSize = 12.sp, maxLines = 2, textAlign = TextAlign.End,
-                        color = if (r.status == RecStatus.FAILED) Palette.Error else Palette.TextDim,
-                        modifier = Modifier.widthIn(max = 220.dp),
-                    )
+                    when (r.status) {
+                        RecStatus.RECORDING -> Chip("REC", Palette.Recording)
+                        RecStatus.SCHEDULED -> Chip("Scheduled", Color(0x33FFFFFF))
+                        RecStatus.DONE -> if (r.error != null) Chip("Partly recorded", Color(0x33FFFFFF))
+                        else -> Unit
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun StatusGlyph(status: String) {
+    when (status) {
+        RecStatus.RECORDING -> Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
+        RecStatus.SCHEDULED -> AppIcon(AppIcons.Guide, tint = Palette.TextDim, size = 16.dp)
+        RecStatus.DONE -> AppIcon(AppIcons.Play, tint = Color.White, size = 14.dp)
+        RecStatus.FAILED -> AppIcon(AppIcons.Close, tint = Palette.Error, size = 14.dp)
+        else -> AppIcon(AppIcons.Close, tint = Palette.TextDim, size = 14.dp)
+    }
+}
+
+@Composable
+private fun Chip(text: String, color: Color) {
+    Text(
+        text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(color).padding(horizontal = 9.dp, vertical = 3.dp),
+    )
 }
 
 private fun statusIcon(status: String) = when (status) {

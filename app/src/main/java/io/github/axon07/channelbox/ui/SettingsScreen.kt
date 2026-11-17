@@ -205,7 +205,7 @@ fun SettingsScreen(
             } else {
                 Text(category.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
                 Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     when (category) {
                         SettingsCategory.SOURCE -> SourceSettings(
                             settings, refreshState, channelCount, vm, onEditSource,
@@ -844,7 +844,7 @@ private fun SubPage(
             }
             var confirmRemove by remember(p.id) { mutableStateOf(false) }
             PageHeader(p.displayName, p.summary)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SettingCard(
                     title = "Use this playlist",
                     description = if (p.enabled) "Its channels are in the guide" else "Hidden – its channels aren't loaded",
@@ -998,8 +998,8 @@ private fun SubPage(
 
 @Composable
 private fun PageHeader(title: String, text: String) {
-    Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
-    Text(text, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+    Text(title, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+    Text(text, fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 2.dp, bottom = 12.dp))
 }
 
 @Composable
@@ -1039,7 +1039,7 @@ private fun CategoryRow(
         onClick = onTap,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .padding(vertical = 1.dp)
             .onFocusChanged { if (it.isFocused) onFocus() }
             .tap(onClick = onTap),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
@@ -1059,22 +1059,16 @@ private fun CategoryRow(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 10.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(category.icon(), highlight = selected)
+            AppIcon(category.icon(), tint = if (selected) Color.White else Color(0xFF9AA6B4), size = 18.dp)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    category.title, fontSize = 15.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    category.blurb, fontSize = 11.sp, color = Palette.TextDim,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                category.title, fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) Color.White else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1101,29 +1095,29 @@ private fun SettingCard(
             .tap(onClick = onClick),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (highlight) Color(0x333D8BFD) else Palette.Surface,
+            containerColor = if (highlight) Color(0x263D8BFD) else Color(0x0DFFFFFF),
             contentColor = Palette.Text,
-            focusedContainerColor = Palette.SurfaceLive,
-            focusedContentColor = Palette.Text,
-            pressedContainerColor = Palette.SurfaceLive,
+            focusedContainerColor = Color(0x21FFFFFF),
+            focusedContentColor = Color.White,
+            pressedContainerColor = Color(0x2EFFFFFF),
         ),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Palette.Accent),
                 shape = RoundedCornerShape(8.dp),
             ),
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .heightIn(min = 52.dp)
+                .padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
                 if (!description.isNullOrBlank()) {
                     Text(
                         description, fontSize = 12.sp, color = Palette.TextDim, maxLines = 2,
@@ -1150,11 +1144,11 @@ private fun InfoCard(title: String, text: String) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Palette.Surface)
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .background(Color(0x0DFFFFFF))
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Text(title, fontSize = 12.sp, color = Palette.TextDim)
-        Text(text, fontSize = 15.sp, color = Palette.Text, modifier = Modifier.padding(top = 2.dp))
+        Text(text, fontSize = 14.sp, color = Palette.Text, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -1162,13 +1156,13 @@ private fun InfoCard(title: String, text: String) {
 private fun ToggleSwitch(on: Boolean) {
     Box(
         Modifier
-            .size(width = 42.dp, height = 24.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(width = 40.dp, height = 22.dp)
+            .clip(RoundedCornerShape(50))
             .background(if (on) Palette.Accent else Color(0xFF3A4554))
             .padding(3.dp),
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        Box(Modifier.size(18.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
+        Box(Modifier.size(16.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color.White))
     }
 }
 
