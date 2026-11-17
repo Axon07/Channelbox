@@ -18,6 +18,8 @@ class EpgMatcher(channels: List<Candidate>) {
 
     private val all = channels.associateBy { it.channelId }
     private val unmatched = LinkedHashMap<String, Candidate>().apply { channels.forEach { put(it.channelId, it) } }
+    /** Channels linked only by name; a later guide with a matching id takes them over. */
+    private val weak = LinkedHashMap<String, Candidate>()
     private val pending = ArrayList<XmlChannel>()
     private var finalized = false
 
@@ -46,26 +48,29 @@ class EpgMatcher(channels: List<Candidate>) {
     }
 
     private fun match(xml: List<XmlChannel>) {
+        // Id matches may also take over channels an earlier guide only linked by name.
+        val byId = unmatched.values + weak.values
+
         // Pass 1: exact id.
         val byExact = HashMap<String, MutableList<Candidate>>()
-        unmatched.values.forEach { c -> c.epgId?.let { byExact.getOrPut(it.trim().lowercase()) { mutableListOf() } += c } }
-        xml.forEach { x -> byExact[x.id.lowercase()]?.forEach { assign(it, x.id) } }
+        byId.forEach { c -> c.epgId?.let { byExact.getOrPut(it.trim().lowercase()) { mutableListOf() } += c } }
+        xml.forEach { x -> byExact[x.id.lowercase()]?.toList()?.forEach { assign(it, x.id, byName = false) } }
 
         // Pass 2: normalised id.
         val byNormId = HashMap<String, MutableList<Candidate>>()
-        unmatched.values.forEach { c ->
+        (unmatched.values + weak.values).forEach { c ->
             c.epgId?.let { normalizeName(it) }?.takeIf { it.isNotEmpty() }?.let { byNormId.getOrPut(it) { mutableListOf() } += c }
         }
-        xml.forEach { x -> byNormId[normalizeName(x.id)]?.toList()?.forEach { assign(it, x.id) } }
+        xml.forEach { x -> byNormId[normalizeName(x.id)]?.toList()?.forEach { assign(it, x.id, byName = false) } }
 
-        // Pass 3: names.
+        // Pass 3: names (only channels nothing has claimed yet).
         val byName = HashMap<String, MutableList<Candidate>>()
         unmatched.values.forEach { c ->
             c.names.map { normalizeName(it) }.filter { it.isNotEmpty() }.distinct()
                 .forEach { byName.getOrPut(it) { mutableListOf() } += c }
         }
         xml.forEach { x ->
-            x.names.forEach { n -> byName[normalizeName(n)]?.toList()?.forEach { assign(it, x.id) } }
+            x.names.forEach { n -> byName[normalizeName(n)]?.toList()?.forEach { assign(it, x.id, byName = true) } }
         }
     }
 
@@ -78,14 +83,19 @@ class EpgMatcher(channels: List<Candidate>) {
         empty.forEach { id ->
             val key = assigned.remove(id)
             if (key != null && assigned.values.none { it == key }) wanted -= key
+            weak.remove(id)
             all[id]?.let { unmatched[id] = it }
         }
         pending.clear()
         finalized = false
     }
 
-    private fun assign(c: Candidate, xmlId: String) {
-        if (unmatched.remove(c.channelId) == null) return
+    private fun assign(c: Candidate, xmlId: String, byName: Boolean) {
+        val wasUnmatched = unmatched.remove(c.channelId) != null
+        // Upgrade a name-only link to an id link; otherwise first match wins.
+        val upgrade = !wasUnmatched && !byName && weak.remove(c.channelId) != null
+        if (!wasUnmatched && !upgrade) return
+        if (byName) weak[c.channelId] = c
         val key = xmlId.lowercase()
         assigned[c.channelId] = key
         wanted += key
