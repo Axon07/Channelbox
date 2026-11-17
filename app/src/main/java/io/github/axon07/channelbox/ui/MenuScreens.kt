@@ -49,12 +49,13 @@ import java.util.Locale
 // ---- Groups menu (Back from the guide) ---------------------------------------------------------
 
 /**
- * Left-hand menu over the guide: channel groups, then three tiles at the bottom.
- * Index layout: 0 until filters.size = groups, then +0 Multi-view, +1 Recordings, +2 Settings.
+ * Left-hand menu over the guide: channel groups (in one section per playlist when there are
+ * several), then tiles at the bottom.
+ * Index layout: 0 until rows.size = rows, then +0 Multi-view, +1 Recordings, +2 Settings, +3 Movies, +4 TV Shows.
  */
 @Composable
 fun GroupsPanel(
-    filters: List<ChannelFilter>,
+    rows: List<MenuRow>,
     counts: Map<ChannelFilter, Int>,
     active: ChannelFilter,
     selected: Int,
@@ -65,7 +66,7 @@ fun GroupsPanel(
     onSelect: (Int) -> Unit,
 ) {
     LaunchedEffect(selected) {
-        if (selected < filters.size) listState.scrollToItem((selected - 3).coerceAtLeast(0))
+        if (selected < rows.size) listState.scrollToItem((selected - 3).coerceAtLeast(0))
     }
     Column(
         Modifier
@@ -80,45 +81,92 @@ fun GroupsPanel(
             modifier = Modifier.padding(start = 8.dp),
         )
         Text(
-            "${counts[ChannelFilter.All] ?: 0} channels · ${filters.count { it is ChannelFilter.Group }} groups",
+            "${counts[ChannelFilter.All] ?: 0} channels",
             fontSize = 12.sp, color = Palette.TextDim,
             modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 12.dp),
         )
         LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-            itemsIndexed(filters) { i, f ->
-                GroupRow(
-                    filter = f,
-                    count = counts[f],
-                    active = f == active,
-                    selected = i == selected,
-                    onClick = { onSelect(i) },
-                )
+            itemsIndexed(rows) { i, row ->
+                when (row) {
+                    is MenuRow.Header -> SectionHeader(
+                        label = row.label,
+                        open = row.open,
+                        collapsible = row.collapsible,
+                        first = i == 0,
+                        selected = i == selected,
+                        onClick = { onSelect(i) },
+                    )
+                    is MenuRow.Item -> GroupRow(
+                        filter = row.filter,
+                        count = counts[row.filter],
+                        active = row.filter == active,
+                        selected = i == selected,
+                        indented = row.indented,
+                        onClick = { onSelect(i) },
+                    )
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
         // Movies & TV Shows (when the playlists have any), then the shortcuts.
         if (movieCount > 0 || showCount > 0) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (movieCount > 0) LibraryTile("Movies", movieCount, AppIcons.Film, selected == filters.size + 3, Modifier.weight(1f)) {
-                    onSelect(filters.size + 3)
+                if (movieCount > 0) LibraryTile("Movies", movieCount, AppIcons.Film, selected == rows.size + 3, Modifier.weight(1f)) {
+                    onSelect(rows.size + 3)
                 }
-                if (showCount > 0) LibraryTile("TV Shows", showCount, AppIcons.Tv, selected == filters.size + 4, Modifier.weight(1f)) {
-                    onSelect(filters.size + 4)
+                if (showCount > 0) LibraryTile("TV Shows", showCount, AppIcons.Tv, selected == rows.size + 4, Modifier.weight(1f)) {
+                    onSelect(rows.size + 4)
                 }
             }
             Spacer(Modifier.height(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QuickTile("Multi-view", AppIcons.Grid, selected == filters.size, Modifier.weight(1f)) {
-                onSelect(filters.size)
+            QuickTile("Multi-view", AppIcons.Grid, selected == rows.size, Modifier.weight(1f)) {
+                onSelect(rows.size)
             }
             QuickTile(
                 if (recordingCount > 0) "Recordings · $recordingCount" else "Recordings",
-                AppIcons.Record, selected == filters.size + 1, Modifier.weight(1f),
-            ) { onSelect(filters.size + 1) }
-            QuickTile("Settings", AppIcons.Settings, selected == filters.size + 2, Modifier.weight(1f)) {
-                onSelect(filters.size + 2)
+                AppIcons.Record, selected == rows.size + 1, Modifier.weight(1f),
+            ) { onSelect(rows.size + 1) }
+            QuickTile("Settings", AppIcons.Settings, selected == rows.size + 2, Modifier.weight(1f)) {
+                onSelect(rows.size + 2)
             }
+        }
+    }
+}
+
+/** A playlist's heading: its name and an arrow showing whether its groups are open. */
+@Composable
+private fun SectionHeader(
+    label: String,
+    open: Boolean,
+    collapsible: Boolean,
+    first: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = if (first) 0.dp else 10.dp, bottom = 2.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .tap(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Palette.Text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (collapsible) {
+            AppIcon(if (open) AppIcons.Up else AppIcons.Down, tint = if (selected) Color.White else Palette.TextDim, size = 20.dp)
         }
     }
 }
@@ -129,10 +177,12 @@ private fun GroupRow(
     count: Int?,
     active: Boolean,
     selected: Boolean,
+    indented: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
         Modifier
+            .padding(start = if (indented) 14.dp else 0.dp)
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(14.dp))

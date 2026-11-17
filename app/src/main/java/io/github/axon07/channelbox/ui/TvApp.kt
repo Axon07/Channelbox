@@ -123,7 +123,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val visible by vm.visibleChannels.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
-    val filters by vm.filters.collectAsStateWithLifecycle()
+    val menuSections by vm.menuSections.collectAsStateWithLifecycle()
+    val expandedSections by vm.expanded.collectAsStateWithLifecycle()
+    val menuRows = remember(menuSections, expandedSections) { vm.menuRows(menuSections, expandedSections) }
     val current by vm.current.collectAsStateWithLifecycle()
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -208,8 +210,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         mode = Mode.GUIDE
     }
 
-    fun openGroups(index: Int = filters.indexOf(filter).coerceAtLeast(0)) {
-        groupsIndex = index
+    /** Opens the groups menu on the current group, or on shortcut tile [tile] (see the layout below). */
+    fun openGroups(tile: Int? = null) {
+        val rows = vm.revealInMenu(filter) // opens the playlist section the current group is in
+        groupsIndex = if (tile != null) rows.size + tile
+        else rows.indexOfFirst { it is MenuRow.Item && it.filter == filter }.coerceAtLeast(0)
         groupsOpenedAt = android.os.SystemClock.uptimeMillis()
         mode = Mode.GROUPS
     }
@@ -264,10 +269,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
 
-    // Groups menu layout: groups 0 until F, then Multi-view F, Recordings F+1, Settings F+2,
-    // Movies F+3, TV Shows F+4 (shown above the shortcuts).
-    val tileMovies = filters.size + 3
-    val tileShows = filters.size + 4
+    // Groups menu layout: rows 0 until F (playlist headings and groups), then Multi-view F,
+    // Recordings F+1, Settings F+2, Movies F+3, TV Shows F+4 (shown above the shortcuts).
+    val rowCount = menuRows.size
+    val tileMovies = rowCount + 3
+    val tileShows = rowCount + 4
     val libraryTiles = listOfNotNull(tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 })
 
     fun openVod(kind: String) {
@@ -279,13 +285,16 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         when {
             i == tileMovies -> openVod(VodKind.MOVIE)
             i == tileShows -> openVod(VodKind.SERIES)
-            i < filters.size -> {
-                vm.setFilter(filters[i])
-                guide.row = 0
-                mode = Mode.GUIDE
+            i < rowCount -> when (val row = menuRows[i]) {
+                is MenuRow.Header -> if (row.collapsible) vm.toggleSection(row.key)
+                is MenuRow.Item -> {
+                    vm.setFilter(row.filter)
+                    guide.row = 0
+                    mode = Mode.GUIDE
+                }
             }
-            i == filters.size -> openMultiView()
-            i == filters.size + 1 -> {
+            i == rowCount -> openMultiView()
+            i == rowCount + 1 -> {
                 recIndex = 0
                 mode = Mode.RECORDINGS
             }
@@ -512,7 +521,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.GROUPS -> when (code) {
                 AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                    val f = filters.size
+                    val f = rowCount
                     groupsIndex = when {
                         groupsIndex in 1 until f -> groupsIndex - 1
                         groupsIndex == 0 -> f // wrap to the shortcuts
@@ -521,7 +530,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     }
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
-                    val f = filters.size
+                    val f = rowCount
                     groupsIndex = when {
                         groupsIndex < f - 1 -> groupsIndex + 1
                         groupsIndex == f - 1 -> libraryTiles.firstOrNull() ?: f
@@ -532,14 +541,28 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
                     groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
-                    groupsIndex = (groupsIndex + 8).coerceAtMost((filters.size - 1).coerceAtLeast(0))
+                    groupsIndex = (groupsIndex + 8).coerceAtMost((rowCount - 1).coerceAtLeast(0))
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> when {
-                    groupsIndex >= filters.size && groupsIndex < filters.size + 2 -> groupsIndex++
+                    // On a closed playlist heading: open it.
+                    (menuRows.getOrNull(groupsIndex) as? MenuRow.Header)?.let { it.collapsible && !it.open } == true ->
+                        vm.setSectionOpen((menuRows[groupsIndex] as MenuRow.Header).key, true)
+                    groupsIndex >= rowCount && groupsIndex < rowCount + 2 -> groupsIndex++
                     groupsIndex == tileMovies && tileShows in libraryTiles -> groupsIndex = tileShows
                     else -> mode = Mode.GUIDE
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> when {
-                    groupsIndex > filters.size && groupsIndex <= filters.size + 2 -> groupsIndex--
+                    // On a playlist heading or one of its groups: close the section, landing on its heading.
+                    groupsIndex < rowCount && run {
+                        val row = menuRows[groupsIndex]
+                        val key = (row as? MenuRow.Header)?.key ?: (row as MenuRow.Item).section
+                        val head = menuRows.indexOfFirst { it is MenuRow.Header && it.key == key && it.collapsible && it.open }
+                        if (head >= 0) {
+                            vm.setSectionOpen(key, false)
+                            groupsIndex = head
+                        }
+                        head >= 0
+                    } -> Unit
+                    groupsIndex > rowCount && groupsIndex <= rowCount + 2 -> groupsIndex--
                     groupsIndex == tileShows && tileMovies in libraryTiles -> groupsIndex = tileMovies
                     else -> Unit
                 }
@@ -756,11 +779,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
             Mode.OPTIONS -> mode = optionsReturn
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
-            Mode.RECORDINGS -> openGroups(filters.size + 1)
+            Mode.RECORDINGS -> openGroups(tile = 1)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.PLAYBACK -> leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
-            Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(filters.size + 2)
+            Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
             Mode.VOD -> when {
                 vodResume != null -> {
                     vodResume = null
@@ -768,7 +791,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
                 vodBrowser.show != null -> vodBrowser.closeShow()
                 vodBrowser.query.isNotEmpty() -> vodBrowser.query = ""
-                else -> openGroups(if (vodBrowser.kind == VodKind.MOVIE) tileMovies else tileShows)
+                else -> openGroups(tile = if (vodBrowser.kind == VodKind.MOVIE) 3 else 4)
             }
             Mode.SETUP -> mode = Mode.SETTINGS
         }
@@ -851,7 +874,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     state = guide,
                     channels = visible,
                     programs = guidePrograms,
-                    filterLabel = filter.label,
+                    filterLabel = vm.filterTitle(filter, menuSections),
                     guideStart = guideStart,
                     now = now,
                     playingId = current?.id,
@@ -876,7 +899,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 )
                 if (mode == Mode.GROUPS) {
                     GroupsPanel(
-                        filters = filters,
+                        rows = menuRows,
                         counts = filterCounts,
                         active = filter,
                         selected = groupsIndex,
@@ -1077,7 +1100,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         channels = visible,
                         selected = multiPickIndex,
                         listState = listState,
-                        filterLabel = filter.label,
+                        filterLabel = vm.filterTitle(filter, menuSections),
                         favorites = favorites,
                         playingId = multi.channels[multi.focused]?.id,
                         upcoming = upcoming,
@@ -1144,7 +1167,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         channels = visible,
                         selected = listIndex,
                         listState = listState,
-                        filterLabel = filter.label,
+                        filterLabel = vm.filterTitle(filter, menuSections),
                         favorites = favorites,
                         playingId = cur?.id,
                         upcoming = upcoming,

@@ -46,6 +46,13 @@ import io.github.axon07.channelbox.system.VpnManager
 import io.github.axon07.channelbox.data.Catchup
 import io.github.axon07.channelbox.data.StreamSpec
 
+/** A row of the groups menu. */
+sealed interface MenuRow {
+    /** A playlist's heading; selecting it opens or closes the section. */
+    data class Header(val key: String, val label: String, val open: Boolean, val collapsible: Boolean) : MenuRow
+    data class Item(val filter: ChannelFilter, val section: String, val indented: Boolean) : MenuRow
+}
+
 sealed interface ChannelFilter {
     val label: String
 
@@ -62,7 +69,8 @@ sealed interface ChannelFilter {
         override val label: String get() = name
     }
 
-    data class Group(val name: String) : ChannelFilter {
+    /** A group; with several playlists, [playlistId] keeps each playlist's groups apart. */
+    data class Group(val name: String, val playlistId: String? = null) : ChannelFilter {
         override val label: String get() = if (name == UNGROUPED) "Other channels" else name
     }
 
@@ -110,17 +118,77 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private val _filter = MutableStateFlow<ChannelFilter>(ChannelFilter.All)
     val filter: StateFlow<ChannelFilter> = _filter.asStateFlow()
 
-    val filters: StateFlow<List<ChannelFilter>> = combine(allChannels, c.settings.flow) { list, s ->
+    /** One section of the groups menu: every playlist, or one playlist with its groups. */
+    data class MenuSection(val key: String, val label: String, val filters: List<ChannelFilter>)
+
+    /** With one playlist: a single untitled section. With several: "All playlists", then one per playlist. */
+    val menuSections: StateFlow<List<MenuSection>> = combine(allChannels, c.settings.flow) { list, s ->
         // Playlist order, with channels that have no group collected at the very end.
-        val groups = list.map { it.groupTitle }.distinct()
-        val used = list.mapNotNull { it.playlistId }.toSet()
-        val sources = if (used.size > 1) {
-            s.playlists.filter { it.id in used }.map { ChannelFilter.Source(it.id, it.displayName) }
-        } else emptyList()
-        listOf(ChannelFilter.All, ChannelFilter.Favorites) + sources +
-            (groups.filter { it != ChannelFilter.UNGROUPED } + groups.filter { it == ChannelFilter.UNGROUPED })
-                .map { ChannelFilter.Group(it) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
+        fun groupsOf(channels: List<ChannelEntity>): List<String> {
+            val names = channels.map { it.groupTitle }.distinct()
+            return names.filter { it != ChannelFilter.UNGROUPED } + names.filter { it == ChannelFilter.UNGROUPED }
+        }
+        val byPlaylist = list.groupBy(::playlistOf)
+        val playlists = s.playlists.filter { it.id in byPlaylist }
+        if (playlists.size <= 1) {
+            listOf(MenuSection(SECTION_ALL, "", listOf(ChannelFilter.All, ChannelFilter.Favorites) + groupsOf(list).map { ChannelFilter.Group(it) }))
+        } else {
+            listOf(MenuSection(SECTION_ALL, "All playlists", listOf(ChannelFilter.Favorites, ChannelFilter.All))) +
+                playlists.map { p ->
+                    MenuSection(
+                        p.id, p.displayName,
+                        listOf(ChannelFilter.Source(p.id, p.displayName)) +
+                            groupsOf(byPlaylist.getValue(p.id)).map { ChannelFilter.Group(it, p.id) },
+                    )
+                }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Every filter in menu order (Left/Right in the channel list steps through these). */
+    val filters: StateFlow<List<ChannelFilter>> = menuSections
+        .map { sections -> sections.flatMap { it.filters }.ifEmpty { listOf(ChannelFilter.All, ChannelFilter.Favorites) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
+
+    /** Playlist sections opened in the groups menu ("All playlists" is always open). */
+    private val _expanded = MutableStateFlow<Set<String>>(emptySet())
+    val expanded: StateFlow<Set<String>> = _expanded.asStateFlow()
+
+    fun toggleSection(key: String) {
+        _expanded.value = if (key in _expanded.value) _expanded.value - key else _expanded.value + key
+    }
+
+    fun setSectionOpen(key: String, open: Boolean) {
+        _expanded.value = if (open) _expanded.value + key else _expanded.value - key
+    }
+
+    /** Rows of the groups menu as shown right now (closed sections show only their heading). */
+    fun menuRows(
+        sections: List<MenuSection> = menuSections.value,
+        open: Set<String> = _expanded.value,
+    ): List<MenuRow> = buildList {
+        sections.forEach { s ->
+            if (s.label.isEmpty()) {
+                s.filters.forEach { add(MenuRow.Item(it, s.key, indented = false)) }
+            } else {
+                val isOpen = s.key == SECTION_ALL || s.key in open
+                add(MenuRow.Header(s.key, s.label, isOpen, collapsible = s.key != SECTION_ALL))
+                if (isOpen) s.filters.forEach { add(MenuRow.Item(it, s.key, indented = true)) }
+            }
+        }
+    }
+
+    /** Opens the section holding [filter] so it can be shown selected; returns the rows then. */
+    fun revealInMenu(filter: ChannelFilter): List<MenuRow> {
+        menuSections.value.firstOrNull { filter in it.filters }?.let { if (it.key != SECTION_ALL) setSectionOpen(it.key, true) }
+        return menuRows()
+    }
+
+    /** Name of [f] for headings; a group says which playlist it's from when there are several. */
+    fun filterTitle(f: ChannelFilter, sections: List<MenuSection> = menuSections.value): String {
+        val playlist = (f as? ChannelFilter.Group)?.playlistId ?: return f.label
+        val name = sections.firstOrNull { it.key == playlist }?.label.orEmpty()
+        return if (name.isEmpty()) f.label else "$name · ${f.label}"
+    }
 
     /** Number of channels in each group, for the groups menu. */
     val filterCounts: StateFlow<Map<ChannelFilter, Int>> = combine(filters, allChannels, favorites) { fs, list, favs ->
@@ -128,7 +196,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         map[ChannelFilter.All] = list.size
         map[ChannelFilter.Favorites] = list.count { it.id in favs }
         list.groupingBy { it.groupTitle }.eachCount().forEach { (g, n) -> map[ChannelFilter.Group(g)] = n }
-        val perSource = list.groupingBy { it.playlistId }.eachCount()
+        list.groupingBy { playlistOf(it) to it.groupTitle }.eachCount()
+            .forEach { (k, n) -> map[ChannelFilter.Group(k.second, k.first)] = n }
+        val perSource = list.groupingBy(::playlistOf).eachCount()
         fs.filterIsInstance<ChannelFilter.Source>().forEach { map[it] = perSource[it.id] ?: 0 }
         map
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -146,8 +216,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             when (f) {
                 ChannelFilter.All -> list
                 ChannelFilter.Favorites -> list.filter { it.id in favs }
-                is ChannelFilter.Group -> list.filter { it.groupTitle == f.name }
-                is ChannelFilter.Source -> list.filter { (it.playlistId ?: io.github.axon07.channelbox.data.SettingsStore.LEGACY_ID) == f.id }
+                is ChannelFilter.Group -> list.filter {
+                    it.groupTitle == f.name && (f.playlistId == null || playlistOf(it) == f.playlistId)
+                }
+                is ChannelFilter.Source -> list.filter { playlistOf(it) == f.id }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -746,6 +818,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        const val SECTION_ALL = "\u0000all"
+        private fun playlistOf(ch: ChannelEntity): String =
+            ch.playlistId ?: io.github.axon07.channelbox.data.SettingsStore.LEGACY_ID
         fun roundDown(time: Long) = time - time.mod(GUIDE_STEP)
         fun recordingKey(channelId: String, programStart: Long) = "$channelId@$programStart"
     }
