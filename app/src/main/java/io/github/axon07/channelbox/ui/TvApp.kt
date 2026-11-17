@@ -177,6 +177,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var touchBarToken by remember { mutableIntStateOf(0) }
     var listIndex by remember { mutableIntStateOf(0) }
     var groupsIndex by remember { mutableIntStateOf(0) }
+    /** Group row to return to when coming back from the shortcut rail. */
+    var groupsLastRow by remember { mutableIntStateOf(0) }
     var recIndex by remember { mutableIntStateOf(0) }
     var exitReturn by remember { mutableStateOf(Mode.GROUPS) }
     var updateReturn by remember { mutableStateOf(Mode.PLAYER) }
@@ -241,8 +243,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     /** Opens the groups menu on the current group, or on shortcut tile [tile] (see the layout below). */
     fun openGroups(tile: Int? = null) {
         val rows = vm.revealInMenu(filter) // opens the playlist section the current group is in
-        groupsIndex = if (tile != null) rows.size + tile
-        else rows.indexOfFirst { it is MenuRow.Item && it.filter == filter }.coerceAtLeast(0)
+        groupsLastRow = rows.indexOfFirst { it is MenuRow.Item && it.filter == filter }.coerceAtLeast(0)
+        groupsIndex = if (tile != null) rows.size + tile else groupsLastRow
         groupsOpenedAt = android.os.SystemClock.uptimeMillis()
         mode = Mode.GROUPS
     }
@@ -350,7 +352,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     fun openSearch() {
         mode = Mode.SEARCH
     }
-    val libraryTiles = listOfNotNull(tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 })
+    // The shortcut rail, top to bottom (matches GroupsPanel).
+    val railTiles = listOfNotNull(
+        tileSearch, tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 },
+        rowCount + 1, rowCount, rowCount + 2,
+    )
 
     fun openVod(kind: String) {
         vodBrowser.open(kind)
@@ -700,35 +706,26 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
             }
             Mode.GROUPS -> when (code) {
+                // Groups list on the right, shortcut rail on the left (see GroupsPanel).
                 AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                    val f = rowCount
-                    groupsIndex = when {
-                        groupsIndex in 1 until f -> groupsIndex - 1
-                        groupsIndex == 0 -> tileSearch // wrap to the shortcuts
-                        groupsIndex in libraryTiles -> (f - 1).coerceAtLeast(0)
-                        else -> libraryTiles.firstOrNull() ?: (f - 1).coerceAtLeast(0) // shortcuts
-                    }
+                    val r = railTiles.indexOf(groupsIndex)
+                    groupsIndex = if (r >= 0) railTiles[(r - 1).coerceAtLeast(0)] else (groupsIndex - 1).coerceAtLeast(0)
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
-                    val f = rowCount
-                    groupsIndex = when {
-                        groupsIndex < f - 1 -> groupsIndex + 1
-                        groupsIndex == f - 1 -> libraryTiles.firstOrNull() ?: tileSearch
-                        groupsIndex in libraryTiles -> tileSearch
-                        else -> 0 // shortcuts: wrap to the top
-                    }
+                    val r = railTiles.indexOf(groupsIndex)
+                    groupsIndex = if (r >= 0) railTiles[(r + 1).coerceAtMost(railTiles.size - 1)]
+                    else (groupsIndex + 1).coerceAtMost((rowCount - 1).coerceAtLeast(0))
                 }
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
-                    groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
+                    if (groupsIndex < rowCount) groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN ->
-                    groupsIndex = (groupsIndex + 8).coerceAtMost((rowCount - 1).coerceAtLeast(0))
+                    if (groupsIndex < rowCount) groupsIndex = (groupsIndex + 8).coerceAtMost((rowCount - 1).coerceAtLeast(0))
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> when {
                     // On a closed playlist heading: open it.
                     (menuRows.getOrNull(groupsIndex) as? MenuRow.Header)?.let { it.collapsible && !it.open } == true ->
                         vm.setSectionOpen((menuRows[groupsIndex] as MenuRow.Header).key, true)
-                    groupsIndex == tileSearch -> groupsIndex = rowCount
-                    groupsIndex >= rowCount && groupsIndex < rowCount + 2 -> groupsIndex++
-                    groupsIndex == tileMovies && tileShows in libraryTiles -> groupsIndex = tileShows
+                    // From the rail back into the groups.
+                    groupsIndex >= rowCount -> groupsIndex = groupsLastRow.coerceIn(0, (rowCount - 1).coerceAtLeast(0))
                     else -> mode = Mode.GUIDE
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> when {
@@ -743,9 +740,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         }
                         head >= 0
                     } -> Unit
-                    groupsIndex == rowCount -> groupsIndex = tileSearch
-                    groupsIndex > rowCount && groupsIndex <= rowCount + 2 -> groupsIndex--
-                    groupsIndex == tileShows && tileMovies in libraryTiles -> groupsIndex = tileMovies
+                    // From the groups out to the rail.
+                    groupsIndex < rowCount -> {
+                        groupsLastRow = groupsIndex
+                        groupsIndex = railTiles.first()
+                    }
                     else -> Unit
                 }
                 AndroidKeyEvent.KEYCODE_MENU -> mode = Mode.GUIDE
@@ -973,7 +972,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PLAYBACK -> leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking && multi.count > 0) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
-            Mode.SEARCH -> openGroups(tileSearch)
+            Mode.SEARCH -> openGroups(tile = 5)
             Mode.VOD -> when {
                 vodResume != null -> {
                     vodResume = null

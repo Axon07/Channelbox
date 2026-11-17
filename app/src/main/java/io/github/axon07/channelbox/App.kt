@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import io.github.axon07.channelbox.data.AppDatabase
 import io.github.axon07.channelbox.data.NetworkSettings
 import io.github.axon07.channelbox.data.Recorder
@@ -37,9 +39,24 @@ class App : Application(), ImageLoaderFactory {
         }
     }
 
-    /** Channel logos also go through the app's HTTP client (proxy / DNS / user agent). */
+    /**
+     * Logos and posters go through the app's HTTP client (proxy / DNS / user agent) and are kept on
+     * the device, so each picture is downloaded once. Many IPTV image servers send "don't cache"
+     * headers, which would otherwise make every scroll download them again; those are ignored.
+     * The cache is capped (small devices) and Android may clear it when space runs low.
+     */
     override fun newImageLoader(): ImageLoader =
-        ImageLoader.Builder(this).okHttpClient { container.http }.build()
+        ImageLoader.Builder(this)
+            .okHttpClient { container.http }
+            .respectCacheHeaders(false)
+            .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.2).build() }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("images"))
+                    .maxSizeBytes(200L * 1024 * 1024)
+                    .build()
+            }
+            .build()
 }
 
 /** Hand-rolled dependency container — small enough that a DI framework isn't worth it. */

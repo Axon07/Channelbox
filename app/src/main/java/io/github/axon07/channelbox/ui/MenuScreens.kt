@@ -49,9 +49,10 @@ import java.util.Locale
 // ---- Groups menu (Back from the guide) ---------------------------------------------------------
 
 /**
- * Left-hand menu over the guide: channel groups (in one section per playlist when there are
- * several), then tiles at the bottom.
- * Index layout: 0 until rows.size = rows, then +0 Multi-view, +1 Recordings, +2 Settings, +3 Movies, +4 TV Shows.
+ * Left-hand menu over the guide: a slim rail of shortcuts (Search, Movies, TV Shows, Recordings,
+ * Multi-view, Settings) beside the channel groups (one section per playlist when there are several).
+ * Index layout: 0 until rows.size = group rows, then +0 Multi-view, +1 Recordings, +2 Settings,
+ * +3 Movies, +4 TV Shows, +5 Search.
  */
 @Composable
 fun GroupsPanel(
@@ -66,26 +67,43 @@ fun GroupsPanel(
     onSelect: (Int) -> Unit,
 ) {
     LaunchedEffect(selected) {
-        if (selected < rows.size) listState.scrollToItem((selected - 3).coerceAtLeast(0))
+        if (selected < rows.size) listState.scrollToItem((selected - 4).coerceAtLeast(0))
     }
-    Column(
+    val n = rows.size
+    val inRail = selected >= n
+    Row(
         Modifier
             .fillMaxHeight()
-            .width(340.dp)
-            .background(Brush.horizontalGradient(listOf(Color(0xFA0F151D), Color(0xF20F151D), Color(0xE00F151D))))
-            .tap { }
-            .padding(top = 24.dp, bottom = 16.dp, start = 14.dp, end = 14.dp)
+            .background(Brush.horizontalGradient(listOf(Color(0xFC0C1118), Color(0xF50F151D), Color(0xE60F151D))))
+            .tap { },
     ) {
-        Text(
-            "Channels", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-        Text(
-            "${counts[ChannelFilter.All] ?: 0} channels",
-            fontSize = 12.sp, color = Palette.TextDim,
-            modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 12.dp),
-        )
-        LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+        // Shortcut rail.
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .width(84.dp)
+                .background(Color(0x66000000))
+                .padding(vertical = 20.dp, horizontal = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            RailItem("Search", AppIcons.Search, selected == n + 5) { onSelect(n + 5) }
+            RailItem("Live TV", AppIcons.List, highlighted = !inRail, selected = false) { onSelect(rows.indexOfFirst { it is MenuRow.Item }.coerceAtLeast(0)) }
+            if (movieCount > 0) RailItem("Movies", AppIcons.Film, selected == n + 3) { onSelect(n + 3) }
+            if (showCount > 0) RailItem("TV Shows", AppIcons.Tv, selected == n + 4) { onSelect(n + 4) }
+            RailItem(if (recordingCount > 0) "Recordings ($recordingCount)" else "Recordings", AppIcons.Record, selected == n + 1) { onSelect(n + 1) }
+            RailItem("Multi-view", AppIcons.Grid, selected == n) { onSelect(n) }
+            RailItem("Settings", AppIcons.Settings, selected == n + 2) { onSelect(n + 2) }
+        }
+        // Groups.
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(290.dp)
+                .padding(horizontal = 10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 20.dp),
+        ) {
             itemsIndexed(rows) { i, row ->
                 when (row) {
                     is MenuRow.Header -> SectionHeader(
@@ -107,34 +125,41 @@ fun GroupsPanel(
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        // Movies & TV Shows (when the playlists have any), then the shortcuts.
-        if (movieCount > 0 || showCount > 0) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (movieCount > 0) LibraryTile("Movies", movieCount, AppIcons.Film, selected == rows.size + 3, Modifier.weight(1f)) {
-                    onSelect(rows.size + 3)
+    }
+}
+
+/** One shortcut on the rail: icon with a small label under it. */
+@Composable
+private fun RailItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    highlighted: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                when {
+                    selected -> Color(0x33FFFFFF)
+                    highlighted -> Color(0x14FFFFFF)
+                    else -> Color.Transparent
                 }
-                if (showCount > 0) LibraryTile("TV Shows", showCount, AppIcons.Tv, selected == rows.size + 4, Modifier.weight(1f)) {
-                    onSelect(rows.size + 4)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QuickTile("Search", AppIcons.Search, selected == rows.size + 5, Modifier.weight(1f)) {
-                onSelect(rows.size + 5)
-            }
-            QuickTile("Multi-view", AppIcons.Grid, selected == rows.size, Modifier.weight(1f)) {
-                onSelect(rows.size)
-            }
-            QuickTile(
-                if (recordingCount > 0) "Recordings · $recordingCount" else "Recordings",
-                AppIcons.Record, selected == rows.size + 1, Modifier.weight(1f),
-            ) { onSelect(rows.size + 1) }
-            QuickTile("Settings", AppIcons.Settings, selected == rows.size + 2, Modifier.weight(1f)) {
-                onSelect(rows.size + 2)
-            }
-        }
+            )
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(10.dp))
+            .tap(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AppIcon(icon, tint = if (selected || highlighted) Color.White else Color(0xFF9AA6B4), size = 22.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label, fontSize = 10.sp, lineHeight = 12.sp, textAlign = TextAlign.Center, maxLines = 2,
+            color = if (selected || highlighted) Color.White else Color(0xFF9AA6B4),
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }
 
@@ -151,17 +176,17 @@ private fun SectionHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = if (first) 0.dp else 10.dp, bottom = 2.dp)
+            .padding(top = if (first) 0.dp else 8.dp, bottom = 2.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
             .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = Palette.Text,
             maxLines = 1,
@@ -169,11 +194,12 @@ private fun SectionHeader(
             modifier = Modifier.weight(1f),
         )
         if (collapsible) {
-            AppIcon(if (open) AppIcons.Up else AppIcons.Down, tint = if (selected) Color.White else Palette.TextDim, size = 20.dp)
+            AppIcon(if (open) AppIcons.Up else AppIcons.Down, tint = if (selected) Color.White else Palette.TextDim, size = 18.dp)
         }
     }
 }
 
+/** A group: just its name and how many channels, like a cable box menu. */
 @Composable
 private fun GroupRow(
     filter: ChannelFilter,
@@ -185,25 +211,20 @@ private fun GroupRow(
 ) {
     Row(
         Modifier
-            .padding(start = if (indented) 14.dp else 0.dp)
+            .padding(start = if (indented) 12.dp else 0.dp)
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
+            .padding(vertical = 1.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
             .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when (filter) {
-            ChannelFilter.All -> IconBadge(AppIcons.List, highlight = selected)
-            ChannelFilter.Favorites -> IconBadge(AppIcons.Star, highlight = selected)
-            is ChannelFilter.Source -> IconBadge(AppIcons.Globe, highlight = selected)
-            is ChannelFilter.Group ->
-                if (filter.name == ChannelFilter.UNGROUPED) IconBadge(AppIcons.Folder, highlight = selected)
-                else LetterBadge(filter.label, selected)
+        if (filter == ChannelFilter.Favorites) {
+            AppIcon(AppIcons.Star, tint = if (active || selected) Color(0xFFFFD27A) else Palette.TextDim, size = 15.dp)
+            Spacer(Modifier.width(8.dp))
         }
-        Spacer(Modifier.width(12.dp))
         Text(
             filter.label,
             fontSize = 15.sp,
@@ -214,81 +235,8 @@ private fun GroupRow(
             modifier = Modifier.weight(1f),
         )
         if (count != null) {
-            Text(
-                count.toString(), fontSize = 12.sp, color = Palette.TextDim,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0x1AFFFFFF))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            Text(count.toString(), fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.padding(start = 8.dp))
         }
-    }
-}
-
-/** First letter of a group on a coloured tile. */
-@Composable
-private fun LetterBadge(label: String, highlight: Boolean) {
-    Box(
-        Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (highlight) Color(0x26FFFFFF) else Color(0x14FFFFFF)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#",
-            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) Color.White else Color(0xFFAEB8C4),
-        )
-    }
-}
-
-@Composable
-private fun LibraryTile(
-    label: String,
-    count: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0x29FFFFFF) else Color(0x12FFFFFF))
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
-            .tap(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge(icon, size = 32.dp, highlight = selected)
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1)
-            Text(count.toString(), fontSize = 11.sp, color = Palette.TextDim, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun QuickTile(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0x29FFFFFF) else Color(0x12FFFFFF))
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
-            .tap(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        IconBadge(icon, size = 32.dp, highlight = selected)
-        Spacer(Modifier.height(6.dp))
-        Text(label, fontSize = 11.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
