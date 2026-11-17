@@ -204,7 +204,18 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val activity = LocalContext.current.findActivity()
     val swipeThreshold = with(LocalDensity.current) { 60.dp.toPx() }
 
-    val weOwnKeys = mode in OWN_KEY_MODES
+    // Pop-ups over any screen: PIN pad, a menu of actions, or a text box.
+    val pinRequest by vm.pinRequest.collectAsStateWithLifecycle()
+    var popup by remember { mutableStateOf<Popup?>(null) }
+    var textInput by remember { mutableStateOf<TextInput?>(null) }
+    val overlayOpen = pinRequest != null || popup != null || textInput != null
+    val weOwnKeys = mode in OWN_KEY_MODES && !overlayOpen
+    LaunchedEffect(overlayOpen) {
+        if (!overlayOpen && mode in OWN_KEY_MODES) {
+            delay(32)
+            runCatching { rootFocus.requestFocus() }
+        }
+    }
 
     // ---- Navigation helpers --------------------------------------------------------------------
 
@@ -306,8 +317,73 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 recIndex = 0
                 mode = Mode.RECORDINGS
             }
-            else -> mode = Mode.SETTINGS
+            else -> openSettings()
         }
+    }
+
+    /** Settings, behind the PIN when that's turned on. */
+    fun openSettings() {
+        if (settings.pinForSettings) vm.requirePin("Enter your PIN to open Settings") { mode = Mode.SETTINGS }
+        else mode = Mode.SETTINGS
+    }
+
+    /** Hold OK on a channel → change how it shows up. */
+    fun editChannel(ch: ChannelEntity) {
+        val locked = vm.isLocked(ch)
+        popup = Popup(
+            ch.name, "Channel ${ch.number}",
+            listOf(
+                DialogAction("Rename") {
+                    popup = null
+                    textInput = TextInput("Rename ${ch.name}", ch.name, "Leave empty to use the playlist's name", false) {
+                        vm.renameChannel(ch, it)
+                    }
+                },
+                DialogAction("Change number") {
+                    popup = null
+                    textInput = TextInput("Channel number for ${ch.name}", ch.number.toString(), "Leave empty to use the playlist's number", true) {
+                        vm.setChannelNumber(ch, it.toIntOrNull())
+                    }
+                },
+                DialogAction("Hide") {
+                    popup = null
+                    vm.setChannelHidden(ch, true)
+                },
+                DialogAction(if (locked) "Unlock" else "Lock (PIN)") {
+                    popup = null
+                    vm.setChannelLocked(ch, !locked)
+                },
+                DialogAction("Close") { popup = null },
+            ),
+        )
+    }
+
+    /** Hold OK on a group in the groups menu. */
+    fun editGroup(group: String) {
+        val label = if (group == ChannelFilter.UNGROUPED) "Other channels" else group
+        val locked = vm.isGroupLocked(group)
+        popup = Popup(
+            label, "Group",
+            listOf(
+                DialogAction("Rename") {
+                    popup = null
+                    textInput = TextInput("Rename $label", group, "Leave empty to use the playlist's name", false) {
+                        vm.renameGroup(group, it)
+                    }
+                },
+                DialogAction("Move up") { vm.moveGroup(group, -1); if (groupsIndex > 0) groupsIndex-- },
+                DialogAction("Move down") { vm.moveGroup(group, 1); groupsIndex++ },
+                DialogAction("Hide") {
+                    popup = null
+                    vm.setGroupHidden(group, true)
+                },
+                DialogAction(if (locked) "Unlock" else "Lock (PIN)") {
+                    popup = null
+                    vm.setGroupLocked(group, !locked)
+                },
+                DialogAction("Close") { popup = null },
+            ),
+        )
     }
 
     fun openProgramMenu(channel: ChannelEntity, program: ProgramEntity?) {
@@ -491,6 +567,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 mode = Mode.RECORDING_MENU
             }
             Mode.MULTIVIEW -> if (!multiPicking) multi.channels[multi.focused]?.let { closeMultiView(it) }
+            Mode.GROUPS -> ((menuRows.getOrNull(groupsIndex) as? MenuRow.Item)?.filter as? ChannelFilter.Group)?.let {
+                editGroup(it.name)
+            }
             else -> Unit
         }
     }
@@ -846,6 +925,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.SETUP -> mode = Mode.SETTINGS
         }
     }
+    // Pop-ups close first.
+    BackHandler(enabled = overlayOpen) {
+        when {
+            textInput != null -> textInput = null
+            popup != null -> popup = null
+            else -> vm.cancelPin()
+        }
+    }
 
     // ---- Layout --------------------------------------------------------------------------------
 
@@ -980,6 +1067,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     actions += DialogAction(if (ch.id in favorites) "★ Remove favourite" else "☆ Add favourite") {
                         vm.toggleFavorite(ch)
                         mode = Mode.GUIDE
+                    }
+                    actions += DialogAction("Edit channel…") {
+                        mode = Mode.GUIDE
+                        editChannel(ch)
                     }
                     actions += DialogAction("Close") { mode = Mode.GUIDE }
                     ActionDialog(
@@ -1231,7 +1322,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
                         } else null,
                         onMultiView = { touchBar = false; openMultiView() },
-                        onSettings = { touchBar = false; mode = Mode.SETTINGS },
+                        onSettings = { touchBar = false; openSettings() },
                         onExit = { touchBar = false; askExit(Mode.PLAYER) },
                     )
                 }
@@ -1258,9 +1349,39 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         if (digits.isNotEmpty() && !inPip) {
             NumberEntry(digits, digits.toIntOrNull()?.let { n -> allChannels.firstOrNull { it.number == n } })
         }
-        if (!inPip) toast?.let { ToastMessage(it.text) }
+        if (!inPip) {
+            popup?.let { p -> ActionDialog(p.title, p.subtitle, p.actions) }
+            textInput?.let { t ->
+                TextInputDialog(
+                    title = t.title, initial = t.initial, hint = t.hint, numeric = t.numeric,
+                    onSave = {
+                        textInput = null
+                        t.onSave(it)
+                    },
+                    onCancel = { textInput = null },
+                )
+            }
+            pinRequest?.let { r ->
+                key(r) {
+                    PinDialog(r.title, r.setup, onSubmit = { vm.submitPin(it) }, onCancel = { vm.cancelPin() })
+                }
+            }
+            toast?.let { ToastMessage(it.text) }
+        }
     }
 }
+
+/** A small menu of actions shown over any screen. */
+private data class Popup(val title: String, val subtitle: String?, val actions: List<DialogAction>)
+
+/** A text box shown over any screen (rename, channel number). */
+private data class TextInput(
+    val title: String,
+    val initial: String,
+    val hint: String,
+    val numeric: Boolean,
+    val onSave: (String) -> Unit,
+)
 
 /** Back presses closer together than this go straight through the menus to "Exit?". */
 private const val QUICK_BACK_MS = 2_000L

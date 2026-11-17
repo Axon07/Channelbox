@@ -125,6 +125,7 @@ private fun LibraryScreen(
     val total by (if (movies) vm.movieCount else vm.showCount).collectAsStateWithLifecycle()
     val categories by remember(b.kind) { vm.vodCategories(b.kind) }.collectAsState(initial = emptyList())
     val continueCount by remember(b.kind) { vm.vodContinueCount(b.kind) }.collectAsState(initial = 0)
+    val overrides by vm.overrides.collectAsStateWithLifecycle()
 
     // Load the items for the chosen category / search (kept in [b] so returning is instant).
     LaunchedEffect(b.kind, b.category, b.query) {
@@ -178,16 +179,24 @@ private fun LibraryScreen(
                 }
                 items(entries, key = { it.first ?: "\u0000all" }) { (id, label, count) ->
                     val selected = b.query.isBlank() && b.category == id
+                    val real = id != null && id != VOD_CONTINUE
+                    val locked = real && overrides[TvViewModel.vodKey(b.kind, id!!)]?.locked == true
                     CategoryEntry(
                         label = label,
                         count = count,
                         selected = selected,
+                        locked = locked,
                         modifier = if (selected) Modifier.focusRequester(categoryFocus) else Modifier,
-                        onFocus = { if (b.query.isBlank()) b.category = id },
+                        // A locked category only opens with the PIN, not just by moving over it.
+                        onFocus = { if (b.query.isBlank() && (!locked || vm.unlocked)) b.category = id },
                         onClick = {
-                            b.query = ""
-                            b.category = id
+                            val open = {
+                                b.query = ""
+                                b.category = id
+                            }
+                            if (locked) vm.requirePin("Enter your PIN to open $label", open) else open()
                         },
+                        onLongClick = if (real) ({ vm.setVodCategoryLocked(b.kind, id!!, !locked) }) else null,
                     )
                 }
             }
@@ -258,14 +267,17 @@ private fun CategoryEntry(
     modifier: Modifier,
     onFocus: () -> Unit,
     onClick: () -> Unit,
+    locked: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Surface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .onFocusChanged { if (it.isFocused) onFocus() }
-            .tap(onClick = onClick),
+            .tap(onLongClick = onLongClick, onClick = onClick),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (selected) Color(0x1AFFFFFF) else Color.Transparent,
@@ -280,6 +292,10 @@ private fun CategoryEntry(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (locked) {
+                AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 14.dp)
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 label, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),

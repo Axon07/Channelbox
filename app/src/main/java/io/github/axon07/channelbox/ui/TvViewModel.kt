@@ -775,7 +775,15 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun vodContinueCount(kind: String): Flow<Int> = library { repo.vod.continueCount(kind) }
 
     /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
-    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {
+    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> = libraryRaw(kind, category, query)
+        .map { list ->
+            // Titles from locked categories stay out of "All" and search until the PIN is entered.
+            val browsingOneCategory = query.isBlank() && category != null && category != VOD_CONTINUE
+            if (unlocked || browsingOneCategory) list
+            else list.filter { overrides.value[vodKey(kind, it.category)]?.locked != true }
+        }
+
+    private fun libraryRaw(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {
         val q = query.trim()
         when {
             q.isNotEmpty() -> repo.vod.search(kind, q, VOD_SEARCH_LIMIT)

@@ -80,6 +80,7 @@ private enum class SettingsCategory(val title: String, val blurb: String) {
     NETWORK("Network & VPN", "Get around ISP blocking"),
     RECORDINGS("Recordings", "Where recordings are saved"),
     STARTUP("Start-up & exit", "Make it behave like a cable box"),
+    PARENTAL("Parental & hidden", "PIN, locked and hidden channels"),
     UPDATES("Updates", "Keep Channelbox up to date"),
     ABOUT("About", "Version and this device"),
 }
@@ -90,6 +91,7 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
     SettingsCategory.NETWORK -> AppIcons.Shield
     SettingsCategory.RECORDINGS -> AppIcons.Record
     SettingsCategory.STARTUP -> AppIcons.Power
+    SettingsCategory.PARENTAL -> AppIcons.Lock
     SettingsCategory.UPDATES -> AppIcons.Refresh
     SettingsCategory.ABOUT -> AppIcons.Info
 }
@@ -216,6 +218,7 @@ fun SettingsScreen(
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
                         SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { openPage(it) }
                         SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit) { openPage(it) }
+                        SettingsCategory.PARENTAL -> ParentalSettings(settings, vm)
                         SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
                         SettingsCategory.ABOUT -> AboutSettings(vm)
                     }
@@ -465,6 +468,66 @@ private fun RecordingSettings(settings: AppSettings, vm: TvViewModel, onOpenReco
             onClick = { openPage(Page.WEBDAV) },
         )
     }
+}
+
+@Composable
+private fun ParentalSettings(settings: AppSettings, vm: TvViewModel) {
+    val hidden by vm.hiddenItems.collectAsStateWithLifecycle()
+    val locked by vm.lockedItems.collectAsStateWithLifecycle()
+    val hasPin = settings.pinHash != null
+    InfoCard(
+        "Rename, renumber, hide or lock",
+        "Hold OK on a channel in the guide (Edit channel) or on a group in the groups menu to rename, " +
+            "renumber, move, hide or lock it. In Movies & TV Shows, hold OK on a category to lock it."
+    )
+    SettingCard(
+        title = if (hasPin) "Change PIN" else "Set a PIN",
+        description = if (hasPin) "Locked channels, groups and categories need this PIN"
+        else "Needed before you can lock anything",
+        value = if (hasPin) "Change" else "Set",
+        onClick = { vm.changePin() },
+    )
+    if (hasPin) {
+        SettingCard(
+            title = "Ask for the PIN to open Settings",
+            description = "Stops others from changing settings or unlocking things",
+            toggle = settings.pinForSettings,
+            onClick = { vm.setPinForSettings(!settings.pinForSettings) },
+        )
+        SettingCard(
+            title = "Lock again now",
+            description = "After the PIN, locked things stay open for 2 hours",
+            value = "Lock",
+            onClick = { vm.lockNow() },
+        )
+        SettingCard(
+            title = "Remove PIN",
+            description = "Turns off every lock",
+            value = "Remove",
+            onClick = { vm.removePin() },
+        )
+    }
+    if (locked.isNotEmpty()) {
+        PageHeader("Locked", "Select one to unlock it")
+        locked.forEach { item ->
+            SettingCard(title = item.label, description = null, value = "Unlock", onClick = { vm.unlockItem(item) })
+        }
+    }
+    PageHeader("Hidden", if (hidden.isEmpty()) "Nothing is hidden" else "Select one to show it again")
+    hidden.forEach { item ->
+        SettingCard(
+            title = item.label,
+            description = if (item.isGroup) "Group" else "Channel",
+            value = "Show",
+            onClick = { vm.showAgain(item) },
+        )
+    }
+    SettingCard(
+        title = "Undo all channel & group changes",
+        description = "Names, numbers, order and hidden items go back to the playlist's (locks are kept)",
+        value = "Undo",
+        onClick = { vm.resetEdits() },
+    )
 }
 
 @Composable

@@ -188,6 +188,8 @@ fun TvTextField(
     password: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
     lines: Int = 1,
+    /** Extra modifier for the input itself (e.g. a FocusRequester). */
+    fieldModifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
@@ -206,7 +208,7 @@ fun TvTextField(
                 keyboardType = if (password) KeyboardType.Password else keyboardType,
                 imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default,
             ),
-            modifier = Modifier
+            modifier = fieldModifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
                 .border(2.dp, if (focused) Palette.Accent else Color(0xFF2E3946), RoundedCornerShape(8.dp))
