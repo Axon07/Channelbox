@@ -492,6 +492,8 @@ val SCALE_LABELS = listOf("Fit", "Zoom (fill screen)", "Stretch")
 
 @Composable
 fun OptionsPanel(
+    /** Pause live TV / Back to live (only while watching live TV). */
+    live: List<DialogAction> = emptyList(),
     quality: List<io.github.axon07.channelbox.player.TrackOption>,
     onQuality: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
     audio: List<io.github.axon07.channelbox.player.TrackOption>,
@@ -519,6 +521,10 @@ fun OptionsPanel(
             var firstUsed = false
             fun Modifier.firstFocus(): Modifier = if (!firstUsed) { firstUsed = true; this.focusRequester(first) } else this
 
+            if (live.isNotEmpty()) {
+                Section("Live TV")
+                live.forEach { a -> OptionRow(a.label, false, Modifier.firstFocus(), onClick = a.onClick) }
+            }
             if (quality.size > 1) {
                 Section("Quality")
                 quality.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onQuality(t) } }

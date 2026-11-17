@@ -153,6 +153,24 @@ class TvPlayer(
         if (startAt > 0) exo.seekTo(startAt)
     }
 
+    /**
+     * Pause-live-TV buffer: plays [file] from the start while [growing] (the stream is still being
+     * written to it). It can't be seeked – the length isn't known yet.
+     */
+    fun playTimeshift(file: File, growing: () -> Boolean) {
+        handler.removeCallbacksAndMessages(null)
+        onDemand = true
+        spec = null
+        val source = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(
+            { GrowingFileDataSource(file, growing) },
+            androidx.media3.extractor.DefaultExtractorsFactory(),
+        ).createMediaSource(MediaItem.fromUri(Uri.fromFile(file)))
+        exo.setMediaSource(source)
+        exo.prepare()
+        exo.playWhenReady = true
+        _status.value = PlayerStatus.Buffering
+    }
+
     /** Recorded file. */
     fun playFile(path: String) =
         open(StreamSpec(Uri.fromFile(File(path)).toString(), emptyMap(), null, null), onDemand = true)

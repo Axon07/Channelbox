@@ -96,6 +96,10 @@ fun BoxScope.TouchBar(
     onFavorite: () -> Unit,
     onRecord: () -> Unit,
     onCaptions: () -> Unit,
+    paused: Boolean,
+    behindLive: Boolean,
+    onPause: () -> Unit,
+    onLive: () -> Unit,
     onOptions: () -> Unit,
     onPip: (() -> Unit)?,
     onMultiView: () -> Unit,
@@ -124,6 +128,8 @@ fun BoxScope.TouchBar(
             if (recording) "Stop" else "Record", icon = if (recording) AppIcons.Stop else AppIcons.Record,
             iconTint = Palette.Recording, highlighted = recording, onClick = onRecord,
         )
+        Pill(if (paused) "Resume" else "Pause", icon = if (paused) AppIcons.Play else AppIcons.Pause, onClick = onPause)
+        if (behindLive) Pill("Live", icon = AppIcons.Forward, onClick = onLive)
         Pill("CC", icon = AppIcons.Captions, onClick = onCaptions)
         Pill("Audio & quality", icon = AppIcons.Audio, onClick = onOptions)
         if (onPip != null) Pill("Mini player", icon = AppIcons.Pip, onClick = onPip)

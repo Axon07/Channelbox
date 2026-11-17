@@ -122,6 +122,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val allChannels by vm.allChannels.collectAsStateWithLifecycle()
     val visible by vm.visibleChannels.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
+    val shift by vm.shift.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
     val menuSections by vm.menuSections.collectAsStateWithLifecycle()
     val expandedSections by vm.expanded.collectAsStateWithLifecycle()
@@ -519,6 +520,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 in RECORD_KEYS -> vm.toggleRecordCurrent()
                 AndroidKeyEvent.KEYCODE_CAPTIONS -> toggleCaptions()
                 AndroidKeyEvent.KEYCODE_PROG_GREEN -> openMultiView()
+                // Pause live TV
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> vm.playPauseLive()
+                AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> if (shift?.paused != true) vm.playPauseLive()
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> if (shift?.paused == true) vm.playPauseLive()
+                AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_STOP ->
+                    if (shift != null) vm.goLive() else return false
                 else -> return false
             }
             Mode.CHANNEL_LIST -> {
@@ -1118,6 +1125,16 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val subtitles = remember(optionsToken, tracksVersion) { vm.player.subtitleTracks() }
                 val quality = remember(optionsToken, tracksVersion) { vm.player.videoTracks() }
                 OptionsPanel(
+                    live = if (optionsReturn == Mode.PLAYER) buildList {
+                        add(DialogAction(if (shift?.paused == true) "Resume" else "Pause live TV") {
+                            mode = Mode.PLAYER
+                            vm.playPauseLive()
+                        })
+                        if (shift != null) add(DialogAction("Back to live") {
+                            mode = Mode.PLAYER
+                            vm.goLive()
+                        })
+                    } else emptyList(),
                     quality = quality,
                     onQuality = {
                         vm.player.select(C.TRACK_TYPE_VIDEO, it)
@@ -1185,6 +1202,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 StatusMessage(playerStatus, current, fallback)
                 val cur = current
                 if (cur != null && cur.id in recordingChannels) RecIndicator()
+                shift?.let { st -> if (mode == Mode.PLAYER) TimeshiftBadge(st, vm) }
                 if (mode == Mode.PLAYER && bannerVisible && cur != null) {
                     InfoBanner(
                         cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
@@ -1204,6 +1222,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
                         onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
                         onCaptions = { touchBarToken++; toggleCaptions() },
+                        paused = shift?.paused == true,
+                        behindLive = shift != null,
+                        onPause = { touchBarToken++; vm.playPauseLive() },
+                        onLive = { touchBarToken++; vm.goLive() },
                         onOptions = { touchBar = false; openOptions() },
                         onPip = if (io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)) {
                             { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }

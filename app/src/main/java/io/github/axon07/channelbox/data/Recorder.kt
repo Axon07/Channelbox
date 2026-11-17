@@ -111,8 +111,7 @@ class Recorder(
         val session = Session(rec.copy(status = RecStatus.RECORDING))
         dao.update(session.rec)
         try {
-            val playlist = if (spec.mime == StreamSpecs.MIME_HLS) fetchText(spec, spec.url) else probeHls(spec)
-            if (playlist != null) recordHls(spec, playlist, session) else recordProgressive(spec, session)
+            capture(spec, session, until = { System.currentTimeMillis() < session.rec.stop }, fromLiveEdge = false)
             session.close(null)
         } catch (e: CancellationException) {
             withContext(NonCancellable) { session.close(null) } // stopped by the user: keep what we have
@@ -122,20 +121,41 @@ class Recorder(
         }
     }
 
-    private inner class Session(var rec: RecordingEntity) {
+    /** Where captured stream bytes go: a recording file, or the pause-live-TV buffer. */
+    interface CaptureTarget {
+        /** Called once, with "ts" or "mp4", before the first [write]. */
+        suspend fun open(extension: String)
+        suspend fun write(bytes: ByteArray, length: Int = bytes.size)
+    }
+
+    /** True if [spec] can be captured (not DRM, not DASH / Smooth Streaming). */
+    fun canCapture(spec: StreamSpec): Boolean =
+        spec.drm == null && spec.mime != StreamSpecs.MIME_DASH && spec.mime != StreamSpecs.MIME_SS
+
+    /**
+     * Captures a live TS or HLS stream into [target] while [until] is true.
+     * [fromLiveEdge]: for HLS, start at the newest segments instead of the whole playlist window.
+     */
+    suspend fun capture(spec: StreamSpec, target: CaptureTarget, until: () -> Boolean, fromLiveEdge: Boolean) {
+        val playlist = if (spec.mime == StreamSpecs.MIME_HLS) fetchText(spec, spec.url) else probeHls(spec)
+        if (playlist != null) recordHls(spec, playlist, target, until, fromLiveEdge)
+        else recordProgressive(spec, target, until)
+    }
+
+    private inner class Session(var rec: RecordingEntity) : CaptureTarget {
         private var sink: RecordingSink? = null
         private var written = 0L
         private var lastUpdate = 0L
 
         /** Opens the file in the storage chosen in Settings (this box, USB, network share…). */
-        suspend fun open(extension: String) {
+        override suspend fun open(extension: String) {
             val s = storage.open("${fileName(rec)}.$extension")
             sink = s
             rec = rec.copy(filePath = s.location)
             dao.update(rec)
         }
 
-        suspend fun write(bytes: ByteArray, length: Int = bytes.size) {
+        override suspend fun write(bytes: ByteArray, length: Int) {
             val out = sink?.output ?: return
             withContext(Dispatchers.IO) { out.write(bytes, 0, length) }
             written += length
@@ -167,17 +187,17 @@ class Recorder(
         }
     }
 
-    private suspend fun recordProgressive(spec: StreamSpec, session: Session) {
+    private suspend fun recordProgressive(spec: StreamSpec, session: CaptureTarget, until: () -> Boolean) {
         session.open("ts")
         val buffer = ByteArray(64 * 1024)
         var failures = 0
-        while (System.currentTimeMillis() < session.rec.stop) {
+        while (until()) {
             currentCoroutineContext().ensureActive()
             try {
                 execute(spec, spec.url).use { response ->
                     if (!response.isSuccessful) throw IOException("Server answered HTTP ${response.code}")
                     val input = response.body?.byteStream() ?: throw IOException("Empty response")
-                    while (System.currentTimeMillis() < session.rec.stop) {
+                    while (until()) {
                         currentCoroutineContext().ensureActive()
                         val n = input.read(buffer)
                         if (n < 0) break
@@ -189,11 +209,17 @@ class Recorder(
                 currentCoroutineContext().ensureActive()
                 if (++failures > 20) throw e
             }
-            if (System.currentTimeMillis() < session.rec.stop) delay(2_000) // stream dropped: reconnect
+            if (until()) delay(2_000) // stream dropped: reconnect
         }
     }
 
-    private suspend fun recordHls(spec: StreamSpec, firstText: String, session: Session) {
+    private suspend fun recordHls(
+        spec: StreamSpec,
+        firstText: String,
+        session: CaptureTarget,
+        until: () -> Boolean,
+        fromLiveEdge: Boolean,
+    ) {
         var playlistUrl = spec.url
         var text = firstText
         if (Hls.isMaster(text)) {
@@ -205,12 +231,14 @@ class Recorder(
         media.mapUri?.let { session.write(fetchBytes(spec, it)) }
 
         val seen = LinkedHashSet<String>()
+        // Pausing live TV: skip what was already shown – keep only the newest segment or two.
+        if (fromLiveEdge && !media.ended) media.segments.dropLast(2).forEach { seen += it.uri }
         val keys = HashMap<String, ByteArray>()
         var failures = 0
         while (true) {
             for (segment in media.segments) {
                 currentCoroutineContext().ensureActive()
-                if (System.currentTimeMillis() >= session.rec.stop) return
+                if (!until()) return
                 if (segment.uri in seen) continue
                 seen += segment.uri
                 if (seen.size > 3000) seen.remove(seen.first())
@@ -230,7 +258,7 @@ class Recorder(
                     if (++failures > 30) throw e // skip the odd broken segment
                 }
             }
-            if (media.ended || System.currentTimeMillis() >= session.rec.stop) return
+            if (media.ended || !until()) return
             delay((media.targetDuration * 500L).coerceIn(1_000L, 6_000L))
             try {
                 media = Hls.parseMedia(fetchText(spec, playlistUrl), playlistUrl)

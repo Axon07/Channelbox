@@ -1,5 +1,10 @@
 package io.github.axon07.channelbox.ui
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -286,5 +291,41 @@ private fun Tag(text: String, icon: androidx.compose.ui.graphics.vector.ImageVec
             Spacer(Modifier.width(4.dp))
         }
         Text(text, fontSize = 11.sp, color = Palette.Text, maxLines = 1)
+    }
+}
+
+/** "Paused" / "2:15 behind live" while live TV is paused or watched from the pause buffer. */
+@Composable
+fun BoxScope.TimeshiftBadge(shift: TvViewModel.LiveShift, vm: TvViewModel) {
+    var behind by remember { mutableLongStateOf(vm.behindLiveMs()) }
+    LaunchedEffect(shift) {
+        while (true) {
+            behind = vm.behindLiveMs()
+            kotlinx.coroutines.delay(500)
+        }
+    }
+    Row(
+        Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = 24.dp, end = 24.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xCC000000))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(if (shift.paused) AppIcons.Pause else AppIcons.Play, tint = Color.White, size = 16.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            when {
+                shift.paused && !shift.buffered -> "Paused · this channel resumes live"
+                shift.paused -> "Paused · ${formatClock(behind)}"
+                else -> "${formatClock(behind)} behind live"
+            },
+            fontSize = 14.sp, color = Color.White,
+        )
+        if (shift.onBuffer || shift.paused) {
+            Spacer(Modifier.width(10.dp))
+            Text("⏯ resume  ⏩ live", fontSize = 12.sp, color = Palette.TextDim)
+        }
     }
 }

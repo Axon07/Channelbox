@@ -16,6 +16,7 @@ import io.github.axon07.channelbox.data.ReleaseInfo
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.Playlist
+import io.github.axon07.channelbox.player.Timeshift
 import io.github.axon07.channelbox.data.VodCategory
 import io.github.axon07.channelbox.data.VodEntity
 import io.github.axon07.channelbox.data.VodKind
@@ -452,6 +453,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playRecording(recording: RecordingEntity) {
+        endShift()
         val path = recording.filePath ?: return
         val st = settings.value?.storage ?: StorageSettings()
         when {
@@ -470,6 +472,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Plays a past (or current, from the start) programme from the provider's archive. */
     fun playCatchUp(channel: ChannelEntity, program: ProgramEntity): Boolean {
+        endShift()
         val live = StreamSpecs.from(channel)
         val url = Catchup.buildUrl(channel.streamUrl, channel.catchupType, channel.catchupSource, program.start, program.stop)
             ?: return false
@@ -611,6 +614,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Plays a movie or episode; [showId] links an episode to its show for "Continue watching". */
     fun playVod(item: VodEntity, startAt: Long, showId: String? = null) {
+        endShift()
         val url = item.url ?: return
         playingVod = item to showId
         player.playOnDemand(StreamSpec(url, StreamSpecs.decodeHeaders(item.headers), null, null), startAt)
@@ -636,6 +640,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun resumeLive() {
+        endShift()
         libraryOpen = false
         _current.value?.let { player.play(StreamSpecs.from(it)) }
     }
@@ -647,6 +652,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private var libraryOpen = false
 
     fun enterLibrary() {
+        endShift()
         libraryOpen = true
         if (player.isLive) player.stop()
     }
@@ -691,9 +697,105 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Pause live TV ---------------------------------------------------------------------
+
+    /** Live TV paused or watched behind live. null = watching live. */
+    data class LiveShift(
+        /** Paused right now. */
+        val paused: Boolean,
+        /** The channel is being buffered (false for DRM/DASH: resuming rejoins live). */
+        val buffered: Boolean,
+        /** When the pause started. */
+        val startedAt: Long,
+        /** Playing from the buffer (after the first resume). */
+        val onBuffer: Boolean,
+    )
+
+    private val timeshift = Timeshift(java.io.File(app.cacheDir, "timeshift"), c.recorder)
+    private val _shift = MutableStateFlow<LiveShift?>(null)
+    val shift: StateFlow<LiveShift?> = _shift.asStateFlow()
+
+    /** Pause / resume live TV (Play/Pause on the remote). */
+    fun playPauseLive() {
+        val ch = _current.value ?: return
+        val st = _shift.value
+        when {
+            st == null -> {
+                player.exo.pause()
+                val spec = StreamSpecs.from(ch)
+                val buffered = timeshift.canBuffer(spec)
+                if (buffered) timeshift.start(spec, viewModelScope)
+                _shift.value = LiveShift(paused = true, buffered = buffered, startedAt = System.currentTimeMillis(), onBuffer = false)
+                watchShift()
+            }
+            !st.paused -> {
+                player.exo.pause()
+                _shift.value = st.copy(paused = true)
+            }
+            !st.buffered -> {
+                showToast("This channel can't be paused – back to live")
+                goLive()
+            }
+            !st.onBuffer -> {
+                val f = timeshift.file
+                if (f == null || f.length() == 0L) {
+                    showToast("Nothing was buffered – back to live")
+                    goLive()
+                } else {
+                    player.playTimeshift(f) { timeshift.writing }
+                    _shift.value = st.copy(paused = false, onBuffer = true)
+                }
+            }
+            else -> {
+                player.exo.play()
+                _shift.value = st.copy(paused = false)
+            }
+        }
+        showBanner()
+    }
+
+    /** Drop the buffer and jump to what's on now. */
+    fun goLive() {
+        endShift()
+        _current.value?.let { player.play(StreamSpecs.from(it)) }
+        showBanner()
+    }
+
+    /** How far behind live the picture is. */
+    fun behindLiveMs(): Long {
+        val st = _shift.value ?: return 0
+        val since = System.currentTimeMillis() - st.startedAt
+        return if (st.onBuffer) (since - player.exo.currentPosition).coerceAtLeast(0) else since
+    }
+
+    private fun endShift() {
+        if (_shift.value == null && !timeshift.active) return
+        timeshift.stop()
+        _shift.value = null
+    }
+
+    /** Reaching the end of a buffer that's no longer growing (2-hour limit, stream lost) rejoins live. */
+    private fun watchShift() = viewModelScope.launch {
+        while (_shift.value != null) {
+            delay(1_000)
+            val st = _shift.value ?: break
+            if (st.onBuffer && !st.paused && player.exo.playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                goLive()
+            }
+        }
+    }
+
     // ---- Playback -------------------------------------------------------------------------
 
     fun tune(channel: ChannelEntity) {
+        if (_shift.value != null) {
+            endShift()
+            if (_current.value?.id == channel.id) {
+                player.play(StreamSpecs.from(channel)) // same channel: straight back to live
+                showBanner()
+                return
+            }
+        }
         if (_current.value?.id != channel.id) {
             previous = _current.value
             _current.value = channel
