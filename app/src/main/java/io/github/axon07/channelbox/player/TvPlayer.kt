@@ -16,6 +16,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -271,7 +272,7 @@ class TvPlayer(
             return
         }
         if (!isLive) {
-            _status.value = PlayerStatus.Error("Can't play this (${error.errorCodeName})")
+            _status.value = PlayerStatus.Error("Can't play this (${describe(error)})")
             if (!confirmed && attempt < candidates.lastIndex) {
                 attempt++
                 handler.post { start() }
@@ -283,7 +284,24 @@ class TvPlayer(
             exo.prepare()
             return
         }
-        failed(error.errorCodeName)
+        failed(describe(error))
+    }
+
+    /** What went wrong, in words. For HTTP errors: the server's status code and what it usually means. */
+    private fun describe(error: PlaybackException): String {
+        var cause: Throwable? = error
+        while (cause != null && cause !is HttpDataSource.InvalidResponseCodeException) cause = cause.cause
+        val code = (cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+            ?: return error.errorCodeName
+        val hint = when (code) {
+            401, 403 -> "the provider refused it – the account may have expired, be in use on too many " +
+                "devices, or block this app's user agent (Settings → Network → User agent)"
+            404, 410 -> "the link no longer works – reload the playlist"
+            429, 456, 458, 509 -> "too many connections on this account – stop it on other devices"
+            in 500..599 -> "the provider's server has a problem"
+            else -> null
+        }
+        return if (hint != null) "HTTP $code: $hint" else "HTTP $code"
     }
 
     private fun failed(reason: String) {
