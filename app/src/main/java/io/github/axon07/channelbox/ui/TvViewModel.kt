@@ -103,7 +103,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val player = TvPlayer(app, c.http, softwareAudio)
 
     /** Extra players for multi-view (released when multi-view closes). */
-    fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, softwareAudio).also {
+    fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, softwareAudio, handleAudioFocus = false).also {
         it.storageSettings = { settings.value?.storage ?: StorageSettings() }
     }
 

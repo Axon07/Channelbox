@@ -69,6 +69,11 @@ class TvPlayer(
     private val context: Context,
     private val http: OkHttpClient,
     preferSoftwareAudio: Boolean = false,
+    /**
+     * Take Android's audio focus. Off for multi-view tiles: each tile asking for focus would pause
+     * the others (only the newest tile kept playing).
+     */
+    private val handleAudioFocus: Boolean = true,
 ) {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -115,7 +120,7 @@ class TvPlayer(
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                     .build(),
-                true,
+                handleAudioFocus,
             )
             setWakeMode(C.WAKE_MODE_NETWORK)
             playWhenReady = true

@@ -270,8 +270,50 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun openMultiView() {
         multi.start(vm, current)
-        multiPicking = false
+        // Start with the current channel and straight away pick a second one: 2 side by side.
+        multi.pickTarget = multi.count
+        multiPickIndex = 0
+        multiPicking = true
         mode = Mode.MULTIVIEW
+    }
+
+    /** Pick a channel for [tile] (== count adds a tile). */
+    fun pickForTile(tile: Int) {
+        if (tile >= multi.count && !multi.canAdd) {
+            vm.showToast("Up to ${MultiViewState.MAX} channels at once")
+            return
+        }
+        multi.pickTarget = tile
+        multiPickIndex = multi.channels.getOrNull(tile)?.let { ch -> visible.indexOfFirst { it.id == ch.id } }?.coerceAtLeast(0) ?: 0
+        multiPicking = true
+    }
+
+    /** Hold OK / long-press on a tile. */
+    fun multiOptions(tile: Int) {
+        val ch = multi.channels.getOrNull(tile) ?: return
+        multi.select(tile)
+        popup = Popup(
+            ch.name, "Multi-view",
+            buildList {
+                add(DialogAction("Watch full screen") {
+                    popup = null
+                    closeMultiView(ch)
+                })
+                add(DialogAction("Change channel") {
+                    popup = null
+                    pickForTile(tile)
+                })
+                if (multi.canAdd) add(DialogAction("Add a channel") {
+                    popup = null
+                    pickForTile(multi.count)
+                })
+                if (multi.count > 1) add(DialogAction("Remove") {
+                    popup = null
+                    multi.remove(tile)
+                })
+                add(DialogAction("Close") { popup = null })
+            },
+        )
     }
 
     /** Leaves multi-view; [watch] = the channel to continue full screen. */
@@ -556,11 +598,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let { openRecording(it) }
             Mode.PLAYBACK -> togglePause()
             Mode.MULTIVIEW -> if (multiPicking) {
-                visible.getOrNull(multiPickIndex)?.let { multi.assign(vm, multi.focused, it) }
+                visible.getOrNull(multiPickIndex)?.let { multi.assign(vm, multi.pickTarget, it) }
                 multiPicking = false
             } else {
-                multiPickIndex = visible.indexOfFirst { it.id == multi.channels[multi.focused]?.id }.coerceAtLeast(0)
-                multiPicking = true
+                pickForTile(multi.focused)
             }
             else -> Unit
         }
@@ -575,7 +616,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 menuRecording = it
                 mode = Mode.RECORDING_MENU
             }
-            Mode.MULTIVIEW -> if (!multiPicking) multi.channels[multi.focused]?.let { closeMultiView(it) }
+            Mode.MULTIVIEW -> if (!multiPicking) multiOptions(multi.focused)
             Mode.GROUPS -> ((menuRows.getOrNull(groupsIndex) as? MenuRow.Item)?.filter as? ChannelFilter.Group)?.let {
                 editGroup(it.name)
             }
@@ -743,8 +784,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN -> multi.move(0, 1)
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> multi.move(-1, 0)
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> multi.move(1, 0)
-                    AndroidKeyEvent.KEYCODE_MENU, AndroidKeyEvent.KEYCODE_PROG_GREEN ->
-                        multi.setTileCount(if (multi.tiles == 4) 2 else 4)
+                    AndroidKeyEvent.KEYCODE_MENU, AndroidKeyEvent.KEYCODE_PROG_GREEN -> pickForTile(multi.count)
                     else -> return false
                 }
             }
@@ -756,6 +796,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     fun handleKey(event: KeyEvent): Boolean {
         val native = event.nativeKeyEvent
         val code = native.keyCode
+        if (mode == Mode.MULTIVIEW) multi.hintToken++
         if (code !in HANDLED_KEYS) return false
         val isDown = native.action == AndroidKeyEvent.ACTION_DOWN
 
@@ -923,7 +964,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDINGS -> openGroups(tile = 1)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.PLAYBACK -> leavePlayback()
-            Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
+            Mode.MULTIVIEW -> if (multiPicking && multi.count > 0) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
             Mode.SEARCH -> openGroups(tileSearch)
             Mode.VOD -> when {
@@ -1290,14 +1331,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 )
             }
             Mode.MULTIVIEW -> {
-                MultiViewScreen(multi, onTileTap = { i ->
-                    if (multi.focused == i) {
-                        multiPickIndex = 0
-                        multiPicking = true
-                    } else {
+                MultiViewScreen(
+                    multi,
+                    onTileTap = { i ->
+                        multi.hintToken++
                         multi.select(i)
-                    }
-                })
+                    },
+                    onTileLongPress = { i -> multiOptions(i) },
+                )
                 if (multiPicking) {
                     ChannelListPanel(
                         channels = visible,
@@ -1305,11 +1346,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         listState = listState,
                         filterLabel = vm.filterTitle(filter, menuSections),
                         favorites = favorites,
-                        playingId = multi.channels[multi.focused]?.id,
+                        playingId = multi.channels.getOrNull(multi.pickTarget)?.id,
                         upcoming = upcoming,
                         now = now,
                         onSelect = { i ->
-                            visible.getOrNull(i)?.let { multi.assign(vm, multi.focused, it) }
+                            visible.getOrNull(i)?.let { multi.assign(vm, multi.pickTarget, it) }
                             multiPicking = false
                         },
                         onFavorite = { i -> visible.getOrNull(i)?.let { vm.toggleFavorite(it) } },
