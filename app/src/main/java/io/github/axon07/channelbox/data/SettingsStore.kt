@@ -141,6 +141,10 @@ data class AppSettings(
     val idleCloseSeconds: Int = 60,
     /** Days of TV guide to keep. Fewer days = faster loading with very big guides. */
     val guideDays: Int = 3,
+    /** Parental PIN (hashed); null = no PIN. */
+    val pinHash: String? = null,
+    /** Ask for the PIN before Settings opens. */
+    val pinForSettings: Boolean = false,
     val network: NetworkSettings = NetworkSettings(),
     val storage: StorageSettings = StorageSettings(),
     /** Version the user chose "Skip this version" for. */
@@ -181,6 +185,8 @@ class SettingsStore(private val context: Context) {
         val PIP = booleanPreferencesKey("pip_on_leave")
         val IDLE_CLOSE = intPreferencesKey("idle_close_seconds")
         val GUIDE_DAYS = intPreferencesKey("guide_days")
+        val PIN_HASH = stringPreferencesKey("pin_hash")
+        val PIN_SETTINGS = booleanPreferencesKey("pin_settings")
         val DNS = stringPreferencesKey("net_dns")
         val DNS_URL = stringPreferencesKey("net_dns_url")
         val PROXY_TYPE = stringPreferencesKey("net_proxy_type")
@@ -242,6 +248,8 @@ class SettingsStore(private val context: Context) {
         pipOnLeave = this[Keys.PIP] ?: false,
         idleCloseSeconds = this[Keys.IDLE_CLOSE] ?: 60,
         guideDays = this[Keys.GUIDE_DAYS] ?: 3,
+        pinHash = this[Keys.PIN_HASH],
+        pinForSettings = this[Keys.PIN_SETTINGS] ?: false,
         network = NetworkSettings(
             dns = this[Keys.DNS] ?: "system",
             dnsCustomUrl = this[Keys.DNS_URL].orEmpty(),
@@ -317,6 +325,13 @@ class SettingsStore(private val context: Context) {
     suspend fun setPipOnLeave(on: Boolean) = context.dataStore.edit { it[Keys.PIP] = on }
     suspend fun setIdleClose(seconds: Int) = context.dataStore.edit { it[Keys.IDLE_CLOSE] = seconds }
     suspend fun setGuideDays(days: Int) = context.dataStore.edit { it[Keys.GUIDE_DAYS] = days }
+    suspend fun setPinHash(hash: String?) = context.dataStore.edit {
+        if (hash == null) {
+            it.remove(Keys.PIN_HASH)
+            it[Keys.PIN_SETTINGS] = false
+        } else it[Keys.PIN_HASH] = hash
+    }
+    suspend fun setPinForSettings(on: Boolean) = context.dataStore.edit { it[Keys.PIN_SETTINGS] = on }
 
     suspend fun saveNetwork(n: NetworkSettings) = context.dataStore.edit {
         it[Keys.DNS] = n.dns

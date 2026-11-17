@@ -165,9 +165,9 @@ interface ProgramDao {
 @Database(
     entities = [
         ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class,
-        VodEntity::class, VodProgressEntity::class,
+        VodEntity::class, VodProgressEntity::class, OverrideEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -175,6 +175,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun programs(): ProgramDao
     abstract fun recordings(): RecordingDao
     abstract fun vod(): VodDao
+    abstract fun overrides(): OverrideDao
 
     companion object {
         /** v3: catch-up columns. Keeps favourites and recordings. */
@@ -223,10 +224,57 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v7: your own channel/group names, numbers, hidden and locked items. */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `overrides` (`id` TEXT NOT NULL, `name` TEXT, `hidden` INTEGER NOT NULL, " +
+                        "`locked` INTEGER NOT NULL, `position` INTEGER, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .fallbackToDestructiveMigration()
                 .build()
     }
+}
+
+/**
+ * Your changes to a channel, group or movie/show category, kept across playlist reloads.
+ * [id]: "ch:<channel id>", "grp:<group name>" or "vod:<kind>:<category>".
+ */
+@Entity(tableName = "overrides")
+data class OverrideEntity(
+    @PrimaryKey val id: String,
+    /** Your name for it (null = the playlist's). */
+    val name: String? = null,
+    val hidden: Boolean = false,
+    /** Needs the parental PIN. */
+    val locked: Boolean = false,
+    /** Channel: your channel number. Group: position in the groups menu. */
+    val position: Int? = null,
+) {
+    val isEmpty: Boolean get() = name == null && !hidden && !locked && position == null
+}
+
+@Dao
+interface OverrideDao {
+    @Query("SELECT * FROM overrides")
+    fun observeAll(): kotlinx.coroutines.flow.Flow<List<OverrideEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(items: List<OverrideEntity>)
+
+    @Query("DELETE FROM overrides WHERE id = :id")
+    suspend fun delete(id: String)
+
+    /** Undo every rename, number, hide and order change (locks are kept). */
+    @Query("UPDATE overrides SET name = NULL, hidden = 0, position = NULL")
+    suspend fun resetEdits()
+
+    @Query("DELETE FROM overrides WHERE name IS NULL AND hidden = 0 AND locked = 0 AND position IS NULL")
+    suspend fun deleteEmpty()
 }

@@ -44,6 +44,21 @@ class TvRepository(
 
     suspend fun allChannels(): List<ChannelEntity> = db.channels().getAll()
 
+    // ---- Your changes to channels, groups and categories ----------------------------------------
+
+    val overrides: Flow<List<OverrideEntity>> = db.overrides().observeAll()
+
+    suspend fun putOverrides(items: List<OverrideEntity>) {
+        val (empty, keep) = items.partition { it.isEmpty }
+        if (keep.isNotEmpty()) db.overrides().put(keep)
+        empty.forEach { db.overrides().delete(it.id) }
+    }
+
+    suspend fun resetEdits() {
+        db.overrides().resetEdits()
+        db.overrides().deleteEmpty()
+    }
+
     // ---- Movies & TV shows --------------------------------------------------------------------
 
     val vod: VodDao get() = db.vod()

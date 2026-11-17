@@ -16,6 +16,7 @@ import io.github.axon07.channelbox.data.ReleaseInfo
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.Playlist
+import io.github.axon07.channelbox.data.OverrideEntity
 import io.github.axon07.channelbox.player.Timeshift
 import io.github.axon07.channelbox.data.VodCategory
 import io.github.axon07.channelbox.data.VodEntity
@@ -114,8 +115,200 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     val refreshState: StateFlow<RefreshState> = repo.state
 
-    val allChannels: StateFlow<List<ChannelEntity>> = repo.channels
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    // ---- Your changes: names, numbers, order, hidden, locked ----------------------------------
+
+    val overrides: StateFlow<Map<String, OverrideEntity>> = repo.overrides
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Renamed group → the playlist's name for it (overrides are kept under the original). */
+    @Volatile private var groupOriginals: Map<String, String> = emptyMap()
+
+    fun originalGroup(shown: String): String = groupOriginals[shown] ?: shown
+
+    /** The playlist's channels with your names, numbers and hidden items applied. */
+    val allChannels: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides) { list, ov ->
+        if (ov.isEmpty()) {
+            groupOriginals = emptyMap()
+            return@combine list
+        }
+        val originals = HashMap<String, String>()
+        var renumbered = false
+        val out = list.mapNotNull { ch ->
+            val g = ov[groupKey(ch.groupTitle)]
+            val o = ov[channelKey(ch.id)]
+            if (g?.hidden == true || o?.hidden == true) return@mapNotNull null
+            var c = ch
+            o?.name?.let { c = c.copy(name = it) }
+            o?.position?.let {
+                c = c.copy(number = it)
+                renumbered = true
+            }
+            g?.name?.let {
+                originals[it] = ch.groupTitle
+                c = c.copy(groupTitle = it)
+            }
+            c
+        }
+        groupOriginals = originals
+        if (renumbered) out.sortedBy { it.number } else out
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Channels and groups you've hidden, to show again from Settings. */
+    data class HiddenItem(val id: String, val label: String, val isGroup: Boolean)
+
+    val hiddenItems: StateFlow<List<HiddenItem>> = combine(repo.channels, overrides) { list, ov ->
+        val groups = ov.values.filter { it.hidden && it.id.startsWith("grp:") }
+            .map { HiddenItem(it.id, groupLabel(it.id.removePrefix("grp:")), true) }
+        val channels = list.filter { ov[channelKey(it.id)]?.hidden == true }
+            .map { HiddenItem(channelKey(it.id), ov[channelKey(it.id)]?.name ?: it.name, false) }
+        groups.sortedBy { it.label.lowercase() } + channels.sortedBy { it.label.lowercase() }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Locked channels, groups and categories, to unlock from Settings. */
+    val lockedItems: StateFlow<List<HiddenItem>> = combine(repo.channels, overrides) { list, ov ->
+        val names = list.associate { channelKey(it.id) to it.name }
+        ov.values.filter { it.locked }.map { o ->
+            when {
+                o.id.startsWith("grp:") -> HiddenItem(o.id, "Group: " + groupLabel(o.id.removePrefix("grp:")), true)
+                o.id.startsWith("vod:") -> HiddenItem(o.id, (if (o.id.startsWith("vod:movie:")) "Movies: " else "TV Shows: ") + o.id.substringAfter(':').substringAfter(':'), true)
+                else -> HiddenItem(o.id, o.name ?: names[o.id] ?: "Channel", false)
+            }
+        }.sortedBy { it.label.lowercase() }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private fun groupLabel(name: String) = if (name == ChannelFilter.UNGROUPED) "Other channels" else name
+
+    private fun edit(id: String, change: (OverrideEntity) -> OverrideEntity) = viewModelScope.launch {
+        repo.putOverrides(listOf(change(overrides.value[id] ?: OverrideEntity(id))))
+    }
+
+    fun renameChannel(ch: ChannelEntity, name: String?) =
+        edit(channelKey(ch.id)) { it.copy(name = name?.trim()?.takeIf { n -> n.isNotEmpty() }) }
+
+    fun setChannelNumber(ch: ChannelEntity, number: Int?) = edit(channelKey(ch.id)) { it.copy(position = number) }
+
+    fun setChannelHidden(ch: ChannelEntity, hidden: Boolean) {
+        edit(channelKey(ch.id)) { it.copy(hidden = hidden) }
+        if (hidden) showToast("${ch.name} hidden – show it again in Settings → Parental controls & hidden")
+    }
+
+    fun renameGroup(shown: String, name: String?) =
+        edit(groupKey(originalGroup(shown))) { it.copy(name = name?.trim()?.takeIf { n -> n.isNotEmpty() }) }
+
+    fun setGroupHidden(shown: String, hidden: Boolean) {
+        edit(groupKey(originalGroup(shown))) { it.copy(hidden = hidden) }
+        if (hidden) showToast("${groupLabel(shown)} hidden – show it again in Settings → Parental controls & hidden")
+    }
+
+    /** Moves a group up (-1) or down (+1) in the groups menu. */
+    fun moveGroup(shown: String, delta: Int) = viewModelScope.launch {
+        val order = menuSections.value.flatMap { it.filters }.filterIsInstance<ChannelFilter.Group>()
+            .map { originalGroup(it.name) }.distinct()
+        val i = order.indexOf(originalGroup(shown))
+        val j = i + delta
+        if (i < 0 || j !in order.indices) return@launch
+        val moved = order.toMutableList().apply { add(j, removeAt(i)) }
+        repo.putOverrides(moved.mapIndexed { index, g ->
+            (overrides.value[groupKey(g)] ?: OverrideEntity(groupKey(g))).copy(position = index)
+        })
+    }
+
+    fun showAgain(item: HiddenItem) = edit(item.id) { it.copy(hidden = false) }
+
+    fun resetEdits() = viewModelScope.launch {
+        repo.resetEdits()
+        showToast("Channel and group changes undone")
+    }
+
+    // ---- Parental PIN ---------------------------------------------------------------------
+
+    /** Something waiting for the PIN. [setup]: choosing a new PIN (asked twice). */
+    data class PinRequest(val title: String, val setup: Boolean = false, val onSuccess: () -> Unit)
+
+    private val _pinRequest = MutableStateFlow<PinRequest?>(null)
+    val pinRequest: StateFlow<PinRequest?> = _pinRequest.asStateFlow()
+
+    /** After the right PIN, locked things stay open for a while (or until "Lock now"). */
+    private var unlockedUntil = 0L
+
+    val hasPin: Boolean get() = settings.value?.pinHash != null
+    val unlocked: Boolean get() = !hasPin || System.currentTimeMillis() < unlockedUntil
+
+    /** Runs [action] straight away, or after the PIN when one is set and things are locked. */
+    fun requirePin(title: String, action: () -> Unit) {
+        if (unlocked) action() else _pinRequest.value = PinRequest(title, onSuccess = action)
+    }
+
+    /** True if [pin] is right; runs what was waiting. */
+    fun submitPin(pin: String): Boolean {
+        val req = _pinRequest.value ?: return false
+        if (req.setup) {
+            viewModelScope.launch {
+                c.settings.setPinHash(hashPin(pin))
+                showToast("PIN saved")
+            }
+            unlockedUntil = System.currentTimeMillis() + UNLOCK_MS
+            _pinRequest.value = null
+            req.onSuccess()
+            return true
+        }
+        if (hashPin(pin) != settings.value?.pinHash) return false
+        unlockedUntil = System.currentTimeMillis() + UNLOCK_MS
+        _pinRequest.value = null
+        req.onSuccess()
+        return true
+    }
+
+    fun cancelPin() {
+        _pinRequest.value = null
+    }
+
+    /** Choose a new PIN (asks for the old one first). */
+    fun changePin() = requirePin("Enter your current PIN") {
+        _pinRequest.value = PinRequest("Choose a 4-digit PIN", setup = true) {}
+    }
+
+    fun removePin() = requirePin("Enter your PIN to remove it") {
+        viewModelScope.launch {
+            c.settings.setPinHash(null)
+            showToast("PIN removed – nothing is locked any more")
+        }
+    }
+
+    fun setPinForSettings(on: Boolean) = requirePin("Enter your PIN") {
+        viewModelScope.launch { c.settings.setPinForSettings(on) }
+    }
+
+    fun lockNow() {
+        unlockedUntil = 0
+        showToast("Locked")
+    }
+
+    fun isLocked(ch: ChannelEntity): Boolean {
+        val ov = overrides.value
+        return ov[channelKey(ch.id)]?.locked == true || ov[groupKey(originalGroup(ch.groupTitle))]?.locked == true
+    }
+
+    fun isGroupLocked(shown: String) = overrides.value[groupKey(originalGroup(shown))]?.locked == true
+
+    fun isVodCategoryLocked(kind: String, category: String) = overrides.value[vodKey(kind, category)]?.locked == true
+
+    private fun setLocked(id: String, locked: Boolean, label: String) {
+        if (!hasPin) {
+            showToast("Set a PIN first: Settings → Parental controls & hidden")
+            return
+        }
+        requirePin("Enter your PIN") {
+            edit(id) { it.copy(locked = locked) }
+            showToast(if (locked) "$label locked" else "$label unlocked")
+        }
+    }
+
+    fun setChannelLocked(ch: ChannelEntity, locked: Boolean) = setLocked(channelKey(ch.id), locked, ch.name)
+    fun setGroupLocked(shown: String, locked: Boolean) = setLocked(groupKey(originalGroup(shown)), locked, groupLabel(shown))
+    fun setVodCategoryLocked(kind: String, category: String, locked: Boolean) = setLocked(vodKey(kind, category), locked, category)
+    fun unlockItem(item: HiddenItem) = setLocked(item.id, false, item.label)
 
     val favorites: StateFlow<Set<String>> = repo.favorites
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
@@ -127,11 +320,14 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     data class MenuSection(val key: String, val label: String, val filters: List<ChannelFilter>)
 
     /** With one playlist: a single untitled section. With several: "All playlists", then one per playlist. */
-    val menuSections: StateFlow<List<MenuSection>> = combine(allChannels, c.settings.flow) { list, s ->
+    val menuSections: StateFlow<List<MenuSection>> = combine(allChannels, c.settings.flow, overrides) { list, s, _ ->
         // Playlist order, with channels that have no group collected at the very end.
         fun groupsOf(channels: List<ChannelEntity>): List<String> {
             val names = channels.map { it.groupTitle }.distinct()
-            return names.filter { it != ChannelFilter.UNGROUPED } + names.filter { it == ChannelFilter.UNGROUPED }
+            val ordered = names.filter { it != ChannelFilter.UNGROUPED } + names.filter { it == ChannelFilter.UNGROUPED }
+            // Groups you've moved keep your order; the rest follow the playlist.
+            val ov = overrides.value
+            return ordered.sortedBy { ov[groupKey(originalGroup(it))]?.position ?: Int.MAX_VALUE }
         }
         val byPlaylist = list.groupBy(::playlistOf)
         val playlists = s.playlists.filter { it.id in byPlaylist }
@@ -788,6 +984,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Playback -------------------------------------------------------------------------
 
     fun tune(channel: ChannelEntity) {
+        if (isLocked(channel) && !unlocked) {
+            requirePin("Enter your PIN to watch ${channel.name}") { tune(channel) }
+            return
+        }
         if (_shift.value != null) {
             endShift()
             if (_current.value?.id == channel.id) {
@@ -817,7 +1017,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val list = if (visible.any { it.id == _current.value?.id }) visible else allChannels.value
         if (list.isEmpty()) return
         val index = list.indexOfFirst { it.id == _current.value?.id }
-        val next = if (index < 0) 0 else (index + delta).mod(list.size)
+        var next = if (index < 0) 0 else (index + delta).mod(list.size)
+        // Skip locked channels while zapping.
+        if (!unlocked) {
+            var tries = 0
+            while (isLocked(list[next]) && tries++ < list.size) next = (next + delta).mod(list.size)
+        }
         tune(list[next])
     }
 
@@ -930,6 +1135,15 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val SECTION_ALL = "\u0000all"
+        fun channelKey(id: String) = "ch:$id"
+        fun groupKey(name: String) = "grp:$name"
+        fun vodKey(kind: String, category: String) = "vod:$kind:$category"
+        private fun hashPin(pin: String): String =
+            java.security.MessageDigest.getInstance("SHA-256").digest("channelbox-pin:$pin".toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        /** How long locked things stay open after the right PIN. */
+        const val UNLOCK_MS = 2 * HOUR
+
         private fun playlistOf(ch: ChannelEntity): String =
             ch.playlistId ?: io.github.axon07.channelbox.data.SettingsStore.LEGACY_ID
         fun roundDown(time: Long) = time - time.mod(GUIDE_STEP)
