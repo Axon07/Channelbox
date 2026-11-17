@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -47,6 +48,21 @@ class TvRepository(
 
     val vod: VodDao get() = db.vod()
 
+    /** Goes up when the movies & shows or watch positions change; the library re-reads its lists then. */
+    private val _vodVersion = MutableStateFlow(0)
+    val vodVersion: StateFlow<Int> = _vodVersion.asStateFlow()
+    fun vodChanged() = _vodVersion.update { it + 1 }
+
+    suspend fun saveProgress(p: VodProgressEntity) {
+        db.vod().saveProgress(p)
+        vodChanged()
+    }
+
+    suspend fun clearProgress(id: String) {
+        db.vod().clearProgress(id)
+        vodChanged()
+    }
+
     /** Episodes of a show: from the playlist (M3U) or fetched from the provider (Xtream). */
     suspend fun episodes(show: VodEntity): List<VodEntity> {
         val key = show.seriesKey ?: return emptyList()
@@ -74,6 +90,7 @@ class TvRepository(
                 db.vod().deleteForPlaylist(playlistId)
             }
             _playlistErrors.value = _playlistErrors.value - playlistId
+            vodChanged()
             compact(force = true)
         }
     }
@@ -103,7 +120,15 @@ class TvRepository(
     }
 
     /** Reloads every enabled playlist and the TV guide. Returns true when at least one playlist loaded. */
-    suspend fun refresh(): Boolean = withContext(Dispatchers.IO) { mutex.withLock { refreshLocked() } }
+    suspend fun refresh(): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                refreshLocked()
+            } finally {
+                vodChanged()
+            }
+        }
+    }
 
     // Runs on an IO thread: Room's blocking calls (movies & shows are written while streaming) aren't
     // allowed on the main thread.

@@ -58,13 +58,18 @@ data class VodProgressEntity(
 
 data class VodCategory(val name: String, val count: Int)
 
+/**
+ * The library lists are read once per change of [TvRepository.vodVersion] rather than observed:
+ * an observed query re-runs after every batch a reload writes, which on a list with millions of
+ * entries keeps the box busy re-counting the whole table for the entire load.
+ */
 @Dao
 interface VodDao {
     @Query("SELECT category AS name, COUNT(*) AS count FROM vod WHERE kind = :kind GROUP BY category ORDER BY MIN(sortIndex)")
-    fun observeCategories(kind: String): Flow<List<VodCategory>>
+    suspend fun categories(kind: String): List<VodCategory>
 
     @Query("SELECT COUNT(*) FROM vod WHERE kind = :kind")
-    fun observeCount(kind: String): Flow<Int>
+    suspend fun count(kind: String): Int
 
     @Query(
         """SELECT * FROM vod WHERE kind = :kind
@@ -72,14 +77,14 @@ interface VodDao {
            AND (:query = '' OR title LIKE '%' || :query || '%')
            ORDER BY added DESC, sortIndex LIMIT 5000"""
     )
-    fun observe(kind: String, category: String?, query: String): Flow<List<VodEntity>>
+    suspend fun items(kind: String, category: String?, query: String): List<VodEntity>
 
     /** Started but not finished, most recent first. */
     @Query(
         """SELECT vod.* FROM vod JOIN vod_progress p ON p.id = vod.id OR p.showId = vod.id
            WHERE vod.kind = :kind GROUP BY vod.id ORDER BY MAX(p.updated) DESC LIMIT 50"""
     )
-    fun observeContinue(kind: String): Flow<List<VodEntity>>
+    suspend fun continueWatching(kind: String): List<VodEntity>
 
     @Query("SELECT * FROM vod WHERE kind = 'episode' AND seriesKey = :seriesKey ORDER BY season, episode, sortIndex")
     suspend fun episodes(seriesKey: String): List<VodEntity>
@@ -107,7 +112,7 @@ interface VodDao {
     fun observeProgress(): Flow<List<VodProgressEntity>>
 
     @Query("SELECT COUNT(*) FROM vod_progress p JOIN vod ON p.id = vod.id OR p.showId = vod.id WHERE vod.kind = :kind")
-    fun observeContinueCount(kind: String): Flow<Int>
+    suspend fun continueCount(kind: String): Int
 
     @Query("SELECT * FROM vod_progress WHERE id = :id")
     suspend fun progress(id: String): VodProgressEntity?

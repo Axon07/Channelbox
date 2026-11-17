@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -486,18 +487,23 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     /** Back to live TV after watching a recording. */
     // ---- Movies & TV shows -----------------------------------------------------------------
 
-    val movieCount: StateFlow<Int> = repo.vod.observeCount(VodKind.MOVIE)
+    /** Re-reads [read] whenever the library changes (after a reload, or when a watch position is saved). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <T> library(read: suspend () -> T): Flow<T> = repo.vodVersion.mapLatest { read() }
+
+    val movieCount: StateFlow<Int> = library { repo.vod.count(VodKind.MOVIE) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
-    val showCount: StateFlow<Int> = repo.vod.observeCount(VodKind.SERIES)
+    val showCount: StateFlow<Int> = library { repo.vod.count(VodKind.SERIES) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
-    fun vodCategories(kind: String): Flow<List<VodCategory>> = repo.vod.observeCategories(kind)
-    fun vodContinueCount(kind: String): Flow<Int> = repo.vod.observeContinueCount(kind)
+    fun vodCategories(kind: String): Flow<List<VodCategory>> = library { repo.vod.categories(kind) }
+    fun vodContinueCount(kind: String): Flow<Int> = library { repo.vod.continueCount(kind) }
 
     /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
-    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> =
-        if (category == VOD_CONTINUE) repo.vod.observeContinue(kind)
-        else repo.vod.observe(kind, category, query.trim())
+    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {
+        if (category == VOD_CONTINUE) repo.vod.continueWatching(kind)
+        else repo.vod.items(kind, category, query.trim())
+    }
 
     val vodProgress: StateFlow<Map<String, VodProgressEntity>> = repo.vod.observeProgress()
         .map { list -> list.associateBy { it.id } }
@@ -537,8 +543,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val dur = exo.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0 } ?: 0L
         viewModelScope.launch {
             when {
-                dur > 0 && pos >= dur * 0.95 -> repo.vod.clearProgress(item.id)
-                pos > 30_000 -> repo.vod.saveProgress(VodProgressEntity(item.id, pos, dur, System.currentTimeMillis(), showId))
+                dur > 0 && pos >= dur * 0.95 -> repo.clearProgress(item.id)
+                pos > 30_000 -> repo.saveProgress(VodProgressEntity(item.id, pos, dur, System.currentTimeMillis(), showId))
             }
         }
     }
@@ -549,7 +555,23 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun resumeLive() {
+        libraryOpen = false
         _current.value?.let { player.play(StreamSpecs.from(it)) }
+    }
+
+    /**
+     * Movies & TV Shows browser open: live TV stops, so nothing streams until you press play on
+     * something (most accounts allow only one or two streams at a time).
+     */
+    private var libraryOpen = false
+
+    fun enterLibrary() {
+        libraryOpen = true
+        if (player.isLive) player.stop()
+    }
+
+    fun leaveLibrary() {
+        if (libraryOpen) resumeLive()
     }
 
     init {
@@ -635,7 +657,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         tune(list.firstOrNull { it.id == last } ?: list.first())
     }
 
-    fun onForeground() = player.resume()
+    fun onForeground() {
+        if (!(libraryOpen && player.isLive)) player.resume()
+    }
     fun onBackground() = player.stop()
 
     override fun onCleared() {

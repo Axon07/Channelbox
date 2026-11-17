@@ -352,8 +352,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         if (playbackReturn == Mode.VOD) {
             vm.stopVod()
             vodBrowser.focusToken++
+            vm.player.stop() // back to browsing; live TV resumes when the library is closed
+        } else {
+            vm.resumeLive()
         }
-        vm.resumeLive()
         mode = playbackReturn
     }
 
@@ -661,6 +663,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
     LaunchedEffect(mode) { if (mode != Mode.SETTINGS) settingsFromSetup = false }
+    // Live TV doesn't play behind Movies & TV Shows; it comes back when you leave them.
+    LaunchedEffect(mode) {
+        when (mode) {
+            Mode.VOD -> vm.enterLibrary()
+            Mode.PLAYBACK, Mode.UPDATE -> Unit
+            else -> vm.leaveLibrary()
+        }
+    }
     // Guide and menus close back to TV after a while with no button pressed.
     val idleModes = mode == Mode.GUIDE || mode == Mode.GROUPS || mode == Mode.CHANNEL_LIST || mode == Mode.PROGRAM_MENU
     LaunchedEffect(mode, lastInput, settings.idleCloseSeconds) {
