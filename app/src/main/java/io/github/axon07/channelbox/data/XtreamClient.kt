@@ -36,6 +36,19 @@ class XtreamClient(private val http: OkHttpClient) {
                 val prefix = uri.path.removeSuffix("/get.php")
                 Login("${uri.scheme}://${uri.host}$port$prefix", user, pass)
             }.getOrNull()
+
+            private val streamPattern = Regex("""^(https?://[^/]+)/(?:movie|series)/([^/]+)/([^/]+)/[^/?#]+""", RegexOption.IGNORE_CASE)
+
+            /** The login inside an Xtream movie/episode link (…/series/USER/PASS/123.mp4), or null. */
+            fun fromStreamUrl(url: String): Login? = streamPattern.find(url.trim())?.let { m ->
+                runCatching {
+                    Login(
+                        m.groupValues[1],
+                        java.net.URLDecoder.decode(m.groupValues[2], "UTF-8"),
+                        java.net.URLDecoder.decode(m.groupValues[3], "UTF-8"),
+                    )
+                }.getOrNull()
+            }
         }
 
         val base: String

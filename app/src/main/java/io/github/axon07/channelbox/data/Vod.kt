@@ -173,6 +173,7 @@ object VodClassifier {
 class VodBuilder(private val playlistId: String) {
     private val shows = HashSet<String>()
     private var index = 0
+    val isEmpty get() = index == 0
 
     fun add(p: ParsedChannel, kind: VodClassifier.Kind): List<VodEntity> {
         val i = index++

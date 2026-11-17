@@ -178,15 +178,23 @@ class TvRepository(
                         // An Xtream link underneath? Take movies & shows from the provider's API, like a
                         // login would: real posters, plots and ratings instead of episode stills.
                         var filesFromApi = false
-                        val xtream = if (p.includeVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
-                        if (xtream != null) {
+                        val vodFromApi: suspend (XtreamClient.Login) -> Unit = { login ->
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
-                            XtreamClient(http).loadVod(xtream, p.id, writer) { n ->
+                            XtreamClient(http).loadVod(login, p.id, writer) { n ->
                                 _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
                             }
                             filesFromApi = writer.count > 0
+                        }
+                        // 1) The playlist link itself is an Xtream get.php link.
+                        val linkLogin = if (p.includeVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
+                        if (linkLogin != null) {
+                            vodFromApi(linkLogin)
                             _state.value = RefreshState.Running("Loading $label…")
                         }
+                        // 2) Otherwise the movie/episode links may carry the login (…/series/USER/PASS/1.mp4):
+                        //    skip those entries and ask the API after the download.
+                        var entryLogin: XtreamClient.Login? = null
+                        var skippedFiles = 0
                         guides = http.download(p.m3uUrl) { input ->
                             M3uParser.parse(maybeGunzip(input).bufferedReader()) { ch ->
                                 val kind = VodClassifier.kind(ch.url, ch.name)
@@ -194,9 +202,28 @@ class TvRepository(
                                     lineup.add(p.id, ch)
                                     live++
                                 } else if (p.includeVod && !filesFromApi) {
-                                    builder.add(ch, kind).forEach(writer::add)
+                                    if (linkLogin == null && entryLogin == null && skippedFiles == 0 && builder.isEmpty) {
+                                        entryLogin = XtreamClient.Login.fromStreamUrl(ch.url)
+                                    }
+                                    if (entryLogin != null) skippedFiles++
+                                    else builder.add(ch, kind).forEach(writer::add)
                                 }
                                 if (++entries % 5_000 == 0) _state.value = RefreshState.Running("Loading $label… $entries entries")
+                            }
+                        }
+                        val login = entryLogin
+                        if (login != null) {
+                            vodFromApi(login)
+                            if (!filesFromApi && skippedFiles > 0) {
+                                // The API gave nothing: read the playlist's own movie & show entries after all.
+                                _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
+                                val again = VodBuilder(p.id)
+                                http.download(p.m3uUrl) { input ->
+                                    M3uParser.parse(maybeGunzip(input).bufferedReader()) { ch ->
+                                        val kind = VodClassifier.kind(ch.url, ch.name)
+                                        if (kind != VodClassifier.Kind.LIVE) again.add(ch, kind).forEach(writer::add)
+                                    }
+                                }
                             }
                         }
                     }
