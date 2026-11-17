@@ -66,7 +66,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Recording** | Record what's on now (● / red button) or schedule a programme from the guide. TS, HLS (incl. AES-128) and DASH. Save to this box, a USB drive / SD card, a network share (SMB) or WebDAV. DRM channels are saved exactly as delivered – still encrypted – and play back through the same licence as live TV |
 | **Player controls** | Movies, episodes, recordings and catch-up: seek bar, elapsed/remaining time, ⏪ 10 s / ⏯ / ⏩ 30 s, CC and the ⋯ menu; tap the bar to jump |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
-| **Channel list** | Press OK while watching: channels by group with what's on now |
+| **Channel list** | Press ◀ while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
 | **Set-top box mode** | Optional start on boot, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → "Exit?"; the last step can also be set to never exit, or exit straight away |
 | **Touch & mouse** | Tap the picture for the controls (record, pause, live, favourite, CC, multi-view, mini player, ⋯); swipe up/down to change channel; tap anything in the list or guide |
@@ -76,10 +76,10 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 
 | Button | Watching TV | Channel list | Guide |
 |---|---|---|---|
-| ▲ / ▼, CH+ / CH− | Change channel (▼ with the info banner open: the control buttons – pause, record, CC, multi-view, ⋯) | Move | Move (CH± = page) |
+| ▲ / ▼, CH+ / CH− | Change channel | Move | Move (CH± = page) |
 | ◀ | Open channel list | Previous group | Earlier |
 | ▶ / Info | Show/hide info banner | Next group | Later |
-| OK | Open channel list | Watch | On now: watch · finished: catch-up · future: record menu |
+| OK | Control bar (OK again = pause; ◀ ▶ record, live, CC, multi-view, ⋯; ▲ hide) | Watch | On now: watch · finished: catch-up · future: record menu |
 | Hold OK | ⋯ menu: audio, subtitles, quality, picture size | ★ favourite | Programme menu (watch / from start / record / favourite) |
 | ● Record / red | Record what's on (again = stop) | – | Record / cancel the selected show |
 | 0–9 | Go to channel number | Go to channel number | Jump to channel |

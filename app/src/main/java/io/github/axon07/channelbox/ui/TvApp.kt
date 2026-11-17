@@ -181,10 +181,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var digits by remember { mutableStateOf("") }
     var bannerVisible by remember { mutableStateOf(false) }
     var touchBar by remember { mutableStateOf(false) }
-    /** Remote: the live control button that's highlighted (▼ from the info banner), or null. */
+    /** Remote: the live control button that's highlighted (OK opens the bar), or null. */
     var liveFocus by remember { mutableStateOf<LiveSlot?>(null) }
-    /** The info banner was opened with ▶ / Info (not by changing channel), so ▼ goes into the controls. */
-    var bannerByKey by remember { mutableStateOf(false) }
     var touchBarToken by remember { mutableIntStateOf(0) }
     var listIndex by remember { mutableIntStateOf(0) }
     var groupsIndex by remember { mutableIntStateOf(0) }
@@ -648,6 +646,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 liveFocus != null && touchBar -> liveFocus?.let { pressLiveSlot(it) }
                 digits.isNotEmpty() -> commitDigits()
                 allChannels.isEmpty() -> mode = Mode.SETTINGS
+                // OK shows the control bar with Pause highlighted: OK again pauses.
+                current != null -> {
+                    bannerVisible = false
+                    liveFocus = LiveSlot.PAUSE
+                    touchBarToken++
+                }
                 else -> openList()
             }
             Mode.CHANNEL_LIST -> visible.getOrNull(listIndex)?.let { tuneAndWatch(it) }
@@ -719,27 +723,13 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
         when (mode) {
             Mode.PLAYER -> when (code) {
-                AndroidKeyEvent.KEYCODE_DPAD_UP -> { bannerByKey = false; vm.zap(up) }
-                // ▼ with the info banner open (from ▶ / Info): into the control buttons.
-                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (bannerVisible && bannerByKey && current != null) {
-                    bannerVisible = false
-                    bannerByKey = false
-                    liveFocus = LiveSlot.PAUSE
-                    touchBarToken++
-                } else {
-                    bannerByKey = false
-                    vm.zap(-up)
-                }
+                AndroidKeyEvent.KEYCODE_DPAD_UP -> vm.zap(up)
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> vm.zap(-up)
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> vm.zap(1)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> vm.zap(-1)
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> openList()
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_INFO -> {
-                    if (bannerVisible) {
-                        bannerVisible = false
-                    } else {
-                        vm.showBanner()
-                        bannerByKey = true
-                    }
+                    if (bannerVisible) bannerVisible = false else vm.showBanner()
                 }
                 AndroidKeyEvent.KEYCODE_GUIDE -> openGuide()
                 AndroidKeyEvent.KEYCODE_SEARCH -> openSearch()
@@ -933,7 +923,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
     LaunchedEffect(touchBar) { if (!touchBar) liveFocus = null }
     LaunchedEffect(playbackOverlay, mode) { if (!playbackOverlay || mode != Mode.PLAYBACK) pbFocus = null }
-    LaunchedEffect(bannerVisible) { if (!bannerVisible) bannerByKey = false }
     LaunchedEffect(touchBarToken) {
         if (touchBarToken > 0) {
             touchBar = true
