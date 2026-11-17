@@ -99,7 +99,7 @@ interface RecordingDao {
 @Entity(tableName = "favorites")
 data class FavoriteEntity(@PrimaryKey val channelId: String)
 
-@Entity(tableName = "programs", indices = [Index(value = ["epgId", "start"])])
+@Entity(tableName = "programs", indices = [Index(value = ["epgId", "start"]), Index(value = ["start"])])
 data class ProgramEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
     val epgId: String,
@@ -160,14 +160,18 @@ interface ProgramDao {
 }
 
 @Database(
-    entities = [ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class],
-    version = 4,
+    entities = [
+        ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class,
+        VodEntity::class, VodProgressEntity::class,
+    ],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun channels(): ChannelDao
     abstract fun programs(): ProgramDao
     abstract fun recordings(): RecordingDao
+    abstract fun vod(): VodDao
 
     companion object {
         /** v3: catch-up columns. Keeps favourites and recordings. */
@@ -185,9 +189,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v5: movies & shows, resume positions, and a time index for big guides. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `vod` (`id` TEXT NOT NULL, `playlistId` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, `category` TEXT NOT NULL, `poster` TEXT, `url` TEXT, `headers` TEXT, " +
+                        "`seriesKey` TEXT, `season` INTEGER NOT NULL, `episode` INTEGER NOT NULL, `added` INTEGER NOT NULL, " +
+                        "`sortIndex` INTEGER NOT NULL, `plot` TEXT, `rating` TEXT, `year` TEXT, PRIMARY KEY(`id`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vod_kind_category` ON `vod` (`kind`, `category`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vod_seriesKey` ON `vod` (`seriesKey`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `vod_progress` (`id` TEXT NOT NULL, `position` INTEGER NOT NULL, " +
+                        "`duration` INTEGER NOT NULL, `updated` INTEGER NOT NULL, `showId` TEXT, PRIMARY KEY(`id`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_programs_start` ON `programs` (`start`)")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
     }

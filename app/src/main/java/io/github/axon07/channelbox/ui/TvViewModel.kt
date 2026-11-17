@@ -16,6 +16,11 @@ import io.github.axon07.channelbox.data.ReleaseInfo
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.Playlist
+import io.github.axon07.channelbox.data.VodCategory
+import io.github.axon07.channelbox.data.VodEntity
+import io.github.axon07.channelbox.data.VodKind
+import io.github.axon07.channelbox.data.VodProgressEntity
+import kotlinx.coroutines.flow.Flow
 import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR
 import io.github.axon07.channelbox.player.TvPlayer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,6 +70,9 @@ sealed interface ChannelFilter {
         const val UNGROUPED = "Uncategorized"
     }
 }
+
+/** Pseudo-category: movies / shows you've started. */
+const val VOD_CONTINUE = "\u0000continue"
 
 /** How much of the timeline the guide shows at once. */
 const val GUIDE_SPAN = 2 * HOUR
@@ -402,6 +410,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setMaxQuality(height: Int) = viewModelScope.launch { c.settings.setMaxQuality(height) }
     fun setPipOnLeave(on: Boolean) = viewModelScope.launch { c.settings.setPipOnLeave(on) }
     fun setIdleClose(seconds: Int) = viewModelScope.launch { c.settings.setIdleClose(seconds) }
+    fun setGuideDays(days: Int) = viewModelScope.launch { c.settings.setGuideDays(days) }
 
     // ---- Network: VPN, proxy, DNS, user agent ----------------------------------------------
 
@@ -475,6 +484,70 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrDefault("not available")
 
     /** Back to live TV after watching a recording. */
+    // ---- Movies & TV shows -----------------------------------------------------------------
+
+    val movieCount: StateFlow<Int> = repo.vod.observeCount(VodKind.MOVIE)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    val showCount: StateFlow<Int> = repo.vod.observeCount(VodKind.SERIES)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    fun vodCategories(kind: String): Flow<List<VodCategory>> = repo.vod.observeCategories(kind)
+    fun vodContinueCount(kind: String): Flow<Int> = repo.vod.observeContinueCount(kind)
+
+    /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
+    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> =
+        if (category == VOD_CONTINUE) repo.vod.observeContinue(kind)
+        else repo.vod.observe(kind, category, query.trim())
+
+    val vodProgress: StateFlow<Map<String, VodProgressEntity>> = repo.vod.observeProgress()
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Episodes of a show; empty list with a message if the provider couldn't be reached. */
+    suspend fun episodes(show: VodEntity): List<VodEntity> =
+        try {
+            repo.episodes(show)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            showToast("Couldn't load the episodes: ${e.message ?: e.javaClass.simpleName}")
+            emptyList()
+        }
+
+    /** Where to resume [item], or null to start from the beginning. */
+    suspend fun vodResumeAt(item: VodEntity): Long? {
+        val p = repo.vod.progress(item.id) ?: return null
+        return p.position.takeIf { it > 60_000 && (p.duration <= 0 || it < p.duration * 0.95) }
+    }
+
+    private var playingVod: Pair<VodEntity, String?>? = null
+
+    /** Plays a movie or episode; [showId] links an episode to its show for "Continue watching". */
+    fun playVod(item: VodEntity, startAt: Long, showId: String? = null) {
+        val url = item.url ?: return
+        playingVod = item to showId
+        player.playOnDemand(StreamSpec(url, StreamSpecs.decodeHeaders(item.headers), null, null), startAt)
+    }
+
+    /** Remembers how far into the current movie/episode you got (cleared once it's nearly finished). */
+    fun saveVodProgress() {
+        val (item, showId) = playingVod ?: return
+        val exo = player.exo
+        val pos = exo.currentPosition
+        val dur = exo.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0 } ?: 0L
+        viewModelScope.launch {
+            when {
+                dur > 0 && pos >= dur * 0.95 -> repo.vod.clearProgress(item.id)
+                pos > 30_000 -> repo.vod.saveProgress(VodProgressEntity(item.id, pos, dur, System.currentTimeMillis(), showId))
+            }
+        }
+    }
+
+    fun stopVod() {
+        saveVodProgress()
+        playingVod = null
+    }
+
     fun resumeLive() {
         _current.value?.let { player.play(StreamSpecs.from(it)) }
     }

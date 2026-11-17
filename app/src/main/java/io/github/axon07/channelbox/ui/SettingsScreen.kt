@@ -100,7 +100,7 @@ private enum class Page(val title: String) {
     SMB("Network share (SMB)"), WEBDAV("WebDAV folder"),
     // Pick-one lists
     SCALE("Picture size"), QUALITY("Maximum quality"), REFRESH("Reload automatically"),
-    BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"),
+    BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"), GUIDE_DAYS("Days of TV guide"),
     PLAYLIST("Playlist"),
 }
 
@@ -273,12 +273,20 @@ private fun SourceSettings(
         onClick = { vm.refreshNow() },
     )
     SettingCard(
+        title = "Days of TV guide",
+        description = "Fewer days load faster and use less space with very big guides",
+        value = guideDaysLabel(settings.guideDays),
+        onClick = { openPage(Page.GUIDE_DAYS) },
+    )
+    SettingCard(
         title = "Reload automatically",
         description = "Fetch the latest channels and guide in the background",
         value = refreshLabel(settings.refreshHours).substringBefore(" ("),
         onClick = { openPage(Page.REFRESH) },
     )
 }
+
+private fun guideDaysLabel(days: Int) = if (days == 1) "1 day" else "$days days"
 
 private val IDLE_CHOICES = listOf(30, 60, 120, 300, 0)
 
@@ -735,6 +743,17 @@ private fun SubPage(
                 options = SCALE_LABELS.mapIndexed { i, label -> i.toString() to label },
                 selected = settings.videoScale.toString(),
                 onSelect = { vm.setVideoScale(it.toInt()); onClose() },
+            )
+        }
+        Page.GUIDE_DAYS -> {
+            PageHeader("Days of TV guide", "How far ahead the guide goes. Applies at the next reload.")
+            ChoiceList(
+                options = listOf(1, 2, 3, 5, 7).map { it.toString() to guideDaysLabel(it) },
+                selected = settings.guideDays.toString(),
+                onSelect = {
+                    vm.setGuideDays(it.toInt())
+                    onClose()
+                },
             )
         }
         Page.IDLE -> {

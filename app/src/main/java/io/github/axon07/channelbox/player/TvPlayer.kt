@@ -147,7 +147,10 @@ class TvPlayer(
     fun play(stream: StreamSpec) = open(stream, onDemand = false)
 
     /** Catch-up programme: seekable, plays once. */
-    fun playOnDemand(stream: StreamSpec) = open(stream, onDemand = true)
+    fun playOnDemand(stream: StreamSpec, startAt: Long = 0) {
+        open(stream, onDemand = true)
+        if (startAt > 0) exo.seekTo(startAt)
+    }
 
     /** Recorded file. */
     fun playFile(path: String) =

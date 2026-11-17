@@ -40,6 +40,20 @@ class TvRepository(
 
     suspend fun allChannels(): List<ChannelEntity> = db.channels().getAll()
 
+    // ---- Movies & TV shows --------------------------------------------------------------------
+
+    val vod: VodDao get() = db.vod()
+
+    /** Episodes of a show: from the playlist (M3U) or fetched from the provider (Xtream). */
+    suspend fun episodes(show: VodEntity): List<VodEntity> {
+        val key = show.seriesKey ?: return emptyList()
+        if (show.id.startsWith("xseries:")) {
+            val p = settings.current().playlists.firstOrNull { it.id == show.playlistId } ?: return emptyList()
+            return XtreamClient(http).episodes(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass), p.id, key)
+        }
+        return db.vod().episodes(key)
+    }
+
     suspend fun setFavorite(channelId: String, favorite: Boolean) {
         if (favorite) db.channels().addFavorite(FavoriteEntity(channelId))
         else db.channels().removeFavorite(channelId)
@@ -53,6 +67,7 @@ class TvRepository(
             if (sources.isEmpty()) {
                 db.channels().clear()
                 db.programs().clear()
+                db.vod().deleteOtherPlaylists(emptyList())
                 _state.value = RefreshState.Idle
                 return@withLock false
             }
@@ -62,14 +77,30 @@ class TvRepository(
             val epgUrls = ArrayList<String>()
             val failures = ArrayList<String>()
             val errors = HashMap<String, String>()
+            val vod = HashMap<String, List<VodEntity>>() // movies & shows per playlist that loaded
             sources.forEachIndexed { index, p ->
                 _state.value = RefreshState.Running(
                     if (sources.size > 1) "Loading ${p.displayName} (${index + 1} of ${sources.size})…" else "Loading channels…"
                 )
                 try {
                     val playlist = loadPlaylist(p)
-                    if (playlist.channels.isEmpty()) throw IOException("no channels in the playlist")
-                    playlist.channels.forEach { parsed += p.id to it }
+                    // Files (movies, episodes) go to Movies & TV Shows instead of the guide.
+                    val files = ArrayList<Pair<ParsedChannel, VodClassifier.Kind>>()
+                    var live = 0
+                    playlist.channels.forEach { ch ->
+                        val kind = VodClassifier.kind(ch.url, ch.name)
+                        if (kind == VodClassifier.Kind.LIVE) {
+                            parsed += p.id to ch
+                            live++
+                        } else files += ch to kind
+                    }
+                    val items = ArrayList(VodClassifier.toVod(p.id, files))
+                    if (p.type == SourceType.XTREAM) {
+                        _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
+                        items += XtreamClient(http).loadVod(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass), p.id)
+                    }
+                    if (live == 0 && items.isEmpty()) throw IOException("no channels in the playlist")
+                    vod[p.id] = items
                     // Your own guide URLs first, then every guide the playlist lists.
                     epgUrls += splitUrls(p.epgUrl) + playlist.epgUrls
                 } catch (e: CancellationException) {
@@ -87,6 +118,16 @@ class TvRepository(
 
             val entities = toEntities(parsed, kept)
             db.channels().replaceAll(entities)
+
+            // Movies & shows: replace those of playlists that loaded; keep those of playlists that failed.
+            if (vod.isNotEmpty()) _state.value = RefreshState.Running("Saving movies & shows…")
+            db.vod().deleteOtherPlaylists(sources.map { it.id })
+            vod.forEach { (id, items) ->
+                db.withTransaction {
+                    db.vod().deleteForPlaylist(id)
+                    items.chunked(2_000).forEach { db.vod().insertAll(it) }
+                }
+            }
 
             var programmes = 0
             val guides = epgUrls.distinct()
@@ -111,7 +152,9 @@ class TvRepository(
 
     private suspend fun loadPlaylist(p: Playlist): ParsedPlaylist = when (p.type) {
         SourceType.XTREAM -> XtreamClient(http).load(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass))
-        else -> http.download(p.m3uUrl, timeoutSeconds = PLAYLIST_TIMEOUT) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
+        // No overall time limit: big provider lists can take minutes. A server that stops sending
+        // still times out (read timeout), and a newer reload cancels this one.
+        else -> http.download(p.m3uUrl) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
     }
 
     /**
@@ -161,7 +204,7 @@ class TvRepository(
         )
         val now = System.currentTimeMillis()
         val keepFrom = now - 6 * HOUR
-        val keepTo = now + 8 * 24 * HOUR
+        val keepTo = now + settings.current().guideDays.coerceIn(1, 14) * 24 * HOUR
         val filled = HashSet<String>() // guide ids that already have programmes from an earlier source
 
         db.programs().clear()
@@ -228,8 +271,6 @@ class TvRepository(
 
     companion object {
         const val HOUR = 3_600_000L
-        /** A playlist that hasn't finished downloading after this long is given up on. */
-        const val PLAYLIST_TIMEOUT = 120L
         private const val BATCH = 2_000
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
     }

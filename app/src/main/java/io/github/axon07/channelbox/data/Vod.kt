@@ -1,0 +1,182 @@
+package io.github.axon07.channelbox.data
+
+import androidx.room.Dao
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+/** Kinds of on-demand item. */
+object VodKind {
+    const val MOVIE = "movie"
+    /** A show; its episodes are rows of kind [EPISODE] (M3U) or loaded from the provider (Xtream). */
+    const val SERIES = "series"
+    const val EPISODE = "episode"
+}
+
+/** A movie, a show or an episode. */
+@Entity(
+    tableName = "vod",
+    indices = [Index(value = ["kind", "category"]), Index(value = ["seriesKey"])],
+)
+data class VodEntity(
+    @PrimaryKey val id: String,
+    val playlistId: String,
+    val kind: String,
+    val title: String,
+    val category: String,
+    val poster: String?,
+    /** Null for an Xtream show (episodes are fetched when it's opened). */
+    val url: String?,
+    val headers: String?,
+    /** Links a show and its episodes. For Xtream shows: the provider's series id. */
+    val seriesKey: String?,
+    val season: Int,
+    val episode: Int,
+    /** When the provider added it (epoch seconds), 0 if unknown. */
+    val added: Long,
+    /** Position in the playlist, to keep the provider's order. */
+    val sortIndex: Int,
+    val plot: String?,
+    val rating: String?,
+    val year: String?,
+)
+
+/** Where you stopped watching a movie or episode. */
+@Entity(tableName = "vod_progress")
+data class VodProgressEntity(
+    @PrimaryKey val id: String,
+    val position: Long,
+    val duration: Long,
+    val updated: Long,
+    /** For an episode: the show's [VodEntity.id], so the show appears under "Continue watching". */
+    val showId: String?,
+)
+
+data class VodCategory(val name: String, val count: Int)
+
+@Dao
+interface VodDao {
+    @Query("SELECT category AS name, COUNT(*) AS count FROM vod WHERE kind = :kind GROUP BY category ORDER BY MIN(sortIndex)")
+    fun observeCategories(kind: String): Flow<List<VodCategory>>
+
+    @Query("SELECT COUNT(*) FROM vod WHERE kind = :kind")
+    fun observeCount(kind: String): Flow<Int>
+
+    @Query(
+        """SELECT * FROM vod WHERE kind = :kind
+           AND (:category IS NULL OR category = :category)
+           AND (:query = '' OR title LIKE '%' || :query || '%')
+           ORDER BY added DESC, sortIndex"""
+    )
+    fun observe(kind: String, category: String?, query: String): Flow<List<VodEntity>>
+
+    /** Started but not finished, most recent first. */
+    @Query(
+        """SELECT vod.* FROM vod JOIN vod_progress p ON p.id = vod.id OR p.showId = vod.id
+           WHERE vod.kind = :kind GROUP BY vod.id ORDER BY MAX(p.updated) DESC LIMIT 50"""
+    )
+    fun observeContinue(kind: String): Flow<List<VodEntity>>
+
+    @Query("SELECT * FROM vod WHERE kind = 'episode' AND seriesKey = :seriesKey ORDER BY season, episode, sortIndex")
+    suspend fun episodes(seriesKey: String): List<VodEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<VodEntity>)
+
+    @Query("DELETE FROM vod WHERE playlistId = :playlistId")
+    suspend fun deleteForPlaylist(playlistId: String)
+
+    @Query("DELETE FROM vod WHERE playlistId NOT IN (:keep)")
+    suspend fun deleteOtherPlaylists(keep: List<String>)
+
+    @Query("SELECT * FROM vod_progress")
+    fun observeProgress(): Flow<List<VodProgressEntity>>
+
+    @Query("SELECT COUNT(*) FROM vod_progress p JOIN vod ON p.id = vod.id OR p.showId = vod.id WHERE vod.kind = :kind")
+    fun observeContinueCount(kind: String): Flow<Int>
+
+    @Query("SELECT * FROM vod_progress WHERE id = :id")
+    suspend fun progress(id: String): VodProgressEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveProgress(p: VodProgressEntity)
+
+    @Query("DELETE FROM vod_progress WHERE id = :id")
+    suspend fun clearProgress(id: String)
+}
+
+/** Sorts playlist entries into live channels, movies and episodes. */
+object VodClassifier {
+    enum class Kind { LIVE, MOVIE, EPISODE }
+
+    private val videoFiles = setOf(
+        "mkv", "mp4", "avi", "mov", "m4v", "wmv", "flv", "webm", "mpg", "mpeg", "divx", "xvid", "3gp", "ogv", "vob",
+    )
+
+    /** "Show Name S01E02", "Show.Name.S1 E2 - Title", "Show: S01 E02" */
+    private val episodePattern = Regex("""(?i)^(.*?)[\s._\-:|]*\bS(\d{1,2})\s*[._\- ]?\s*E(\d{1,4})\b(.*)$""")
+
+    fun kind(url: String, name: String): Kind {
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        if ("/series/" in path) return Kind.EPISODE
+        if ("/movie/" in path || "/movies/" in path) return Kind.MOVIE
+        val ext = path.substringAfterLast('/').substringAfterLast('.', "")
+        if (ext in videoFiles) return if (episodePattern.containsMatchIn(name)) Kind.EPISODE else Kind.MOVIE
+        return Kind.LIVE
+    }
+
+    data class EpisodeName(val show: String, val season: Int, val episode: Int, val rest: String)
+
+    fun episodeName(name: String): EpisodeName? {
+        val m = episodePattern.find(name.trim()) ?: return null
+        val show = m.groupValues[1].replace('.', ' ').replace('_', ' ').trim().trimEnd('-', ':', '|').trim()
+        return EpisodeName(
+            show = show,
+            season = m.groupValues[2].toIntOrNull() ?: 0,
+            episode = m.groupValues[3].toIntOrNull() ?: 0,
+            rest = m.groupValues[4].trim().trimStart('-', ':', '|', '.').trim(),
+        )
+    }
+
+    /**
+     * Turns M3U entries that are files into movies, episodes and one show row per series.
+     * Episodes without "S01E02" in the name are grouped by their group title.
+     */
+    fun toVod(playlistId: String, entries: List<Pair<ParsedChannel, Kind>>): List<VodEntity> {
+        val out = ArrayList<VodEntity>(entries.size)
+        val shows = LinkedHashMap<String, VodEntity>()
+        entries.forEachIndexed { i, (p, kind) ->
+            val headers = StreamSpecs.encodeHeaders(p.headers)
+            if (kind == Kind.MOVIE) {
+                out += VodEntity(
+                    id = p.url, playlistId = playlistId, kind = VodKind.MOVIE, title = p.name, category = p.group,
+                    poster = p.logo, url = p.url, headers = headers, seriesKey = null, season = 0, episode = 0,
+                    added = 0, sortIndex = i, plot = null, rating = null, year = null,
+                )
+            } else {
+                val parsed = episodeName(p.name)
+                val showName = parsed?.show?.takeIf { it.isNotBlank() } ?: p.group
+                val key = "$playlistId:" + EpgMatcher.normalizeName(showName).ifEmpty { showName.lowercase() }
+                if (key !in shows) {
+                    shows[key] = VodEntity(
+                        id = "show:$key", playlistId = playlistId, kind = VodKind.SERIES, title = showName,
+                        category = p.group, poster = p.logo, url = null, headers = null, seriesKey = key,
+                        season = 0, episode = 0, added = 0, sortIndex = i, plot = null, rating = null, year = null,
+                    )
+                }
+                out += VodEntity(
+                    id = p.url, playlistId = playlistId, kind = VodKind.EPISODE,
+                    title = parsed?.rest?.takeIf { it.isNotBlank() } ?: p.name,
+                    category = p.group, poster = p.logo, url = p.url, headers = headers, seriesKey = key,
+                    season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = i,
+                    plot = null, rating = null, year = null,
+                )
+            }
+        }
+        return out + shows.values
+    }
+}
