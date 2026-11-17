@@ -141,6 +141,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var mode by remember { mutableStateOf(if (!settings.hasSource) Mode.SETUP else Mode.PLAYER) }
     /** Playlist being edited on the setup screen; null = adding a new one. */
     var setupPlaylistId by remember { mutableStateOf<String?>(null) }
+    /** When the groups menu was opened (for [groupsBack]). */
+    var groupsOpenedAt by remember { mutableLongStateOf(0L) }
     var digits by remember { mutableStateOf("") }
     var bannerVisible by remember { mutableStateOf(false) }
     var touchBar by remember { mutableStateOf(false) }
@@ -193,6 +195,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun openGroups(index: Int = filters.indexOf(filter).coerceAtLeast(0)) {
         groupsIndex = index
+        groupsOpenedAt = android.os.SystemClock.uptimeMillis()
         mode = Mode.GROUPS
     }
 
@@ -207,6 +210,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Back on the groups menu – the last step before leaving. */
+    /**
+     * Back on the groups menu. Pressed quickly after arriving (Back, Back, Back from TV), it's the
+     * last step: ask to exit. After spending time in the menu it just closes the menu, back to TV.
+     */
+    fun groupsBack() {
+        if (android.os.SystemClock.uptimeMillis() - groupsOpenedAt < QUICK_BACK_MS) lastBack()
+        else mode = Mode.PLAYER
+    }
+
     fun lastBack() {
         when (settings.backAction) {
             BackAction.ASK_EXIT -> askExit(Mode.GROUPS)
@@ -645,7 +657,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.CHANNEL_LIST -> mode = Mode.PLAYER
             Mode.GUIDE -> openGroups()
-            Mode.GROUPS -> lastBack()
+            Mode.GROUPS -> groupsBack()
             Mode.EXIT_CONFIRM -> mode = exitReturn
             Mode.UPDATE -> vm.dismissUpdate(skipThisVersion = false)
             Mode.OPTIONS -> mode = optionsReturn
@@ -1018,3 +1030,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         if (!inPip) toast?.let { ToastMessage(it.text) }
     }
 }
+
+/** Back presses closer together than this go straight through the menus to "Exit?". */
+private const val QUICK_BACK_MS = 2_000L
