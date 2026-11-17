@@ -175,13 +175,25 @@ class TvRepository(
                         // Streamed: live channels are kept, files (movies, episodes) are saved to
                         // Movies & TV Shows as they arrive, so huge lists don't have to fit in memory.
                         val builder = VodBuilder(p.id)
+                        // An Xtream link underneath? Take movies & shows from the provider's API, like a
+                        // login would: real posters, plots and ratings instead of episode stills.
+                        var filesFromApi = false
+                        val xtream = if (p.includeVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
+                        if (xtream != null) {
+                            _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
+                            XtreamClient(http).loadVod(xtream, p.id, writer) { n ->
+                                _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
+                            }
+                            filesFromApi = writer.count > 0
+                            _state.value = RefreshState.Running("Loading $label…")
+                        }
                         guides = http.download(p.m3uUrl) { input ->
                             M3uParser.parse(maybeGunzip(input).bufferedReader()) { ch ->
                                 val kind = VodClassifier.kind(ch.url, ch.name)
                                 if (kind == VodClassifier.Kind.LIVE) {
                                     lineup.add(p.id, ch)
                                     live++
-                                } else if (p.includeVod) {
+                                } else if (p.includeVod && !filesFromApi) {
                                     builder.add(ch, kind).forEach(writer::add)
                                 }
                                 if (++entries % 5_000 == 0) _state.value = RefreshState.Running("Loading $label… $entries entries")

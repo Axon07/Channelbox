@@ -18,6 +18,26 @@ import java.net.URLEncoder
 class XtreamClient(private val http: OkHttpClient) {
 
     data class Login(val server: String, val user: String, val pass: String) {
+        companion object {
+            /**
+             * Most provider M3U links are Xtream Codes links underneath
+             * (http://host:port/get.php?username=…&password=…). Returns the login, or null.
+             */
+            fun fromM3uUrl(url: String): Login? = runCatching {
+                val uri = java.net.URI(url.trim())
+                if (uri.path?.endsWith("/get.php") != true) return null
+                val q = uri.rawQuery?.split('&').orEmpty().mapNotNull {
+                    val i = it.indexOf('=')
+                    if (i <= 0) null else it.substring(0, i) to java.net.URLDecoder.decode(it.substring(i + 1), "UTF-8")
+                }.toMap()
+                val user = q["username"]?.takeIf { it.isNotBlank() } ?: return null
+                val pass = q["password"] ?: return null
+                val port = if (uri.port > 0) ":${uri.port}" else ""
+                val prefix = uri.path.removeSuffix("/get.php")
+                Login("${uri.scheme}://${uri.host}$port$prefix", user, pass)
+            }.getOrNull()
+        }
+
         val base: String
             get() = server.trim().trimEnd('/').let {
                 if (it.startsWith("http://") || it.startsWith("https://")) it else "http://$it"
