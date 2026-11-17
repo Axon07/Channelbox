@@ -13,7 +13,7 @@ Bring your own IPTV subscription (M3U or Xtream Codes).
 ![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Compose%20for%20TV-7F52FF?logo=kotlin&logoColor=white)
 
-[Download](#download) · [Features](#features-v01) · [Remote control](#remote-control) · [Cable-box setup](#making-it-act-like-a-cable-box) · [Building](#building)
+[Download](#download) · [Features](#features) · [Remote control](#remote-control) · [Cable-box setup](#making-it-act-like-a-cable-box) · [Building](#building)
 
 </div>
 
@@ -37,25 +37,32 @@ Install it on the box with the **Downloader** app, a USB stick, or `adb install 
 **Updates:** Channelbox checks for a new release when it starts and offers to install it (turn that off in Settings).
 You can also use **Settings → Check for updates**. The first time, Android asks you to allow Channelbox to install apps.
 
-## Features (v0.1)
+## Features
 
 | | |
 |---|---|
-| **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login |
+| **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login. **Several playlists at once**, merged into one lineup, each with its own name, guide and on/off switch. Huge provider lists (100 MB+) are read as they download |
+| **Add from your phone** | The add-playlist screen shows a QR code: scan it, type the link or login on your phone, press Send. Works only on your home network and only while that screen is open |
 | **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
 | **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. ● marks programmes set to record |
-| **Groups menu** | Back from the guide: channel groups, with Recordings and ⚙ Settings at the bottom |
+| **Groups menu** | Back from the guide: channel groups (one section per playlist when you have several), then Movies, TV Shows, Search, Multi-view, Recordings and ⚙ Settings |
+| **Movies & TV Shows** | From the playlist or the provider's Xtream API: poster grid by category, search, "Continue watching", seasons and episodes, resume where you stopped. Xtream-style M3U links get real posters and details from the API automatically |
+| **Pause live TV** | Play/Pause while watching: the channel is buffered on the box from that moment (up to 2 hours); resume behind live, ⏩ to jump back to live |
+| **Guide search** | Search programme titles across the whole guide; watch what's on, catch up on what aired, record what's coming |
+| **Your lineup** | Rename, renumber, hide or lock channels; rename, reorder, hide or lock groups (hold OK). Survives playlist reloads; undo from Settings |
+| **Parental PIN** | Lock channels, groups and movie/show categories, optionally Settings too. Zapping skips locked channels |
 | **Playback** | Media3/ExoPlayer: HLS, MPEG-TS, DASH (`.mpd`, also `.mpd/…` links), Smooth Streaming, RTSP, RTMP and UDP multicast (`udp://@239.…`). Unknown links are tried as TS → HLS → DASH. A broken channel shows a message and retries – it never crashes the app |
 | **Stream options** | Kodi-style `url|User-Agent=…&Referer=…`, `#EXTVLCOPT:http-user-agent/http-referrer`, `#EXTHTTP:{…}`, `#KODIPROP:inputstream.adaptive.stream_headers` |
 | **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it, and Widevine retries at security level L3 when L1 fails |
 | **Catch-up / archive** | Watch programmes that already aired, straight from the guide (↺). M3U `catchup` = `default` / `append` / `shift` / `flussonic` / `xc` with `catchup-source` templates (`${start}`, `{utc}`, `{duration:60}`, `{Y}-{m}-{d}` …), and Xtream Codes archives (server time zone aware). Also "watch from the start" for shows that are on now |
 | **Audio, quality & subtitles** | While watching (hold OK, Menu, or tap → Audio & quality): pick the quality, audio language/track and subtitles or closed captions; CC button toggles captions. Picture size: fit, zoom or stretch. Optional maximum quality for slow connections |
 | **Audio formats** | Bundled FFmpeg decoder plays Dolby Digital (AC3), Dolby Digital+ (E-AC3), DTS and TrueHD on boxes that can't – no more silent sports channels. Optional "decode all audio in software" setting |
-| **Network & VPN** | Built-in **WireGuard VPN** (paste or load a config from any VPN provider; only Channelbox or the whole box), **HTTP / SOCKS5 proxy**, **encrypted DNS** (DNS-over-HTTPS: Cloudflare, Google, Quad9, AdGuard or custom) and a **user agent** setting – ways around ISP blocking |
+| **Network & VPN** | Built-in **WireGuard VPN** (paste or load a config from any VPN provider; only Channelbox or the whole box), **HTTP / SOCKS5 proxy**, **encrypted DNS** (DNS-over-HTTPS: Cloudflare, Google, Quad9, AdGuard or custom) and a **user agent** setting – for privacy and for networks that interfere with streaming |
 | **Multi-view** | Watch 2 or 4 channels at once (Groups menu → Multi-view, or the green button). Sound follows the highlighted tile |
 | **Mini player** | Picture-in-picture when you press Home (optional) or from the on-screen buttons |
 | **Stream info** | The info banner shows resolution, frame rate, codec, audio format, bitrate, available caption languages and VPN status |
-| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play (pause/seek), stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
+| **Recording** | Record what's on now (● / red button, or tap → Record) or schedule a programme from the guide. TS and HLS (incl. AES-128) channels; DRM and DASH channels can't be recorded. Recordings screen to play, stop and delete. Save to this box, a USB drive / SD card, a network share (SMB – NAS, Windows, Samba) or WebDAV (Nextcloud, Synology…) |
+| **Player controls** | Movies, episodes, recordings and catch-up: seek bar with buffered part, elapsed/remaining time, ⏪ 10 s / ⏯ / ⏩ 30 s, audio & subtitles; tap the bar to jump |
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press OK while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
@@ -80,9 +87,15 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | Last / Recall | Previous channel | Previous channel | – |
 | CC / Subtitles | Captions on/off | – | – |
 | Green | Multi-view | – | – |
+| ⏯ Play/Pause | Pause live TV / resume | – | – |
+| ⏩ / ■ Stop | Back to live (after a pause) | – | – |
+| Search | Search the guide | – | Search the guide |
 
-**Groups menu:** ▲▼ choose, OK select, ▶ or Back-to-guide. **Recordings** and **⚙ Settings** are at the bottom.
-**Playing a recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, Back returns to the list.
+**Groups menu:** ▲▼ choose, OK select, ▶ or Back-to-guide, hold OK on a group to rename / move / hide / lock it.
+Movies, TV Shows, Search, Multi-view, Recordings and ⚙ Settings are at the bottom (◀ ▶ between them).
+**Guide:** hold OK on a programme → *Edit channel…* to rename, renumber, hide or lock the channel.
+**Playing a movie, episode, recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead,
+hold OK for audio & subtitles, Back returns to the list.
 
 ### Where recordings are saved
 
@@ -171,14 +184,10 @@ Stack: Kotlin, Jetpack Compose for TV, Media3 ExoPlayer, Room, DataStore, WorkMa
 
 ## Roadmap
 
-- [ ] Pause live TV (timeshift buffer)
-- [ ] Record DASH channels; record to USB drive / NAS; series recording
-- [ ] Reminders for upcoming programmes
-- [ ] Multiple playlists, hide/rename/reorder channels and groups
-- [ ] Parental PIN
-- [ ] EPG search
-- [ ] Enter playlist URL from a phone (QR code + local web page) instead of typing it with the remote
-- [ ] VOD / series sections for Xtream
+- [ ] Record DASH channels and series recording (every episode of a show)
+- [ ] Play the next episode automatically
+- [ ] Optional TMDB artwork for providers that send poor pictures
+- [ ] Encrypted Client Hello once Android 17 boxes are common
 - [ ] Translations
 
 ## License
