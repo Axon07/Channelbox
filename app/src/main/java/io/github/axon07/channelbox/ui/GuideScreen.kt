@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.draw.clip
@@ -177,40 +179,13 @@ fun GuideScreen(
             Box(Modifier.width(m.previewWidth + m.previewPadding * 2).fillMaxHeight().tap(onClick = onClose))
         }
 
-        // Buttons are only for touch and mouse; with a remote, Back and ◀ ▶ do the same.
-        val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
-        // Header: current group (tap or Back for the group menu), clock, back to TV.
-        Row(
-            Modifier.fillMaxWidth().height(34.dp).background(Palette.Background).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(timeFormat(now), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, modifier = Modifier.width(m.channelColumn - 16.dp))
-            if (touch) {
-                HeaderButton("☰  $filterLabel", onClick = onGroups)
-                Spacer(Modifier.width(10.dp))
-                Spacer(Modifier.weight(1f))
-                HeaderButton("✕ Back to TV", onClick = onClose)
-            } else {
-                Text(filterLabel, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1)
-                Spacer(Modifier.width(14.dp))
-                Text(
-                    "Back: groups, recordings & settings", fontSize = 12.sp, color = Palette.TextDim, maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        // Time ruler, with earlier / now / later buttons for touch and mouse.
+        // Time ruler with the clock on the left (tap it to jump back to now).
         Row(Modifier.fillMaxWidth().height(26.dp).background(Palette.Background)) {
             Row(
-                Modifier.width(m.channelColumn).fillMaxHeight().padding(horizontal = 8.dp),
+                Modifier.width(m.channelColumn).fillMaxHeight().tap(onClick = onNow).padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (touch) {
-                    RulerButton("◀", Modifier.weight(1f)) { onShift(-GUIDE_STEP) }
-                    RulerButton("Now", Modifier.weight(1f), onClick = onNow)
-                    RulerButton("▶", Modifier.weight(1f)) { onShift(GUIDE_STEP) }
-                }
+                Text(timeFormat(now), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1)
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                 val total = maxWidth
@@ -238,9 +213,25 @@ fun GuideScreen(
             }
         }
 
+        // Touch: swipe sideways to move through the times.
+        val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { 60.dp.toPx() }
         LazyColumn(
             state = state.listState,
-            modifier = Modifier.fillMaxSize().background(Palette.Background),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Palette.Background)
+                .pointerInput(Unit) {
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            if (dx > swipe) onShift(-GUIDE_STEP) else if (dx < -swipe) onShift(GUIDE_STEP)
+                        },
+                    ) { change, amount ->
+                        dx += amount
+                        change.consume()
+                    }
+                },
         ) {
             itemsIndexed(channels, key = { _, ch -> ch.id }) { index, ch ->
                 GuideRow(

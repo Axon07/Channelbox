@@ -77,14 +77,16 @@ fun GroupsPanel(
             .background(Brush.horizontalGradient(listOf(Color(0xFC0C1118), Color(0xF50F151D), Color(0xE60F151D))))
             .tap { },
     ) {
-        // Shortcut rail.
+        // Shortcut rail (scrolls if the screen is too short, e.g. a phone on its side).
+        val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
         Column(
             Modifier
                 .fillMaxHeight()
-                .width(84.dp)
+                .width(if (compact) 72.dp else 84.dp)
                 .background(Color(0x66000000))
-                .padding(vertical = 20.dp, horizontal = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = if (compact) 8.dp else 20.dp, horizontal = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 4.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             RailItem("Search", AppIcons.Search, selected == n + 5) { onSelect(n + 5) }
@@ -92,7 +94,6 @@ fun GroupsPanel(
             if (movieCount > 0) RailItem("Movies", AppIcons.Film, selected == n + 3) { onSelect(n + 3) }
             if (showCount > 0) RailItem("TV Shows", AppIcons.Tv, selected == n + 4) { onSelect(n + 4) }
             RailItem(if (recordingCount > 0) "Recordings ($recordingCount)" else "Recordings", AppIcons.Record, selected == n + 1) { onSelect(n + 1) }
-            RailItem("Multi-view", AppIcons.Grid, selected == n) { onSelect(n) }
             RailItem("Settings", AppIcons.Settings, selected == n + 2) { onSelect(n + 2) }
         }
         // Groups.
@@ -137,6 +138,7 @@ private fun RailItem(
     highlighted: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
     Column(
         Modifier
             .fillMaxWidth()
@@ -150,11 +152,11 @@ private fun RailItem(
             )
             .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(10.dp))
             .tap(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 2.dp),
+            .padding(vertical = if (compact) 5.dp else 8.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AppIcon(icon, tint = if (selected || highlighted) Color.White else Color(0xFF9AA6B4), size = 22.dp)
-        Spacer(Modifier.height(4.dp))
+        AppIcon(icon, tint = if (selected || highlighted) Color.White else Color(0xFF9AA6B4), size = if (compact) 19.dp else 22.dp)
+        Spacer(Modifier.height(if (compact) 2.dp else 4.dp))
         Text(
             label, fontSize = 10.sp, lineHeight = 12.sp, textAlign = TextAlign.Center, maxLines = 2,
             color = if (selected || highlighted) Color.White else Color(0xFF9AA6B4),

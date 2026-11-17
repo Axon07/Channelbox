@@ -355,7 +355,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     // The shortcut rail, top to bottom (matches GroupsPanel).
     val railTiles = listOfNotNull(
         tileSearch, tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 },
-        rowCount + 1, rowCount, rowCount + 2,
+        rowCount + 1, rowCount + 2, // Recordings, Settings (Multi-view: hold OK or the green button while watching)
     )
 
     fun openVod(kind: String) {
@@ -1318,6 +1318,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             mode = Mode.PLAYER
                             vm.goLive()
                         })
+                        add(DialogAction("Multi-view") { openMultiView() })
                     } else emptyList(),
                     quality = quality,
                     onQuality = {
