@@ -872,6 +872,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         when (mode) {
             Mode.VOD -> vm.enterLibrary()
             Mode.PLAYBACK, Mode.UPDATE -> Unit
+            // Audio & subtitles opened from a movie, episode or recording is still part of playback.
+            Mode.OPTIONS -> if (optionsReturn != Mode.PLAYBACK) vm.leaveLibrary()
             else -> vm.leaveLibrary()
         }
     }
