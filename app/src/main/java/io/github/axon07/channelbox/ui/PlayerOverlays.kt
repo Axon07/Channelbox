@@ -1,27 +1,3 @@
-    Row(
-        Modifier
-            .align(Alignment.TopEnd)
-            .padding(top = 20.dp, end = 20.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0x99000000))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AppIcon(if (shift.paused) AppIcons.Pause else AppIcons.Play, tint = Color.White, size = 13.dp)
-        Spacer(Modifier.width(7.dp))
-        Text(
-            when {
-                shift.paused && !shift.buffered -> "Paused"
-                shift.paused -> "Paused  ${formatClock(behind)}"
-                else -> "−${formatClock(behind)}"
-            },
-            fontSize = 13.sp, color = Color.White,
-        )
-    }
-}
-
-/** Small red "REC" pill while the channel is recording. */
-@Composable
 package io.github.axon07.channelbox.ui
 
 import androidx.compose.runtime.LaunchedEffect
@@ -342,25 +318,21 @@ fun BoxScope.TimeshiftBadge(shift: TvViewModel.LiveShift, vm: TvViewModel) {
     Row(
         Modifier
             .align(Alignment.TopEnd)
-            .padding(top = 24.dp, end = 24.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xCC000000))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(top = 20.dp, end = 20.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0x99000000))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppIcon(if (shift.paused) AppIcons.Pause else AppIcons.Play, tint = Color.White, size = 16.dp)
-        Spacer(Modifier.width(8.dp))
+        AppIcon(if (shift.paused) AppIcons.Pause else AppIcons.Play, tint = Color.White, size = 13.dp)
+        Spacer(Modifier.width(7.dp))
         Text(
             when {
-                shift.paused && !shift.buffered -> "Paused · this channel resumes live"
-                shift.paused -> "Paused · ${formatClock(behind)}"
-                else -> "${formatClock(behind)} behind live"
+                shift.paused && !shift.buffered -> "Paused"
+                shift.paused -> "Paused  ${formatClock(behind)}"
+                else -> "−${formatClock(behind)}"
             },
-            fontSize = 14.sp, color = Color.White,
+            fontSize = 13.sp, color = Color.White,
         )
-        if (shift.onBuffer || shift.paused) {
-            Spacer(Modifier.width(10.dp))
-            Text("⏯ resume  ⏩ live", fontSize = 12.sp, color = Palette.TextDim)
-        }
     }
 }
