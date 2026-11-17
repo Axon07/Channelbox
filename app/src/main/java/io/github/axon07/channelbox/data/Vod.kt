@@ -70,7 +70,7 @@ interface VodDao {
         """SELECT * FROM vod WHERE kind = :kind
            AND (:category IS NULL OR category = :category)
            AND (:query = '' OR title LIKE '%' || :query || '%')
-           ORDER BY added DESC, sortIndex"""
+           ORDER BY added DESC, sortIndex LIMIT 5000"""
     )
     fun observe(kind: String, category: String?, query: String): Flow<List<VodEntity>>
 
@@ -85,10 +85,10 @@ interface VodDao {
     suspend fun episodes(seriesKey: String): List<VodEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(items: List<VodEntity>)
+    fun insertAllBlocking(items: List<VodEntity>)
 
     @Query("DELETE FROM vod WHERE playlistId = :playlistId")
-    suspend fun deleteForPlaylist(playlistId: String)
+    fun deleteForPlaylistBlocking(playlistId: String)
 
     @Query("DELETE FROM vod WHERE playlistId NOT IN (:keep)")
     suspend fun deleteOtherPlaylists(keep: List<String>)
@@ -142,41 +142,79 @@ object VodClassifier {
         )
     }
 
-    /**
-     * Turns M3U entries that are files into movies, episodes and one show row per series.
-     * Episodes without "S01E02" in the name are grouped by their group title.
-     */
-    fun toVod(playlistId: String, entries: List<Pair<ParsedChannel, Kind>>): List<VodEntity> {
-        val out = ArrayList<VodEntity>(entries.size)
-        val shows = LinkedHashMap<String, VodEntity>()
-        entries.forEachIndexed { i, (p, kind) ->
-            val headers = StreamSpecs.encodeHeaders(p.headers)
-            if (kind == Kind.MOVIE) {
-                out += VodEntity(
+}
+
+/** Turns M3U file entries into movies, episodes and one show row per series, one entry at a time. */
+class VodBuilder(private val playlistId: String) {
+    private val shows = HashSet<String>()
+    private var index = 0
+
+    fun add(p: ParsedChannel, kind: VodClassifier.Kind): List<VodEntity> {
+        val i = index++
+        val headers = StreamSpecs.encodeHeaders(p.headers)
+        if (kind == VodClassifier.Kind.MOVIE) {
+            return listOf(
+                VodEntity(
                     id = p.url, playlistId = playlistId, kind = VodKind.MOVIE, title = p.name, category = p.group,
                     poster = p.logo, url = p.url, headers = headers, seriesKey = null, season = 0, episode = 0,
                     added = 0, sortIndex = i, plot = null, rating = null, year = null,
                 )
-            } else {
-                val parsed = episodeName(p.name)
-                val showName = parsed?.show?.takeIf { it.isNotBlank() } ?: p.group
-                val key = "$playlistId:" + EpgMatcher.normalizeName(showName).ifEmpty { showName.lowercase() }
-                if (key !in shows) {
-                    shows[key] = VodEntity(
-                        id = "show:$key", playlistId = playlistId, kind = VodKind.SERIES, title = showName,
-                        category = p.group, poster = p.logo, url = null, headers = null, seriesKey = key,
-                        season = 0, episode = 0, added = 0, sortIndex = i, plot = null, rating = null, year = null,
-                    )
-                }
-                out += VodEntity(
-                    id = p.url, playlistId = playlistId, kind = VodKind.EPISODE,
-                    title = parsed?.rest?.takeIf { it.isNotBlank() } ?: p.name,
-                    category = p.group, poster = p.logo, url = p.url, headers = headers, seriesKey = key,
-                    season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = i,
-                    plot = null, rating = null, year = null,
-                )
-            }
+            )
         }
-        return out + shows.values
+        // Episodes without "S01E02" in the name are grouped by their group title.
+        val parsed = VodClassifier.episodeName(p.name)
+        val showName = parsed?.show?.takeIf { it.isNotBlank() } ?: p.group
+        val key = "$playlistId:" + EpgMatcher.normalizeName(showName).ifEmpty { showName.lowercase() }
+        val out = ArrayList<VodEntity>(2)
+        if (shows.add(key)) {
+            out += VodEntity(
+                id = "show:$key", playlistId = playlistId, kind = VodKind.SERIES, title = showName,
+                category = p.group, poster = p.logo, url = null, headers = null, seriesKey = key,
+                season = 0, episode = 0, added = 0, sortIndex = i, plot = null, rating = null, year = null,
+            )
+        }
+        out += VodEntity(
+            id = p.url, playlistId = playlistId, kind = VodKind.EPISODE,
+            title = parsed?.rest?.takeIf { it.isNotBlank() } ?: p.name,
+            category = p.group, poster = p.logo, url = p.url, headers = headers, seriesKey = key,
+            season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = i,
+            plot = null, rating = null, year = null,
+        )
+        return out
+    }
+}
+
+/**
+ * Saves a playlist's movies & shows in batches while it downloads, replacing the old ones.
+ * Blocking: call from the download's IO thread.
+ */
+class VodWriter(private val db: AppDatabase, private val playlistId: String) {
+    private val batch = ArrayList<VodEntity>(BATCH)
+    private var cleared = false
+    var count = 0
+        private set
+
+    fun add(item: VodEntity) {
+        batch += item
+        count++
+        if (batch.size >= BATCH) flush()
+    }
+
+    private fun flush() {
+        db.runInTransaction {
+            if (!cleared) {
+                db.vod().deleteForPlaylistBlocking(playlistId)
+                cleared = true
+            }
+            if (batch.isNotEmpty()) db.vod().insertAllBlocking(batch)
+        }
+        batch.clear()
+    }
+
+    /** Writes what's left; a playlist with no movies or shows loses its old ones too. */
+    fun finish() = flush()
+
+    private companion object {
+        const val BATCH = 1_000
     }
 }

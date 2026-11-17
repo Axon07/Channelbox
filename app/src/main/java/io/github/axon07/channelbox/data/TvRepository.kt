@@ -77,36 +77,53 @@ class TvRepository(
             val epgUrls = ArrayList<String>()
             val failures = ArrayList<String>()
             val errors = HashMap<String, String>()
-            val vod = HashMap<String, List<VodEntity>>() // movies & shows per playlist that loaded
             sources.forEachIndexed { index, p ->
-                _state.value = RefreshState.Running(
-                    if (sources.size > 1) "Loading ${p.displayName} (${index + 1} of ${sources.size})…" else "Loading channels…"
-                )
+                val label = if (sources.size > 1) "${p.displayName} (${index + 1} of ${sources.size})" else "channels"
+                _state.value = RefreshState.Running("Loading $label…")
+                val start = parsed.size
                 try {
-                    val playlist = loadPlaylist(p)
-                    // Files (movies, episodes) go to Movies & TV Shows instead of the guide.
-                    val files = ArrayList<Pair<ParsedChannel, VodClassifier.Kind>>()
+                    val writer = VodWriter(db, p.id)
                     var live = 0
-                    playlist.channels.forEach { ch ->
-                        val kind = VodClassifier.kind(ch.url, ch.name)
-                        if (kind == VodClassifier.Kind.LIVE) {
-                            parsed += p.id to ch
-                            live++
-                        } else files += ch to kind
-                    }
-                    val items = ArrayList(VodClassifier.toVod(p.id, files))
+                    var entries = 0
+                    val guides: List<String>
                     if (p.type == SourceType.XTREAM) {
+                        val login = XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass)
+                        val playlist = XtreamClient(http).load(login)
+                        playlist.channels.forEach { parsed += p.id to it }
+                        live = playlist.channels.size
+                        guides = playlist.epgUrls
                         _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
-                        items += XtreamClient(http).loadVod(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass), p.id)
+                        XtreamClient(http).loadVod(login, p.id, writer) { n ->
+                            _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
+                        }
+                    } else {
+                        // Streamed: live channels are kept, files (movies, episodes) are saved to
+                        // Movies & TV Shows as they arrive, so huge lists don't have to fit in memory.
+                        val builder = VodBuilder(p.id)
+                        guides = http.download(p.m3uUrl) { input ->
+                            M3uParser.parse(maybeGunzip(input).bufferedReader()) { ch ->
+                                val kind = VodClassifier.kind(ch.url, ch.name)
+                                if (kind == VodClassifier.Kind.LIVE) {
+                                    parsed += p.id to ch
+                                    live++
+                                } else {
+                                    builder.add(ch, kind).forEach(writer::add)
+                                }
+                                if (++entries % 5_000 == 0) _state.value = RefreshState.Running("Loading $label… $entries entries")
+                            }
+                        }
                     }
-                    if (live == 0 && items.isEmpty()) throw IOException("no channels in the playlist")
-                    vod[p.id] = items
+                    writer.finish()
+                    if (live == 0 && writer.count == 0) throw IOException("no channels in the playlist")
                     // Your own guide URLs first, then every guide the playlist lists.
-                    epgUrls += splitUrls(p.epgUrl) + playlist.epgUrls
+                    epgUrls += splitUrls(p.epgUrl) + guides
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
-                    val why = e.message ?: e.javaClass.simpleName
+                } catch (e: Throwable) {
+                    // Also catches running out of memory, so one huge playlist can't crash the app.
+                    while (parsed.size > start) parsed.removeAt(parsed.size - 1)
+                    val why = if (e is OutOfMemoryError) "too big for this device's memory"
+                    else e.message ?: e.javaClass.simpleName
                     failures += "${p.displayName}: $why"
                     errors[p.id] = why
                     kept += db.channels().forPlaylist(p.id).map { it.copy(playlistId = p.id) }
@@ -114,20 +131,13 @@ class TvRepository(
                 }
             }
             _playlistErrors.value = errors
-            if (parsed.isEmpty() && kept.isEmpty()) throw IOException(failures.joinToString("\n"))
+            if (failures.size == sources.size && kept.isEmpty()) throw IOException(failures.joinToString("\n"))
 
             val entities = toEntities(parsed, kept)
             db.channels().replaceAll(entities)
 
-            // Movies & shows: replace those of playlists that loaded; keep those of playlists that failed.
-            if (vod.isNotEmpty()) _state.value = RefreshState.Running("Saving movies & shows…")
+            // Movies & shows of playlists that were removed or turned off.
             db.vod().deleteOtherPlaylists(sources.map { it.id })
-            vod.forEach { (id, items) ->
-                db.withTransaction {
-                    db.vod().deleteForPlaylist(id)
-                    items.chunked(2_000).forEach { db.vod().insertAll(it) }
-                }
-            }
 
             var programmes = 0
             val guides = epgUrls.distinct()
@@ -144,17 +154,12 @@ class TvRepository(
             true
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            _state.value = RefreshState.Failed(e.message ?: e.javaClass.simpleName)
+        } catch (e: Throwable) {
+            _state.value = RefreshState.Failed(
+                if (e is OutOfMemoryError) "Ran out of memory – try fewer days of TV guide" else e.message ?: e.javaClass.simpleName
+            )
             false
         }
-    }
-
-    private suspend fun loadPlaylist(p: Playlist): ParsedPlaylist = when (p.type) {
-        SourceType.XTREAM -> XtreamClient(http).load(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass))
-        // No overall time limit: big provider lists can take minutes. A server that stops sending
-        // still times out (read timeout), and a newer reload cancels this one.
-        else -> http.download(p.m3uUrl) { M3uParser.parse(maybeGunzip(it).bufferedReader()) }
     }
 
     /**
@@ -217,7 +222,7 @@ class TvRepository(
                 count += importOne(url, matcher, filled, keepFrom, keepTo)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // One broken guide shouldn't stop the others.
             }
         }

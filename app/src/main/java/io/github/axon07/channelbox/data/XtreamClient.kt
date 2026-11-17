@@ -8,7 +8,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromStream
 import okhttp3.OkHttpClient
+import android.util.JsonReader
+import android.util.JsonToken
 import java.io.IOException
+import java.io.InputStreamReader
 import java.net.URLEncoder
 
 /** Minimal Xtream Codes "player_api.php" client for live TV. */
@@ -52,22 +55,18 @@ class XtreamClient(private val http: OkHttpClient) {
         // Archive times are given in the server's own time zone.
         val serverZone = (auth["server_info"] as? JsonObject)?.str("timezone")?.takeIf { it.isNotBlank() }
 
-        val categories = (getJson(login.api("get_live_categories")) as? JsonArray).orEmpty()
-            .mapNotNull { it as? JsonObject }
-            .associate { (it.str("category_id") ?: "") to (it.str("category_name") ?: "Uncategorized") }
-
-        val streams = (getJson(login.api("get_live_streams")) as? JsonArray).orEmpty()
-        val channels = streams.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val id = o.str("stream_id") ?: return@mapNotNull null
-            ParsedChannel(
-                name = o.str("name")?.trim().orEmpty().ifBlank { "Channel $id" },
-                number = o.str("num")?.toIntOrNull(),
-                group = o.str("category_id")?.let { categories[it] } ?: "Uncategorized",
-                logo = o.str("stream_icon")?.takeIf { it.isNotBlank() },
+        val categories = categories(login, "get_live_categories")
+        val channels = ArrayList<ParsedChannel>()
+        streamObjects(login.api("get_live_streams")) { o ->
+            val id = o["stream_id"] ?: return@streamObjects
+            channels += ParsedChannel(
+                name = o["name"]?.trim().orEmpty().ifBlank { "Channel $id" },
+                number = o["num"]?.toIntOrNull(),
+                group = o["category_id"]?.let { categories[it] } ?: "Uncategorized",
+                logo = o["stream_icon"]?.takeIf { it.isNotBlank() },
                 url = login.liveUrl(id),
-                epgId = o.str("epg_channel_id")?.takeIf { it.isNotBlank() },
-                catchupDays = if (o.str("tv_archive") == "1") o.str("tv_archive_duration")?.toIntOrNull() ?: 0 else 0,
+                epgId = o["epg_channel_id"]?.takeIf { it.isNotBlank() },
+                catchupDays = if (o["tv_archive"] == "1") o["tv_archive_duration"]?.toIntOrNull() ?: 0 else 0,
                 catchupType = "default",
                 catchupSource = login.timeshiftTemplate(id) + (serverZone?.let { "{tz=$it}" } ?: ""),
             )
@@ -75,44 +74,58 @@ class XtreamClient(private val http: OkHttpClient) {
         return ParsedPlaylist(channels, listOf(login.xmltvUrl))
     }
 
-    /** Movies and shows (episodes come later, from [episodes]). A part that fails is skipped. */
-    suspend fun loadVod(login: Login, playlistId: String): List<VodEntity> {
-        val out = ArrayList<VodEntity>()
-        runCatching {
+    /**
+     * Streams movies and shows into [writer] (episodes come later, from [episodes]).
+     * A part that fails is skipped. [onProgress] gets the running count.
+     */
+    suspend fun loadVod(login: Login, playlistId: String, writer: VodWriter, onProgress: (Int) -> Unit = {}) {
+        var n = 0
+        try {
             val cats = categories(login, "get_vod_categories")
-            (getJson(login.api("get_vod_streams")) as? JsonArray).orEmpty().forEachIndexed { i, el ->
-                val o = el as? JsonObject ?: return@forEachIndexed
-                val id = o.str("stream_id") ?: return@forEachIndexed
-                val url = login.movieUrl(id, o.str("container_extension")?.takeIf { it.isNotBlank() } ?: "mp4")
-                out += VodEntity(
-                    id = url, playlistId = playlistId, kind = VodKind.MOVIE,
-                    title = o.str("name")?.trim().orEmpty().ifBlank { "Movie $id" },
-                    category = o.str("category_id")?.let { cats[it] } ?: "Uncategorized",
-                    poster = o.str("stream_icon")?.takeIf { it.isNotBlank() }, url = url, headers = null,
-                    seriesKey = null, season = 0, episode = 0, added = o.str("added")?.toLongOrNull() ?: 0,
-                    sortIndex = i, plot = null, rating = o.str("rating")?.takeIf { it.isNotBlank() && it != "0" },
-                    year = o.str("year")?.takeIf { it.isNotBlank() },
+            streamObjects(login.api("get_vod_streams")) { o ->
+                val id = o["stream_id"] ?: return@streamObjects
+                val url = login.movieUrl(id, o["container_extension"]?.takeIf { it.isNotBlank() } ?: "mp4")
+                writer.add(
+                    VodEntity(
+                        id = url, playlistId = playlistId, kind = VodKind.MOVIE,
+                        title = o["name"]?.trim().orEmpty().ifBlank { "Movie $id" },
+                        category = o["category_id"]?.let { cats[it] } ?: "Uncategorized",
+                        poster = o["stream_icon"]?.takeIf { it.isNotBlank() }, url = url, headers = null,
+                        seriesKey = null, season = 0, episode = 0, added = o["added"]?.toLongOrNull() ?: 0,
+                        sortIndex = n, plot = null, rating = o["rating"]?.takeIf { it.isNotBlank() && it != "0" },
+                        year = o["year"]?.takeIf { it.isNotBlank() },
+                    )
                 )
+                if (++n % 2_000 == 0) onProgress(n)
             }
-        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-        runCatching {
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Movies unavailable – carry on with shows.
+        }
+        try {
             val cats = categories(login, "get_series_categories")
-            (getJson(login.api("get_series")) as? JsonArray).orEmpty().forEachIndexed { i, el ->
-                val o = el as? JsonObject ?: return@forEachIndexed
-                val id = o.str("series_id") ?: return@forEachIndexed
-                out += VodEntity(
-                    id = "xseries:$playlistId:$id", playlistId = playlistId, kind = VodKind.SERIES,
-                    title = o.str("name")?.trim().orEmpty().ifBlank { "Show $id" },
-                    category = o.str("category_id")?.let { cats[it] } ?: "Uncategorized",
-                    poster = o.str("cover")?.takeIf { it.isNotBlank() }, url = null, headers = null, seriesKey = id,
-                    season = 0, episode = 0, added = o.str("last_modified")?.toLongOrNull() ?: 0, sortIndex = i,
-                    plot = o.str("plot")?.takeIf { it.isNotBlank() },
-                    rating = o.str("rating")?.takeIf { it.isNotBlank() && it != "0" },
-                    year = (o.str("releaseDate") ?: o.str("release_date"))?.take(4)?.takeIf { it.isNotBlank() },
+            streamObjects(login.api("get_series")) { o ->
+                val id = o["series_id"] ?: return@streamObjects
+                writer.add(
+                    VodEntity(
+                        id = "xseries:$playlistId:$id", playlistId = playlistId, kind = VodKind.SERIES,
+                        title = o["name"]?.trim().orEmpty().ifBlank { "Show $id" },
+                        category = o["category_id"]?.let { cats[it] } ?: "Uncategorized",
+                        poster = o["cover"]?.takeIf { it.isNotBlank() }, url = null, headers = null, seriesKey = id,
+                        season = 0, episode = 0, added = o["last_modified"]?.toLongOrNull() ?: 0, sortIndex = n,
+                        plot = o["plot"]?.takeIf { it.isNotBlank() },
+                        rating = o["rating"]?.takeIf { it.isNotBlank() && it != "0" },
+                        year = (o["releaseDate"] ?: o["release_date"])?.take(4)?.takeIf { it.isNotBlank() },
+                    )
                 )
+                if (++n % 2_000 == 0) onProgress(n)
             }
-        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-        return out
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Shows unavailable.
+        }
     }
 
     /** Episodes of one Xtream show, in season order. */
@@ -142,10 +155,46 @@ class XtreamClient(private val http: OkHttpClient) {
         }.sortedWith(compareBy({ it.season }, { it.episode }))
     }
 
-    private suspend fun categories(login: Login, action: String): Map<String, String> =
-        (getJson(login.api(action)) as? JsonArray).orEmpty()
-            .mapNotNull { it as? JsonObject }
-            .associate { (it.str("category_id") ?: "") to (it.str("category_name") ?: "Uncategorized") }
+    private suspend fun categories(login: Login, action: String): Map<String, String> {
+        val out = HashMap<String, String>()
+        streamObjects(login.api(action)) { o -> out[o["category_id"] ?: ""] = o["category_name"] ?: "Uncategorized" }
+        return out
+    }
+
+    /**
+     * Reads a JSON array of objects one object at a time, keeping only their simple fields.
+     * Provider lists can hold tens of thousands of entries – far too many to load in one piece.
+     */
+    private suspend fun streamObjects(url: String, onItem: (Map<String, String>) -> Unit) {
+        http.download(url) { input ->
+            val r = JsonReader(InputStreamReader(input, Charsets.UTF_8))
+            r.isLenient = true
+            if (r.peek() != JsonToken.BEGIN_ARRAY) {
+                r.skipValue() // e.g. {} or [] variants for "nothing here"
+                return@download
+            }
+            r.beginArray()
+            while (r.hasNext()) {
+                if (r.peek() != JsonToken.BEGIN_OBJECT) {
+                    r.skipValue()
+                    continue
+                }
+                val o = HashMap<String, String>(32)
+                r.beginObject()
+                while (r.hasNext()) {
+                    val name = r.nextName()
+                    when (r.peek()) {
+                        JsonToken.STRING, JsonToken.NUMBER -> o[name] = r.nextString()
+                        JsonToken.BOOLEAN -> o[name] = r.nextBoolean().toString()
+                        JsonToken.NULL -> r.nextNull()
+                        else -> r.skipValue()
+                    }
+                }
+                r.endObject()
+                onItem(o)
+            }
+        }
+    }
 
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private suspend fun getJson(url: String): JsonElement =

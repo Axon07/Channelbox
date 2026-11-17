@@ -54,10 +54,16 @@ object M3uParser {
     }
 
     fun parse(reader: BufferedReader): ParsedPlaylist {
+        val out = ArrayList<ParsedChannel>()
+        val epg = parse(reader) { out += it }
+        return ParsedPlaylist(out, epg)
+    }
+
+    /** Streams entries to [onChannel] one at a time (big lists don't have to fit in memory). Returns the guide URLs. */
+    fun parse(reader: BufferedReader, onChannel: (ParsedChannel) -> Unit): List<String> {
         var epgUrl: String? = null
         var header: Map<String, String> = emptyMap() // #EXTM3U attributes = defaults for every channel
         var p = Pending()
-        val out = ArrayList<ParsedChannel>()
 
         reader.lineSequence().forEach { raw ->
             val line = raw.trim().removePrefix("﻿")
@@ -77,13 +83,13 @@ object M3uParser {
                 line.startsWith("#") -> Unit
                 else -> {
                     val info = p.info
-                    if (info != null) out += build(info, p, line, header)
+                    if (info != null) onChannel(build(info, p, line, header))
                     p = Pending()
                 }
             }
         }
 
-        return ParsedPlaylist(out, splitUrls(epgUrl))
+        return splitUrls(epgUrl)
     }
 
     private fun kodiProp(p: Pending, kv: String) {
@@ -150,7 +156,7 @@ object M3uParser {
             url = url,
             epgId = a["tvg-id"]?.takeIf { it.isNotBlank() },
             catchupDays = attr("catchup-days", "tvg-rec", "timeshift")?.trim()?.toIntOrNull() ?: 0,
-            headers = LinkedHashMap(p.headers),
+            headers = if (p.headers.isEmpty()) emptyMap() else LinkedHashMap(p.headers),
             drmType = p.drmType,
             drmKey = p.drmKey,
             manifestType = p.manifestType,
