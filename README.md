@@ -13,7 +13,7 @@ Bring your own IPTV subscription (M3U or Xtream Codes).
 ![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Compose%20for%20TV-7F52FF?logo=kotlin&logoColor=white)
 
-[Download](#download) · [Features](#features) · [Remote control](#remote-control) · [Cable-box setup](#making-it-act-like-a-cable-box) · [Building](#building)
+**Downloader code: `5502923`** · [Download](#download) · [Features](#features) · [Remote control](#remote-control) · [Cable-box setup](#making-it-act-like-a-cable-box) · [Building](#building)
 
 </div>
 
