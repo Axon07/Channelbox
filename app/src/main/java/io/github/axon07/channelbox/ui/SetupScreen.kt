@@ -138,6 +138,7 @@ fun SetupScreen(
                     Playlist(
                         id = id, name = name, type = type, m3uUrl = m3uUrl, epgUrl = epgUrl,
                         xtServer = server, xtUser = user, xtPass = pass, enabled = initial?.enabled ?: true,
+                        includeVod = initial?.includeVod ?: true,
                     )
                 )
             }

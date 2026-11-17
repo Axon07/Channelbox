@@ -32,6 +32,8 @@ data class Playlist(
     val xtUser: String = "",
     val xtPass: String = "",
     val enabled: Boolean = true,
+    /** Load the playlist's movies & shows (off = live TV only, much faster for huge lists). */
+    val includeVod: Boolean = true,
 ) {
     /** Name to show: the one the user gave, else the server's host name. */
     val displayName: String
@@ -50,6 +52,7 @@ data class Playlist(
             "id" to JsonPrimitive(id), "name" to JsonPrimitive(name), "type" to JsonPrimitive(type.name),
             "m3u" to JsonPrimitive(m3uUrl), "epg" to JsonPrimitive(epgUrl), "server" to JsonPrimitive(xtServer),
             "user" to JsonPrimitive(xtUser), "pass" to JsonPrimitive(xtPass), "enabled" to JsonPrimitive(enabled),
+            "vod" to JsonPrimitive(includeVod),
         )
     )
 
@@ -64,6 +67,7 @@ data class Playlist(
                 type = runCatching { SourceType.valueOf(str("type")) }.getOrDefault(SourceType.M3U),
                 m3uUrl = str("m3u"), epgUrl = str("epg"), xtServer = str("server"), xtUser = str("user"),
                 xtPass = str("pass"), enabled = (o["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
+                includeVod = (o["vod"] as? JsonPrimitive)?.booleanOrNull ?: true,
             )
         }
     }

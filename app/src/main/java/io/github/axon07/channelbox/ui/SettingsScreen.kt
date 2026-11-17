@@ -789,6 +789,13 @@ private fun SubPage(
                     onClick = { vm.setPlaylistEnabled(p.id, !p.enabled) },
                 )
                 SettingCard(
+                    title = "Include movies & shows",
+                    description = if (p.includeVod) "Shown under Movies and TV Shows. Turn off to load huge lists much faster."
+                    else "Off – only live TV is loaded from this playlist",
+                    toggle = p.includeVod,
+                    onClick = { vm.savePlaylist(p.copy(includeVod = !p.includeVod)) },
+                )
+                SettingCard(
                     title = "Edit details",
                     description = "Name, link or login, and TV guide",
                     value = "Edit",

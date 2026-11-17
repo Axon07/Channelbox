@@ -72,7 +72,7 @@ class TvRepository(
                 return@withLock false
             }
 
-            val parsed = ArrayList<Pair<String, ParsedChannel>>()
+            val lineup = Lineup() // live channels, numbered as they arrive
             val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
             val epgUrls = ArrayList<String>()
             val failures = ArrayList<String>()
@@ -80,7 +80,7 @@ class TvRepository(
             sources.forEachIndexed { index, p ->
                 val label = if (sources.size > 1) "${p.displayName} (${index + 1} of ${sources.size})" else "channels"
                 _state.value = RefreshState.Running("Loading $label…")
-                val start = parsed.size
+                val start = lineup.size
                 try {
                     val writer = VodWriter(db, p.id)
                     var live = 0
@@ -89,12 +89,14 @@ class TvRepository(
                     if (p.type == SourceType.XTREAM) {
                         val login = XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass)
                         val playlist = XtreamClient(http).load(login)
-                        playlist.channels.forEach { parsed += p.id to it }
+                        playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
                         guides = playlist.epgUrls
-                        _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
-                        XtreamClient(http).loadVod(login, p.id, writer) { n ->
-                            _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
+                        if (p.includeVod) {
+                            _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
+                            XtreamClient(http).loadVod(login, p.id, writer) { n ->
+                                _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
+                            }
                         }
                     } else {
                         // Streamed: live channels are kept, files (movies, episodes) are saved to
@@ -104,9 +106,9 @@ class TvRepository(
                             M3uParser.parse(maybeGunzip(input).bufferedReader()) { ch ->
                                 val kind = VodClassifier.kind(ch.url, ch.name)
                                 if (kind == VodClassifier.Kind.LIVE) {
-                                    parsed += p.id to ch
+                                    lineup.add(p.id, ch)
                                     live++
-                                } else {
+                                } else if (p.includeVod) {
                                     builder.add(ch, kind).forEach(writer::add)
                                 }
                                 if (++entries % 5_000 == 0) _state.value = RefreshState.Running("Loading $label… $entries entries")
@@ -114,14 +116,19 @@ class TvRepository(
                         }
                     }
                     writer.finish()
-                    if (live == 0 && writer.count == 0) throw IOException("no channels in the playlist")
+                    if (live == 0 && writer.count == 0) {
+                        throw IOException(
+                            if (entries > 0 && !p.includeVod) "only movies & shows – turn on \"Include movies & shows\""
+                            else "no channels in the playlist"
+                        )
+                    }
                     // Your own guide URLs first, then every guide the playlist lists.
                     epgUrls += splitUrls(p.epgUrl) + guides
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
                     // Also catches running out of memory, so one huge playlist can't crash the app.
-                    while (parsed.size > start) parsed.removeAt(parsed.size - 1)
+                    lineup.rollback(start)
                     val why = if (e is OutOfMemoryError) "too big for this device's memory"
                     else e.message ?: e.javaClass.simpleName
                     failures += "${p.displayName}: $why"
@@ -133,7 +140,7 @@ class TvRepository(
             _playlistErrors.value = errors
             if (failures.size == sources.size && kept.isEmpty()) throw IOException(failures.joinToString("\n"))
 
-            val entities = toEntities(parsed, kept)
+            val entities = lineup.finish(kept)
             db.channels().replaceAll(entities)
 
             // Movies & shows of playlists that were removed or turned off.
@@ -142,8 +149,7 @@ class TvRepository(
             var programmes = 0
             val guides = epgUrls.distinct()
             if (guides.isNotEmpty()) {
-                val tvgNames = parsed.associate { it.second.url to it.second.tvgName }
-                programmes = importEpg(guides, entities, tvgNames)
+                programmes = importEpg(guides, entities, lineup.tvgNames)
             }
             settings.setLastRefresh(System.currentTimeMillis())
             _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
@@ -163,20 +169,28 @@ class TvRepository(
     }
 
     /**
-     * Merges the playlists in order. A channel keeps its own number when it's free;
-     * otherwise it gets the next free one, so a second playlist continues after the first.
+     * Merges the playlists' live channels in order, converting each as it arrives so a big list is
+     * held only once. A channel keeps its own number when it's free; otherwise it gets the next free
+     * one, so a second playlist continues after the first. The same link is only listed once.
      */
-    private fun toEntities(parsed: List<Pair<String, ParsedChannel>>, kept: List<ChannelEntity>): List<ChannelEntity> {
-        val used = HashSet<Int>()
-        var next = 1
-        fun number(wanted: Int?): Int = wanted?.takeIf { used.add(it) } ?: run {
+    private class Lineup {
+        private val channels = ArrayList<ChannelEntity>()
+        private val used = HashSet<Int>()
+        private val seen = HashSet<String>()
+        private var next = 1
+        /** tvg-name where it differs from the shown name (helps guide matching). */
+        val tvgNames = HashMap<String, String>()
+        val size get() = channels.size
+
+        private fun number(wanted: Int?): Int = wanted?.takeIf { used.add(it) } ?: run {
             while (next in used) next++
             used.add(next)
             next
         }
-        val seen = HashSet<String>()
-        val fresh = parsed.filter { seen.add(it.second.url) }.map { (playlistId, p) ->
-            ChannelEntity(
+
+        fun add(playlistId: String, p: ParsedChannel) {
+            if (!seen.add(p.url)) return
+            channels += ChannelEntity(
                 id = p.url,
                 number = number(p.number),
                 name = p.name,
@@ -193,16 +207,32 @@ class TvRepository(
                 catchupSource = p.catchupSource,
                 playlistId = playlistId,
             )
+            p.tvgName?.takeIf { it != p.name }?.let { tvgNames[p.url] = it }
         }
-        val old = kept.filter { seen.add(it.id) }.map { it.copy(number = number(it.number)) }
-        return fresh + old
+
+        /** Drops what a playlist added before it failed. */
+        fun rollback(toSize: Int) {
+            while (channels.size > toSize) {
+                val c = channels.removeAt(channels.size - 1)
+                seen.remove(c.id)
+                used.remove(c.number)
+                tvgNames.remove(c.id)
+            }
+            next = 1
+        }
+
+        /** Adds the last good channels of playlists that failed this time. */
+        fun finish(kept: List<ChannelEntity>): List<ChannelEntity> {
+            kept.forEach { k -> if (seen.add(k.id)) channels += k.copy(number = number(k.number)) }
+            return channels
+        }
     }
 
     /** Loads every guide source; a source that fails is skipped. Returns the number of programmes stored. */
     private suspend fun importEpg(
         urls: List<String>,
         channels: List<ChannelEntity>,
-        tvgNames: Map<String, String?>,
+        tvgNames: Map<String, String>,
     ): Int {
         val matcher = EpgMatcher(
             channels.map { ch -> EpgMatcher.Candidate(ch.id, ch.epgId, listOfNotNull(tvgNames[ch.id], ch.name)) }
