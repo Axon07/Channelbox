@@ -72,7 +72,7 @@ fun BoxScope.PlaybackControls(
                 ui.buffering && ui.playing -> LoadingRing()
                 !ui.playing || ui.ended -> RoundButton(
                     icon = if (ui.ended) AppIcons.Refresh else AppIcons.Play,
-                    size = 88.dp, accent = true, onClick = onToggle,
+                    size = 76.dp, onClick = onToggle,
                 )
             }
         }
@@ -93,43 +93,58 @@ fun BoxScope.PlaybackControls(
         enter = fadeIn(), exit = fadeOut(),
         modifier = Modifier.align(Alignment.BottomCenter),
     ) {
+        val touch = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode ==
+            androidx.compose.ui.input.InputMode.Touch
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xB3000000), Color(0xF0000000))))
-                .padding(start = 40.dp, end = 40.dp, top = 56.dp, bottom = 24.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xE6000000))))
+                .padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = 14.dp)
         ) {
-            Text(ui.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(ui.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             ui.subtitle?.let {
-                Text(it, fontSize = 14.sp, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                Text(it, fontSize = 13.sp, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp))
             }
-            Spacer(Modifier.height(18.dp))
-            Scrubber(ui, onSeekTo)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
+            // Seek bar with the times at either end.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(formatClock(ui.position), fontSize = 14.sp, color = Color.White)
-                Spacer(Modifier.weight(1f))
+                Text(formatClock(ui.position), fontSize = 12.sp, color = Color.White, modifier = Modifier.width(64.dp))
+                Box(Modifier.weight(1f)) { Scrubber(ui, onSeekTo) }
                 Text(
-                    if (ui.duration > 0) "−" + formatClock((ui.duration - ui.position).coerceAtLeast(0)) else "--:--",
-                    fontSize = 14.sp, color = Palette.TextDim,
+                    if (ui.duration > 0) "−" + formatClock((ui.duration - ui.position).coerceAtLeast(0)) else "",
+                    fontSize = 12.sp, color = Palette.TextDim, textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    modifier = Modifier.width(64.dp),
                 )
             }
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "OK  play / pause    ◀ ▶  skip    Hold OK  audio & subtitles",
-                    fontSize = 12.sp, color = Palette.TextDim, maxLines = 1, modifier = Modifier.weight(1f),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundButton(AppIcons.Rewind, label = "10", size = 46.dp) { onSeek(-10_000L) }
-                    RoundButton(
-                        if (ui.ended) AppIcons.Refresh else if (ui.playing) AppIcons.Pause else AppIcons.Play,
-                        size = 58.dp, accent = true, onClick = onToggle,
+            Spacer(Modifier.height(6.dp))
+            // Transport in the middle; captions and close on the right; remote hints on the left.
+            Box(Modifier.fillMaxWidth()) {
+                if (!touch) {
+                    Text(
+                        "OK pause · ◀ ▶ skip · Hold OK audio & subtitles",
+                        fontSize = 11.sp, color = Palette.TextDim, maxLines = 1,
+                        modifier = Modifier.align(Alignment.CenterStart),
                     )
-                    RoundButton(AppIcons.Forward, label = "30", size = 46.dp) { onSeek(30_000L) }
-                    Spacer(Modifier.width(10.dp))
-                    RoundButton(AppIcons.Captions, size = 46.dp, onClick = onOptions)
-                    RoundButton(AppIcons.Close, size = 46.dp, onClick = onClose)
+                }
+                Row(
+                    Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconTap(AppIcons.Rewind, size = 26.dp, badge = "10") { onSeek(-10_000L) }
+                    IconTap(
+                        if (ui.ended) AppIcons.Refresh else if (ui.playing) AppIcons.Pause else AppIcons.Play,
+                        size = 38.dp, onClick = onToggle,
+                    )
+                    IconTap(AppIcons.Forward, size = 26.dp, badge = "30") { onSeek(30_000L) }
+                }
+                Row(
+                    Modifier.align(Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconTap(AppIcons.Captions, size = 22.dp, onClick = onOptions)
+                    IconTap(AppIcons.Close, size = 22.dp, onClick = onClose)
                 }
             }
         }
@@ -144,16 +159,16 @@ private fun Scrubber(ui: PlaybackUi, onSeekTo: (Long) -> Unit) {
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .height(20.dp)
+            .height(18.dp)
             .tapAt { fraction -> if (ui.duration > 0) onSeekTo((fraction * ui.duration).toLong()) },
         contentAlignment = Alignment.CenterStart,
     ) {
         val width = maxWidth
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x40FFFFFF)))
-        Box(Modifier.fillMaxWidth(buffered).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x66FFFFFF)))
-        Box(Modifier.fillMaxWidth(played).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Accent))
+        Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x40FFFFFF)))
+        Box(Modifier.fillMaxWidth(buffered).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x66FFFFFF)))
+        Box(Modifier.fillMaxWidth(played).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Palette.Accent))
         if (ui.duration > 0) {
-            val thumb = 16.dp
+            val thumb = 11.dp
             Box(
                 Modifier
                     .offset(x = (width - thumb) * played)
@@ -165,31 +180,41 @@ private fun Scrubber(ui: PlaybackUi, onSeekTo: (Long) -> Unit) {
     }
 }
 
+/** A plain white icon you can tap; [badge] = small number under it (skip seconds). */
+@Composable
+private fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .tap(onClick = onClick)
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AppIcon(icon, tint = Color.White, size = size)
+            if (badge != null) Text(badge, fontSize = 9.sp, color = Color(0xCCFFFFFF), fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Big centre button while paused or finished: a soft dark circle with a white icon. */
 @Composable
 private fun RoundButton(
     icon: ImageVector,
     size: Dp,
     accent: Boolean = false,
-    label: String? = null,
     onClick: () -> Unit,
 ) {
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(if (accent) Palette.Accent else Color(0x33FFFFFF))
-            .border(1.dp, if (accent) Color.Transparent else Color(0x33FFFFFF), CircleShape)
+            .background(Color(0x80000000))
+            .border(1.dp, Color(0x40FFFFFF), CircleShape)
             .tap(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (label != null) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                AppIcon(icon, tint = Color.White, size = size * 0.36f)
-                Text(label, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
-            }
-        } else {
-            AppIcon(icon, tint = Color.White, size = size * 0.46f)
-        }
+        AppIcon(icon, tint = Color.White, size = size * 0.42f)
     }
 }
 
