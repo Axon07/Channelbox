@@ -345,7 +345,7 @@ private fun PosterCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                PosterImage(item.poster, item.title, Modifier.fillMaxSize(), fitWide = true)
+                PosterImage(item.poster, item.title, Modifier.fillMaxSize())
                 if (progress != null && progress.duration > 0) {
                     ProgressBar(
                         progress.position.toFloat() / progress.duration,
@@ -368,17 +368,21 @@ private fun PosterImage(
     title: String,
     modifier: Modifier,
     contentScale: ContentScale = ContentScale.Crop,
-    /**
-     * For tall poster frames: many providers send a wide scene still instead of a poster for shows.
-     * Cropping that cuts it to a sliver of someone's face, so show the whole picture over a dimmed,
-     * filled copy of itself instead.
-     */
-    fitWide: Boolean = false,
+    /** Pixel size to decode at: small enough that thousands stay in the memory cache. */
+    decodeWidth: Int = 300,
+    decodeHeight: Int = 450,
 ) {
     var failed by remember(url) { mutableStateOf(url.isNullOrBlank()) }
-    var wide by remember(url) { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val request = remember(url) {
+        coil.request.ImageRequest.Builder(context)
+            .data(url)
+            .size(decodeWidth, decodeHeight)
+            .crossfade(false)
+            .build()
+    }
     Box(
-        modifier.background(Brush.verticalGradient(listOf(Color(0xFF1C2633), Color(0xFF111821)))),
+        modifier.background(Color(0xFF151C25)),
         contentAlignment = Alignment.Center,
     ) {
         if (failed) {
@@ -387,20 +391,9 @@ private fun PosterImage(
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(10.dp),
             )
         } else {
-            if (fitWide && wide) {
-                AsyncImage(
-                    model = url, contentDescription = null, contentScale = ContentScale.Crop,
-                    alpha = 0.28f, modifier = Modifier.fillMaxSize(),
-                )
-            }
             AsyncImage(
-                model = url, contentDescription = null,
-                contentScale = if (fitWide && wide) ContentScale.FillWidth else contentScale,
+                model = request, contentDescription = null, contentScale = contentScale,
                 onError = { failed = true },
-                onSuccess = { state ->
-                    val size = state.painter.intrinsicSize
-                    wide = size.width > 0 && size.height > 0 && size.width > size.height * 1.05f
-                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -450,7 +443,7 @@ private fun ShowScreen(
                 .padding(top = 24.dp, start = 18.dp, end = 18.dp, bottom = 12.dp)
         ) {
             Row {
-                PosterImage(show.poster, show.title, Modifier.width(96.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)), fitWide = true)
+                PosterImage(show.poster, show.title, Modifier.width(96.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)))
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(show.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -533,7 +526,7 @@ private fun EpisodeRow(ep: VodEntity, progress: VodProgressEntity?, modifier: Mo
     ) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp))) {
-                PosterImage(ep.poster, "E${ep.episode}", Modifier.fillMaxSize())
+                PosterImage(ep.poster, "E${ep.episode}", Modifier.fillMaxSize(), decodeWidth = 320, decodeHeight = 180)
                 if (progress != null && progress.duration > 0) {
                     ProgressBar(
                         progress.position.toFloat() / progress.duration,

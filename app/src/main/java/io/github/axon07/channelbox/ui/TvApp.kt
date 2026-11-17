@@ -1390,26 +1390,28 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val cur = current
                 if (cur != null && cur.id in recordingChannels) RecIndicator()
                 shift?.let { st -> if (mode == Mode.PLAYER) TimeshiftBadge(st, vm) }
-                if (mode == Mode.PLAYER && (bannerVisible || touchBar) && cur != null) {
+                if (mode == Mode.PLAYER && bannerVisible && !touchBar && cur != null) {
                     InfoBanner(
                         cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
                         info = streamInfo,
                         captions = captionLangs,
                         vpnOn = vpnState == io.github.axon07.channelbox.system.VpnManager.State.On,
-                        bottomInset = if (touchBar) 72.dp else 0.dp,
                     )
                 }
-                if (mode == Mode.PLAYER && touchBar) {
-                    TouchBar(
-                        favorite = cur != null && cur.id in favorites,
-                        recording = cur != null && cur.id in recordingChannels,
-                        onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
-                        onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
-                        onCaptions = { touchBarToken++; toggleCaptions() },
+                if (mode == Mode.PLAYER && touchBar && cur != null) {
+                    LiveControls(
+                        channel = cur,
+                        program = nowAndNext(cur.epgId?.let { upcoming[it] }, now).first,
+                        now = now,
+                        timeFormat = timeFormat,
+                        favorite = cur.id in favorites,
+                        recording = cur.id in recordingChannels,
                         paused = shift?.paused == true,
                         behindLive = shift != null,
                         onPause = { touchBarToken++; vm.playPauseLive() },
                         onLive = { touchBarToken++; vm.goLive() },
+                        onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
+                        onFavorite = { touchBarToken++; vm.toggleFavorite(cur) },
                         onOptions = { touchBar = false; openOptions() },
                         onPip = if (io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)) {
                             { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }

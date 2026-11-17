@@ -144,7 +144,6 @@ fun BoxScope.PlaybackControls(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconTap(AppIcons.Captions, size = 22.dp, onClick = onOptions)
-                    IconTap(AppIcons.Close, size = 22.dp, onClick = onClose)
                 }
             }
         }
@@ -182,7 +181,7 @@ private fun Scrubber(ui: PlaybackUi, onSeekTo: (Long) -> Unit) {
 
 /** A plain white icon you can tap; [badge] = small number under it (skip seconds). */
 @Composable
-private fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick: () -> Unit) {
+internal fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(CircleShape)
@@ -199,7 +198,7 @@ private fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick:
 
 /** Big centre button while paused or finished: a soft dark circle with a white icon. */
 @Composable
-private fun RoundButton(
+internal fun RoundButton(
     icon: ImageVector,
     size: Dp,
     accent: Boolean = false,
@@ -238,5 +237,102 @@ private fun LoadingRing() {
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round),
             )
         }
+    }
+}
+
+/**
+ * Live TV controls (tap the picture): same look as the movie player – channel and programme,
+ * the programme's progress, pause / record / live in the middle, small icons on the right.
+ */
+@Composable
+fun BoxScope.LiveControls(
+    channel: io.github.axon07.channelbox.data.ChannelEntity,
+    program: io.github.axon07.channelbox.data.ProgramEntity?,
+    now: Long,
+    timeFormat: (Long) -> String,
+    favorite: Boolean,
+    recording: Boolean,
+    paused: Boolean,
+    behindLive: Boolean,
+    onPause: () -> Unit,
+    onLive: () -> Unit,
+    onRecord: () -> Unit,
+    onFavorite: () -> Unit,
+    onOptions: () -> Unit,
+    onPip: (() -> Unit)?,
+    onMultiView: () -> Unit,
+) {
+    Column(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000), Color(0xE6000000))))
+            .tap { } // swallow taps between the buttons
+            .padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 52.dp, height = 30.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    program?.title ?: channel.name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${channel.number}  ${channel.name}", fontSize = 13.sp, color = Palette.TextDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        // How far into the programme we are.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(program?.let { timeFormat(it.start) } ?: "", fontSize = 12.sp, color = Color.White, modifier = Modifier.width(72.dp))
+            val fraction = program?.let { ((now - it.start).toFloat() / (it.stop - it.start).coerceAtLeast(1)).coerceIn(0f, 1f) } ?: 0f
+            Box(Modifier.weight(1f).height(18.dp), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x40FFFFFF)))
+                Box(Modifier.fillMaxWidth(fraction).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Palette.Accent))
+            }
+            Text(
+                program?.let { timeFormat(it.stop) } ?: "", fontSize = 12.sp, color = Palette.TextDim,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.width(72.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.align(Alignment.CenterStart),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconTapTint(if (favorite) AppIcons.Star else AppIcons.StarOutline, if (favorite) Palette.Favorite else Color.White, onFavorite)
+            }
+            Row(
+                Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconTapTint(if (recording) AppIcons.Stop else AppIcons.Record, Palette.Recording, onRecord, size = 24.dp)
+                IconTap(if (paused) AppIcons.Play else AppIcons.Pause, size = 38.dp, onClick = onPause)
+                if (behindLive) IconTap(AppIcons.Forward, size = 26.dp, badge = "LIVE", onClick = onLive)
+                else Spacer(Modifier.width(38.dp))
+            }
+            Row(
+                Modifier.align(Alignment.CenterEnd),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconTap(AppIcons.Captions, size = 22.dp, onClick = onOptions)
+                IconTap(AppIcons.Grid, size = 22.dp, onClick = onMultiView)
+                if (onPip != null) IconTap(AppIcons.Pip, size = 22.dp, onClick = onPip)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconTapTint(icon: ImageVector, tint: Color, onClick: () -> Unit, size: Dp = 22.dp) {
+    Box(Modifier.clip(CircleShape).tap(onClick = onClick).padding(6.dp), contentAlignment = Alignment.Center) {
+        AppIcon(icon, tint = tint, size = size)
     }
 }

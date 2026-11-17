@@ -461,16 +461,20 @@ fun OptionsPanel(
         delay(50)
         runCatching { first.requestFocus() }
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+    Box(
+        Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0x66000000)))),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
         Column(
             Modifier
                 .fillMaxHeight()
-                .width(360.dp)
-                .background(Palette.Panel)
+                .width(320.dp)
+                .background(Color(0xEB0E131A))
                 .tap { }
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .padding(horizontal = 14.dp, vertical = 20.dp)
         ) {
+            Text("Audio & subtitles", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, modifier = Modifier.padding(start = 10.dp, bottom = 4.dp))
             var firstUsed = false
             fun Modifier.firstFocus(): Modifier = if (!firstUsed) { firstUsed = true; this.focusRequester(first) } else this
 
@@ -478,17 +482,17 @@ fun OptionsPanel(
                 Section("Live TV")
                 live.forEach { a -> OptionRow(a.label, false, Modifier.firstFocus(), onClick = a.onClick) }
             }
+            Section("Subtitles")
+            subtitles.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onSubtitle(t) } }
+
+            Section("Audio")
+            if (audio.isEmpty()) Text("No audio tracks yet", fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(start = 10.dp))
+            audio.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onAudio(t) } }
+
             if (quality.size > 1) {
                 Section("Quality")
                 quality.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onQuality(t) } }
             }
-
-            Section("Audio")
-            if (audio.isEmpty()) Text("No audio tracks yet", fontSize = 13.sp, color = Palette.TextDim)
-            audio.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onAudio(t) } }
-
-            Section("Subtitles & closed captions")
-            subtitles.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onSubtitle(t) } }
 
             Section("Picture size")
             SCALE_LABELS.forEachIndexed { i, label -> OptionRow(label, i == scale, Modifier.firstFocus()) { onScale(i) } }
@@ -499,18 +503,34 @@ fun OptionsPanel(
 @Composable
 private fun Section(title: String) {
     Text(
-        title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextDim,
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+        title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextDim,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 10.dp, top = 16.dp, bottom = 4.dp),
     )
 }
 
 @Composable
 private fun OptionRow(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    androidx.tv.material3.ListItem(
-        selected = selected,
+    androidx.tv.material3.Surface(
         onClick = onClick,
-        modifier = modifier.tap(onClick = onClick),
-        headlineContent = { Text(label, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        trailingContent = { if (selected) Text("✓", fontSize = 14.sp) },
-    )
+        modifier = modifier.fillMaxWidth().height(40.dp).tap(onClick = onClick),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = if (selected) Color.White else Palette.Text,
+            focusedContainerColor = Color(0x24FFFFFF),
+            focusedContentColor = Color.White,
+            pressedContainerColor = Color(0x33FFFFFF),
+        ),
+        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.weight(1f),
+            )
+            if (selected) Text("✓", fontSize = 14.sp, color = Palette.Accent, fontWeight = FontWeight.Bold)
+        }
+    }
 }
