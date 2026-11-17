@@ -80,6 +80,10 @@ sealed interface ChannelFilter {
     }
 }
 
+/** Most titles listed at once in a category (search finds the rest). */
+const val VOD_PAGE = 3_000
+const val VOD_SEARCH_LIMIT = 300
+
 /** Pseudo-category: movies / shows you've started. */
 const val VOD_CONTINUE = "\u0000continue"
 
@@ -573,8 +577,13 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
     fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {
-        if (category == VOD_CONTINUE) repo.vod.continueWatching(kind)
-        else repo.vod.items(kind, category, query.trim())
+        val q = query.trim()
+        when {
+            q.isNotEmpty() -> repo.vod.search(kind, q, VOD_SEARCH_LIMIT)
+            category == VOD_CONTINUE -> repo.vod.continueWatching(kind)
+            category == null -> repo.vod.allItems(kind, VOD_PAGE)
+            else -> repo.vod.categoryItems(kind, category, VOD_PAGE)
+        }
     }
 
     val vodProgress: StateFlow<Map<String, VodProgressEntity>> = repo.vod.observeProgress()

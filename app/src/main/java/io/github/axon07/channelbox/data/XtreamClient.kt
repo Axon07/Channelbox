@@ -92,7 +92,7 @@ class XtreamClient(private val http: OkHttpClient) {
                         category = o["category_id"]?.let { cats[it] } ?: "Uncategorized",
                         poster = o["stream_icon"]?.takeIf { it.isNotBlank() }, url = url, headers = null,
                         seriesKey = null, season = 0, episode = 0, added = o["added"]?.toLongOrNull() ?: 0,
-                        sortIndex = n, plot = null, rating = o["rating"]?.takeIf { it.isNotBlank() && it != "0" },
+                        sortIndex = -n, plot = null, rating = o["rating"]?.takeIf { it.isNotBlank() && it != "0" },
                         year = o["year"]?.takeIf { it.isNotBlank() },
                     )
                 )
@@ -113,7 +113,7 @@ class XtreamClient(private val http: OkHttpClient) {
                         title = o["name"]?.trim().orEmpty().ifBlank { "Show $id" },
                         category = o["category_id"]?.let { cats[it] } ?: "Uncategorized",
                         poster = o["cover"]?.takeIf { it.isNotBlank() }, url = null, headers = null, seriesKey = id,
-                        season = 0, episode = 0, added = o["last_modified"]?.toLongOrNull() ?: 0, sortIndex = n,
+                        season = 0, episode = 0, added = o["last_modified"]?.toLongOrNull() ?: 0, sortIndex = -n,
                         plot = o["plot"]?.takeIf { it.isNotBlank() },
                         rating = o["rating"]?.takeIf { it.isNotBlank() && it != "0" },
                         year = (o["releaseDate"] ?: o["release_date"])?.take(4)?.takeIf { it.isNotBlank() },

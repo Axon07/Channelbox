@@ -167,7 +167,7 @@ interface ProgramDao {
         ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class,
         VodEntity::class, VodProgressEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -211,9 +211,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v6: list indexes for big movie/show libraries (lists no longer sort the whole table). */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS `index_vod_kind_category`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vod_kind_added_sortIndex` ON `vod` (`kind`, `added`, `sortIndex`)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_vod_kind_category_added_sortIndex` ON `vod` (`kind`, `category`, `added`, `sortIndex`)"
+                )
+                db.execSQL("UPDATE vod SET sortIndex = -sortIndex WHERE sortIndex > 0")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigration()
                 .build()
     }

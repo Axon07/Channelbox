@@ -20,7 +20,12 @@ object VodKind {
 /** A movie, a show or an episode. */
 @Entity(
     tableName = "vod",
-    indices = [Index(value = ["kind", "category"]), Index(value = ["seriesKey"])],
+    // Lists are read straight off these indexes (newest first), so huge libraries open instantly.
+    indices = [
+        Index(value = ["kind", "added", "sortIndex"]),
+        Index(value = ["kind", "category", "added", "sortIndex"]),
+        Index(value = ["seriesKey"]),
+    ],
 )
 data class VodEntity(
     @PrimaryKey val id: String,
@@ -38,7 +43,7 @@ data class VodEntity(
     val episode: Int,
     /** When the provider added it (epoch seconds), 0 if unknown. */
     val added: Long,
-    /** Position in the playlist, to keep the provider's order. */
+    /** Minus the position in the playlist (higher = earlier), to keep the provider's order. */
     val sortIndex: Int,
     val plot: String?,
     val rating: String?,
@@ -65,19 +70,24 @@ data class VodCategory(val name: String, val count: Int)
  */
 @Dao
 interface VodDao {
-    @Query("SELECT category AS name, COUNT(*) AS count FROM vod WHERE kind = :kind GROUP BY category ORDER BY MIN(sortIndex)")
+    @Query("SELECT category AS name, COUNT(*) AS count FROM vod WHERE kind = :kind GROUP BY category ORDER BY MAX(sortIndex) DESC")
     suspend fun categories(kind: String): List<VodCategory>
 
     @Query("SELECT COUNT(*) FROM vod WHERE kind = :kind")
     suspend fun count(kind: String): Int
 
+    // Each list walks an index newest-first and stops at the limit, instead of sorting the whole table.
+    @Query("SELECT * FROM vod WHERE kind = :kind ORDER BY added DESC, sortIndex DESC LIMIT :limit")
+    suspend fun allItems(kind: String, limit: Int): List<VodEntity>
+
+    @Query("SELECT * FROM vod WHERE kind = :kind AND category = :category ORDER BY added DESC, sortIndex DESC LIMIT :limit")
+    suspend fun categoryItems(kind: String, category: String, limit: Int): List<VodEntity>
+
     @Query(
-        """SELECT * FROM vod WHERE kind = :kind
-           AND (:category IS NULL OR category = :category)
-           AND (:query = '' OR title LIKE '%' || :query || '%')
-           ORDER BY added DESC, sortIndex LIMIT 5000"""
+        """SELECT * FROM vod WHERE kind = :kind AND title LIKE '%' || :query || '%'
+           ORDER BY added DESC, sortIndex DESC LIMIT :limit"""
     )
-    suspend fun items(kind: String, category: String?, query: String): List<VodEntity>
+    suspend fun search(kind: String, query: String, limit: Int): List<VodEntity>
 
     /** Started but not finished, most recent first. */
     @Query(
@@ -86,7 +96,7 @@ interface VodDao {
     )
     suspend fun continueWatching(kind: String): List<VodEntity>
 
-    @Query("SELECT * FROM vod WHERE kind = 'episode' AND seriesKey = :seriesKey ORDER BY season, episode, sortIndex")
+    @Query("SELECT * FROM vod WHERE kind = 'episode' AND seriesKey = :seriesKey ORDER BY season, episode, sortIndex DESC")
     suspend fun episodes(seriesKey: String): List<VodEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -172,7 +182,7 @@ class VodBuilder(private val playlistId: String) {
                 VodEntity(
                     id = p.url, playlistId = playlistId, kind = VodKind.MOVIE, title = p.name, category = p.group,
                     poster = p.logo, url = p.url, headers = headers, seriesKey = null, season = 0, episode = 0,
-                    added = 0, sortIndex = i, plot = null, rating = null, year = null,
+                    added = 0, sortIndex = -i, plot = null, rating = null, year = null,
                 )
             )
         }
@@ -185,14 +195,14 @@ class VodBuilder(private val playlistId: String) {
             out += VodEntity(
                 id = "show:$key", playlistId = playlistId, kind = VodKind.SERIES, title = showName,
                 category = p.group, poster = p.logo, url = null, headers = null, seriesKey = key,
-                season = 0, episode = 0, added = 0, sortIndex = i, plot = null, rating = null, year = null,
+                season = 0, episode = 0, added = 0, sortIndex = -i, plot = null, rating = null, year = null,
             )
         }
         out += VodEntity(
             id = p.url, playlistId = playlistId, kind = VodKind.EPISODE,
             title = parsed?.rest?.takeIf { it.isNotBlank() } ?: p.name,
             category = p.group, poster = p.logo, url = p.url, headers = headers, seriesKey = key,
-            season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = i,
+            season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = -i,
             plot = null, rating = null, year = null,
         )
         return out

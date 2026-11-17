@@ -58,6 +58,7 @@ import io.github.axon07.channelbox.data.VodEntity
 import io.github.axon07.channelbox.data.VodKind
 import io.github.axon07.channelbox.data.VodProgressEntity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
 
 /** What the Movies / TV Shows screens are showing. Kept outside the screen so it survives playback. */
 @Stable
@@ -133,8 +134,12 @@ private fun LibraryScreen(
             b.listKey = key
             runCatching { b.grid.scrollToItem(0) }
         }
-        if (b.query.isNotBlank()) delay(250) // wait for typing to pause
-        vm.vodItems(b.kind, if (b.query.isNotBlank()) null else b.category, b.query).collect { b.items = it }
+        if (b.query.isNotBlank()) delay(300) // wait for typing to pause
+        // Search needs 2+ letters; Room re-runs the query as new titles are saved during a reload.
+        val q = b.query.trim().takeIf { it.length >= 2 }.orEmpty()
+        vm.vodItems(b.kind, b.category, q)
+            .conflate()
+            .collect { b.items = it }
     }
 
     val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
@@ -200,12 +205,17 @@ private fun LibraryScreen(
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(heading, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (items != null) {
-                    Text("  ${items.size}", fontSize = 13.sp, color = Palette.TextDim)
+                    val more = items.size >= (if (b.query.isNotBlank()) VOD_SEARCH_LIMIT else VOD_PAGE)
+                    Text(
+                        if (more) "  newest ${items.size} – search to find more" else "  ${items.size}",
+                        fontSize = 13.sp, color = Palette.TextDim,
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))
             when {
                 items == null -> Text("Loading…", color = Palette.TextDim, fontSize = 14.sp)
+                b.query.isNotBlank() && b.query.trim().length < 2 -> Text("Type at least 2 letters", color = Palette.TextDim, fontSize = 14.sp)
                 items.isEmpty() -> Text(
                     if (b.query.isNotBlank()) "Nothing matches your search" else "Nothing here yet",
                     color = Palette.TextDim, fontSize = 14.sp,
