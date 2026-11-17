@@ -1042,7 +1042,7 @@ private fun CategoryRow(
             .padding(vertical = 3.dp)
             .onFocusChanged { if (it.isFocused) onFocus() }
             .tap(onClick = onTap),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (selected) Color(0x1AFFFFFF) else Color.Transparent,
             contentColor = Palette.Text,
@@ -1053,7 +1053,7 @@ private fun CategoryRow(
         border = ClickableSurfaceDefaults.border(
             focusedBorder = androidx.tv.material3.Border(
                 border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(8.dp),
             ),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
@@ -1099,7 +1099,7 @@ private fun SettingCard(
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .tap(onClick = onClick),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (highlight) Color(0x333D8BFD) else Palette.Surface,
             contentColor = Palette.Text,
@@ -1110,7 +1110,7 @@ private fun SettingCard(
         border = ClickableSurfaceDefaults.border(
             focusedBorder = androidx.tv.material3.Border(
                 border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(8.dp),
             ),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
@@ -1149,7 +1149,7 @@ private fun InfoCard(title: String, text: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(Palette.Surface)
             .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
@@ -1163,12 +1163,12 @@ private fun ToggleSwitch(on: Boolean) {
     Box(
         Modifier
             .size(width = 42.dp, height = 24.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (on) Palette.Accent else Color(0xFF3A4554))
             .padding(3.dp),
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        Box(Modifier.size(18.dp).clip(RoundedCornerShape(9.dp)).background(Color.White))
+        Box(Modifier.size(18.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
     }
 }
 
@@ -1191,7 +1191,7 @@ private fun ChoiceList(options: List<Pair<String, String>>, selected: String, on
                 modifier = (if (isSelected || (i == 0 && options.none { it.first == selected })) Modifier.focusRequester(first) else Modifier)
                     .fillMaxWidth()
                     .tap { onSelect(key) },
-                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
                 colors = ClickableSurfaceDefaults.colors(
                     containerColor = Palette.Surface,
                     contentColor = Palette.Text,
@@ -1202,7 +1202,7 @@ private fun ChoiceList(options: List<Pair<String, String>>, selected: String, on
                 border = ClickableSurfaceDefaults.border(
                     focusedBorder = androidx.tv.material3.Border(
                         border = androidx.compose.foundation.BorderStroke(2.dp, Palette.Accent),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                     ),
                 ),
                 scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
@@ -1224,14 +1224,14 @@ private fun RadioDot(on: Boolean) {
     Box(
         Modifier
             .size(20.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(if (on) Palette.Accent else Color(0xFF3A4554))
             .padding(if (on) 6.dp else 2.dp),
     ) {
         Box(
             Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(if (on) Color.White else Palette.Surface)
         )
     }
@@ -1243,7 +1243,7 @@ private fun BackLink(label: String, onBack: () -> Unit) {
     Row(
         Modifier
             .padding(bottom = 10.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(6.dp))
             .tap(onClick = onBack)
             .padding(vertical = 4.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -83,7 +83,7 @@ fun BoxScope.PlaybackControls(
             Text(
                 (if (ui.skipped < 0) "−" else "+") + "${kotlin.math.abs(ui.skipped) / 1000} s",
                 fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0x99000000)).padding(horizontal = 18.dp, vertical = 8.dp),
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x99000000)).padding(horizontal = 18.dp, vertical = 8.dp),
             )
         }
     }

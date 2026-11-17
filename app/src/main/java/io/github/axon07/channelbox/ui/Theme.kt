@@ -73,7 +73,7 @@ fun ChannelLogo(url: String?, name: String, modifier: Modifier = Modifier) {
     val placeholder = url.isNullOrBlank() || failed
     Box(
         modifier.then(
-            if (placeholder) Modifier.clip(RoundedCornerShape(6.dp)).background(Palette.Surface) else Modifier
+            if (placeholder) Modifier.clip(RoundedCornerShape(4.dp)).background(Palette.Surface) else Modifier
         ),
         contentAlignment = Alignment.Center,
     ) {

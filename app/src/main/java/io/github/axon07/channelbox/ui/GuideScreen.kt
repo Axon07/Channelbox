@@ -42,12 +42,25 @@ import io.github.axon07.channelbox.data.ProgramEntity
 import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR
 
 // Layout of the guide on a 960x540 dp TV screen. The live preview sits in the top-right corner.
-val PREVIEW_WIDTH = 256.dp
-val PREVIEW_HEIGHT = 144.dp
-val PREVIEW_PADDING = 16.dp
-private val TOP_HEIGHT = PREVIEW_HEIGHT + PREVIEW_PADDING * 2
-private val CHANNEL_COLUMN = 200.dp
-private val ROW_HEIGHT = 44.dp
+/** Guide sizes: compact on phones (landscape height under 480 dp), roomier on TVs. */
+data class GuideMetrics(
+    val previewWidth: Dp,
+    val previewHeight: Dp,
+    val previewPadding: Dp,
+    val channelColumn: Dp,
+    val rowHeight: Dp,
+    val compact: Boolean,
+) {
+    val topHeight: Dp get() = previewHeight + previewPadding * 2
+}
+
+@Composable
+fun guideMetrics(): GuideMetrics =
+    if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
+        GuideMetrics(176.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
+    } else {
+        GuideMetrics(240.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
+    }
 
 /**
  * Selection state for the grid. The guide doesn't use Compose focus traversal: a
@@ -111,6 +124,7 @@ fun GuideScreen(
     onNow: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val m = guideMetrics()
     LaunchedEffect(state.row, channels.size) {
         if (channels.isNotEmpty()) state.listState.scrollToItem((state.row - 2).coerceAtLeast(0))
     }
@@ -120,7 +134,7 @@ fun GuideScreen(
 
     Column(Modifier.fillMaxSize()) {
         // Top: programme details, with a transparent hole on the right for the live preview.
-        Row(Modifier.fillMaxWidth().height(TOP_HEIGHT)) {
+        Row(Modifier.fillMaxWidth().height(m.topHeight)) {
             Column(
                 Modifier
                     .weight(1f)
@@ -134,7 +148,7 @@ fun GuideScreen(
                             TvViewModel.recordingKey(selectedChannel.id, selectedProgram.start) in recordingKeys
                         Text(
                             (if (recorded) "● " else "") + selectedProgram.title,
-                            fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                            fontSize = if (m.compact) 16.sp else 20.sp, fontWeight = FontWeight.Bold,
                             color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.height(4.dp))
@@ -152,7 +166,7 @@ fun GuideScreen(
                         )
                     }
                     selectedChannel != null -> {
-                        Text(selectedChannel.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+                        Text(selectedChannel.name, fontSize = if (m.compact) 16.sp else 20.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
                         Spacer(Modifier.height(4.dp))
                         Text("No programme information", fontSize = 14.sp, color = Palette.TextDim)
                     }
@@ -160,7 +174,7 @@ fun GuideScreen(
                 }
             }
             // Transparent: the live video shows through here. Tapping it goes back to full screen.
-            Box(Modifier.width(PREVIEW_WIDTH + PREVIEW_PADDING * 2).fillMaxHeight().tap(onClick = onClose))
+            Box(Modifier.width(m.previewWidth + m.previewPadding * 2).fillMaxHeight().tap(onClick = onClose))
         }
 
         // Buttons are only for touch and mouse; with a remote, Back and ◀ ▶ do the same.
@@ -170,7 +184,7 @@ fun GuideScreen(
             Modifier.fillMaxWidth().height(34.dp).background(Palette.Background).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(timeFormat(now), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, modifier = Modifier.width(CHANNEL_COLUMN - 16.dp))
+            Text(timeFormat(now), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, modifier = Modifier.width(m.channelColumn - 16.dp))
             if (touch) {
                 HeaderButton("☰  $filterLabel", onClick = onGroups)
                 Spacer(Modifier.width(10.dp))
@@ -189,7 +203,7 @@ fun GuideScreen(
         // Time ruler, with earlier / now / later buttons for touch and mouse.
         Row(Modifier.fillMaxWidth().height(26.dp).background(Palette.Background)) {
             Row(
-                Modifier.width(CHANNEL_COLUMN).fillMaxHeight().padding(horizontal = 8.dp),
+                Modifier.width(m.channelColumn).fillMaxHeight().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (touch) {
@@ -265,14 +279,15 @@ private fun GuideRow(
     onProgram: (ProgramEntity) -> Unit,
     onMenu: (ProgramEntity?) -> Unit,
 ) {
+    val m = guideMetrics()
     val end = guideStart + GUIDE_SPAN
-    Row(Modifier.fillMaxWidth().height(ROW_HEIGHT).padding(vertical = 2.dp)) {
+    Row(Modifier.fillMaxWidth().height(m.rowHeight).padding(vertical = 2.dp)) {
         Row(
             Modifier
-                .width(CHANNEL_COLUMN)
+                .width(m.channelColumn)
                 .fillMaxHeight()
                 .padding(start = 6.dp, end = 3.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .background(if (rowSelected) Palette.SurfaceLive else Palette.Surface)
                 .tap(onLongClick = { onMenu(null) }, onClick = onTune)
                 .padding(horizontal = 8.dp),
@@ -347,7 +362,7 @@ private fun ProgramCell(
     Box(
         modifier
             .padding(end = 3.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(4.dp))
             .background(
                 when {
                     selected -> Palette.Accent
@@ -379,7 +394,7 @@ private fun HeaderButton(label: String, onClick: () -> Unit) {
     Text(
         label, fontSize = 13.sp, color = Palette.Text, maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(Palette.SurfaceLive)
             .tap(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 4.dp),

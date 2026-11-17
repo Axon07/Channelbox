@@ -237,7 +237,7 @@ private fun PhonePanel(url: String?) {
         androidx.compose.foundation.Image(
             bitmap = qr, contentDescription = "QR code",
             filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
-            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(10.dp)),
+            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(6.dp)),
         )
         Spacer(Modifier.height(12.dp))
         Text("or open", fontSize = 12.sp, color = Palette.TextDim)
@@ -290,8 +290,8 @@ fun TvTextField(
             modifier = fieldModifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
-                .border(2.dp, if (focused) Palette.Accent else Color(0xFF2E3946), RoundedCornerShape(8.dp))
-                .background(Palette.Surface, RoundedCornerShape(8.dp))
+                .border(2.dp, if (focused) Palette.Accent else Color(0xFF2E3946), RoundedCornerShape(6.dp))
+                .background(Palette.Surface, RoundedCornerShape(6.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         )
     }

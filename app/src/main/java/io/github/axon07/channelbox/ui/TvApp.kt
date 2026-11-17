@@ -127,6 +127,7 @@ val LocalLockedChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<
 @OptIn(UnstableApi::class)
 @Composable
 private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
+    val gm = guideMetrics()
     val allChannels by vm.allChannels.collectAsStateWithLifecycle()
     val visible by vm.visibleChannels.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
@@ -1059,8 +1060,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             } else if (mode in GUIDE_MODES) {
                 Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = PREVIEW_PADDING, end = PREVIEW_PADDING)
-                    .size(PREVIEW_WIDTH, PREVIEW_HEIGHT)
+                    .padding(top = gm.previewPadding, end = gm.previewPadding)
+                    .size(gm.previewWidth, gm.previewHeight)
             } else {
                 Modifier.fillMaxSize()
             },
@@ -1387,22 +1388,19 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val cur = current
                 if (cur != null && cur.id in recordingChannels) RecIndicator()
                 shift?.let { st -> if (mode == Mode.PLAYER) TimeshiftBadge(st, vm) }
-                if (mode == Mode.PLAYER && bannerVisible && cur != null) {
+                if (mode == Mode.PLAYER && (bannerVisible || touchBar) && cur != null) {
                     InfoBanner(
                         cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
                         info = streamInfo,
                         captions = captionLangs,
                         vpnOn = vpnState == io.github.axon07.channelbox.system.VpnManager.State.On,
+                        bottomInset = if (touchBar) 72.dp else 0.dp,
                     )
                 }
                 if (mode == Mode.PLAYER && touchBar) {
                     TouchBar(
                         favorite = cur != null && cur.id in favorites,
                         recording = cur != null && cur.id in recordingChannels,
-                        onChannels = { touchBar = false; openList() },
-                        onGuide = { touchBar = false; openGuide() },
-                        onChannelUp = { touchBarToken++; vm.zap(1) },
-                        onChannelDown = { touchBarToken++; vm.zap(-1) },
                         onFavorite = { touchBarToken++; cur?.let { vm.toggleFavorite(it) } },
                         onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
                         onCaptions = { touchBarToken++; toggleCaptions() },
@@ -1415,8 +1413,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
                         } else null,
                         onMultiView = { touchBar = false; openMultiView() },
-                        onSettings = { touchBar = false; openSettings() },
-                        onExit = { touchBar = false; askExit(Mode.PLAYER) },
                     )
                 }
                 if (mode == Mode.CHANNEL_LIST) {

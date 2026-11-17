@@ -57,6 +57,8 @@ fun BoxScope.InfoBanner(
     info: io.github.axon07.channelbox.player.StreamInfo? = null,
     captions: List<String> = emptyList(),
     vpnOn: Boolean = false,
+    /** Room left below for the on-screen controls. */
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val (current, next) = nowAndNext(programs, now)
     Box(
@@ -64,7 +66,7 @@ fun BoxScope.InfoBanner(
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000), Color(0xF2000000))))
-            .padding(start = 28.dp, end = 28.dp, top = 36.dp, bottom = 18.dp)
+            .padding(start = 28.dp, end = 28.dp, top = 36.dp, bottom = 18.dp + bottomInset)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -125,7 +127,7 @@ fun BoxScope.NumberEntry(digits: String, match: ChannelEntity?) {
         Modifier
             .align(Alignment.TopEnd)
             .padding(24.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(Palette.Panel)
             .padding(horizontal = 18.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.End,
@@ -150,7 +152,7 @@ fun BoxScope.StatusMessage(status: PlayerStatus, channel: ChannelEntity?, fallba
         color = if (isError) Palette.Error else Palette.Text,
         modifier = Modifier
             .align(Alignment.Center)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(Color(0xB3000000))
             .padding(horizontal = 18.dp, vertical = 10.dp),
     )
@@ -205,7 +207,7 @@ fun ChannelListPanel(
                         .fillMaxWidth()
                         .height(50.dp)
                         .padding(horizontal = 8.dp, vertical = 2.dp)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(4.dp))
                         .background(if (isSelected) Palette.Accent else Color.Transparent)
                         .tap(onLongClick = { onFavorite(index) }) { onSelect(index) }
                         .padding(horizontal = 8.dp),
@@ -257,7 +259,7 @@ fun BoxScope.RecIndicator() {
         modifier = Modifier
             .align(Alignment.TopStart)
             .padding(20.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(4.dp))
             .background(Color(0xB3000000))
             .padding(horizontal = 10.dp, vertical = 5.dp),
     )
@@ -274,7 +276,7 @@ fun BoxScope.ToastMessage(text: String) {
         modifier = Modifier
             .align(Alignment.TopCenter)
             .padding(top = 24.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(Color(0xE6151B23))
             .padding(horizontal = 18.dp, vertical = 10.dp),
     )
@@ -312,7 +314,7 @@ fun BoxScope.TimeshiftBadge(shift: TvViewModel.LiveShift, vm: TvViewModel) {
         Modifier
             .align(Alignment.TopEnd)
             .padding(top = 24.dp, end = 24.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xCC000000))
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

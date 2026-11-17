@@ -113,7 +113,7 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
         Column(
             Modifier
                 .widthIn(max = 420.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(Palette.Panel)
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -155,7 +155,7 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
                             modifier = (if (row == 0 && col == 0) Modifier.focusRequester(firstKey) else Modifier)
                                 .size(width = 72.dp, height = 52.dp)
                                 .tap(onClick = action),
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
                             colors = ClickableSurfaceDefaults.colors(
                                 containerColor = Color(0x1AFFFFFF),
                                 contentColor = Palette.Text,
@@ -200,7 +200,7 @@ fun TextInputDialog(
         Column(
             Modifier
                 .widthIn(max = 560.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(Palette.Panel)
                 .padding(28.dp),
         ) {

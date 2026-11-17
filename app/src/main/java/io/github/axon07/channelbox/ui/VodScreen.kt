@@ -278,7 +278,7 @@ private fun CategoryEntry(
             .padding(vertical = 2.dp)
             .onFocusChanged { if (it.isFocused) onFocus() }
             .tap(onLongClick = onLongClick, onClick = onClick),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (selected) Color(0x1AFFFFFF) else Color.Transparent,
             contentColor = Palette.Text,
@@ -287,7 +287,7 @@ private fun CategoryEntry(
             pressedContainerColor = Color(0x33FFFFFF),
         ),
         border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(12.dp)),
+            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(8.dp)),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
@@ -302,7 +302,7 @@ private fun CategoryEntry(
             )
             Text(
                 count.toString(), fontSize = 11.sp, color = Palette.TextDim,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x1AFFFFFF)).padding(horizontal = 7.dp, vertical = 1.dp),
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x1AFFFFFF)).padding(horizontal = 7.dp, vertical = 1.dp),
             )
         }
     }
@@ -333,14 +333,14 @@ private fun PosterCard(
                 .focusRequester(requester)
                 .onFocusChanged { if (it.isFocused) onFocused() }
                 .tap(onClick = onClick),
-            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
             colors = ClickableSurfaceDefaults.colors(
                 containerColor = Palette.Surface,
                 focusedContainerColor = Palette.Surface,
                 pressedContainerColor = Palette.Surface,
             ),
             border = ClickableSurfaceDefaults.border(
-                focusedBorder = Border(BorderStroke(3.dp, Palette.Accent), shape = RoundedCornerShape(10.dp)),
+                focusedBorder = Border(BorderStroke(3.dp, Palette.Accent), shape = RoundedCornerShape(6.dp)),
             ),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
         ) {
@@ -450,7 +450,7 @@ private fun ShowScreen(
                 .padding(top = 24.dp, start = 18.dp, end = 18.dp, bottom = 12.dp)
         ) {
             Row {
-                PosterImage(show.poster, show.title, Modifier.width(96.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)), fitWide = true)
+                PosterImage(show.poster, show.title, Modifier.width(96.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)), fitWide = true)
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(show.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -518,7 +518,7 @@ private fun EpisodeRow(ep: VodEntity, progress: VodProgressEntity?, modifier: Mo
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().tap(onClick = onClick),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color(0x0FFFFFFF),
             contentColor = Palette.Text,
@@ -527,12 +527,12 @@ private fun EpisodeRow(ep: VodEntity, progress: VodProgressEntity?, modifier: Mo
             pressedContainerColor = Color(0x33FFFFFF),
         ),
         border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(12.dp)),
+            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(8.dp)),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+            Box(Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp))) {
                 PosterImage(ep.poster, "E${ep.episode}", Modifier.fillMaxSize())
                 if (progress != null && progress.duration > 0) {
                     ProgressBar(

@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -70,7 +71,7 @@ fun Pill(
 ) {
     Row(
         modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (highlighted) Palette.Accent else Color(0xE61F2A37))
             .tap(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -84,15 +85,14 @@ fun Pill(
     }
 }
 
-/** On-screen buttons shown when the video is tapped (phones, tablets, mouse users). */
+/**
+ * On-screen controls shown when the video is tapped (phones, tablets, mouse): a slim bar along the
+ * bottom. Channels, the guide and settings are in the menus, so only things about what's playing.
+ */
 @Composable
 fun BoxScope.TouchBar(
     favorite: Boolean,
     recording: Boolean,
-    onChannels: () -> Unit,
-    onGuide: () -> Unit,
-    onChannelUp: () -> Unit,
-    onChannelDown: () -> Unit,
     onFavorite: () -> Unit,
     onRecord: () -> Unit,
     onCaptions: () -> Unit,
@@ -103,38 +103,52 @@ fun BoxScope.TouchBar(
     onOptions: () -> Unit,
     onPip: (() -> Unit)?,
     onMultiView: () -> Unit,
-    onSettings: () -> Unit,
-    onExit: () -> Unit,
 ) {
     Row(
         Modifier
-            .align(Alignment.TopCenter)
+            .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color(0xE6000000), Color.Transparent)))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xB3000000))))
             .tap { } // swallow taps between the buttons
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            .padding(top = 18.dp, bottom = 10.dp, start = 12.dp, end = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
     ) {
-        Pill("Channels", icon = AppIcons.List, onClick = onChannels)
-        Pill("Guide", icon = AppIcons.Guide, onClick = onGuide)
-        Pill("CH+", icon = AppIcons.Up, onClick = onChannelUp)
-        Pill("CH−", icon = AppIcons.Down, onClick = onChannelDown)
-        Pill(
-            "Favourite", icon = if (favorite) AppIcons.Star else AppIcons.StarOutline,
-            iconTint = if (favorite) Palette.Favorite else Palette.Text, highlighted = favorite, onClick = onFavorite,
+        ControlButton(if (paused) "Resume" else "Pause", if (paused) AppIcons.Play else AppIcons.Pause, onClick = onPause)
+        if (behindLive) ControlButton("Live", AppIcons.Forward, onClick = onLive)
+        ControlButton(
+            if (recording) "Stop" else "Record", if (recording) AppIcons.Stop else AppIcons.Record,
+            tint = Palette.Recording, onClick = onRecord,
         )
-        Pill(
-            if (recording) "Stop" else "Record", icon = if (recording) AppIcons.Stop else AppIcons.Record,
-            iconTint = Palette.Recording, highlighted = recording, onClick = onRecord,
+        ControlButton(
+            "Favourite", if (favorite) AppIcons.Star else AppIcons.StarOutline,
+            tint = if (favorite) Palette.Favorite else Color.White, onClick = onFavorite,
         )
-        Pill(if (paused) "Resume" else "Pause", icon = if (paused) AppIcons.Play else AppIcons.Pause, onClick = onPause)
-        if (behindLive) Pill("Live", icon = AppIcons.Forward, onClick = onLive)
-        Pill("CC", icon = AppIcons.Captions, onClick = onCaptions)
-        Pill("Audio & quality", icon = AppIcons.Audio, onClick = onOptions)
-        if (onPip != null) Pill("Mini player", icon = AppIcons.Pip, onClick = onPip)
-        Pill("Multi-view", icon = AppIcons.Grid, onClick = onMultiView)
-        Pill("Settings", icon = AppIcons.Settings, onClick = onSettings)
-        Pill("Exit", icon = AppIcons.Exit, onClick = onExit)
+        ControlButton("Captions", AppIcons.Captions, onClick = onCaptions)
+        ControlButton("Audio", AppIcons.Audio, onClick = onOptions)
+        if (onPip != null) ControlButton("Mini", AppIcons.Pip, onClick = onPip)
+        ControlButton("Multi-view", AppIcons.Grid, onClick = onMultiView)
+    }
+}
+
+@Composable
+private fun ControlButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    androidx.compose.foundation.layout.Column(
+        Modifier.tap(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        androidx.compose.foundation.layout.Box(
+            Modifier
+                .size(38.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Color(0x26FFFFFF)),
+            contentAlignment = Alignment.Center,
+        ) { AppIcon(icon, tint = tint, size = 18.dp) }
+        Text(label, fontSize = 10.sp, color = Color(0xE6FFFFFF), maxLines = 1, modifier = Modifier.padding(top = 3.dp))
     }
 }

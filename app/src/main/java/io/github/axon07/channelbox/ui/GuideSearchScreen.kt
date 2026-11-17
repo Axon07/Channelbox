@@ -144,7 +144,7 @@ private fun ResultRow(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().tap(onClick = onClick),
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color(0x0FFFFFFF),
             contentColor = Palette.Text,
@@ -152,7 +152,7 @@ private fun ResultRow(
             focusedContentColor = Color.White,
         ),
         border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(12.dp)),
+            focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = RoundedCornerShape(8.dp)),
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
@@ -179,7 +179,7 @@ private fun ResultRow(
             }
             Text(
                 label, fontSize = 12.sp, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(color).padding(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color).padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
     }

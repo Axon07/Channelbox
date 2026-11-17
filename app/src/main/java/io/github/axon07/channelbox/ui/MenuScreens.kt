@@ -152,9 +152,9 @@ private fun SectionHeader(
         Modifier
             .fillMaxWidth()
             .padding(top = if (first) 0.dp else 10.dp, bottom = 2.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -188,9 +188,9 @@ private fun GroupRow(
             .padding(start = if (indented) 14.dp else 0.dp)
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -217,7 +217,7 @@ private fun GroupRow(
             Text(
                 count.toString(), fontSize = 12.sp, color = Palette.TextDim,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(6.dp))
                     .background(Color(0x1AFFFFFF))
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             )
@@ -231,7 +231,7 @@ private fun LetterBadge(label: String, highlight: Boolean) {
     Box(
         Modifier
             .size(30.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(if (highlight) Color(0x26FFFFFF) else Color(0x14FFFFFF)),
         contentAlignment = Alignment.Center,
     ) {
@@ -253,9 +253,9 @@ private fun LibraryTile(
 ) {
     Row(
         modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color(0x12FFFFFF))
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -279,9 +279,9 @@ private fun QuickTile(
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Color(0x29FFFFFF) else Color(0x12FFFFFF))
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(14.dp))
+            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
             .tap(onClick = onClick)
             .padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -333,7 +333,7 @@ fun RecordingsScreen(
                         .fillMaxWidth()
                         .height(64.dp)
                         .padding(vertical = 2.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (isSelected) Palette.Accent else Palette.Surface)
                         .tap(onLongClick = { onMenu(r) }) { onPlay(r) }
                         .padding(horizontal = 14.dp),
@@ -465,7 +465,7 @@ fun ActionDialog(title: String, subtitle: String?, actions: List<DialogAction>) 
         Column(
             Modifier
                 .widthIn(max = 720.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(Palette.Panel)
                 .tap { }
                 .padding(24.dp),
