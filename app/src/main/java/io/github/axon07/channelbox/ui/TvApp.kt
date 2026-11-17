@@ -210,6 +210,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Back on the groups menu – the last step before leaving. */
+    fun lastBack() {
+        when (settings.backAction) {
+            BackAction.ASK_EXIT -> askExit(Mode.GROUPS)
+            BackAction.OPEN_GUIDE -> mode = Mode.PLAYER // never exit: go round to live TV
+            BackAction.EXIT -> exitApp()
+        }
+    }
+
     /**
      * Back on the groups menu. Pressed quickly after arriving (Back, Back, Back from TV), it's the
      * last step: ask to exit. After spending time in the menu it just closes the menu, back to TV.
@@ -217,14 +225,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     fun groupsBack() {
         if (android.os.SystemClock.uptimeMillis() - groupsOpenedAt < QUICK_BACK_MS) lastBack()
         else mode = Mode.PLAYER
-    }
-
-    fun lastBack() {
-        when (settings.backAction) {
-            BackAction.ASK_EXIT -> askExit(Mode.GROUPS)
-            BackAction.OPEN_GUIDE -> mode = Mode.PLAYER // never exit: go round to live TV
-            BackAction.EXIT -> exitApp()
-        }
     }
 
     fun openMultiView() {
