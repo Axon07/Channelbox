@@ -115,11 +115,18 @@ fun TvApp(vm: TvViewModel) {
         Box(Modifier.fillMaxSize().background(Color.Black))
     } else {
         val locked by vm.lockedChannelIds.collectAsStateWithLifecycle()
-        androidx.compose.runtime.CompositionLocalProvider(LocalLockedChannels provides locked) {
+        val recording by vm.recordingChannels.collectAsStateWithLifecycle()
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalLockedChannels provides locked,
+            LocalRecordingChannels provides recording,
+        ) {
             TvAppContent(vm, s)
         }
     }
 }
+
+/** Ids of channels recording right now, for the red dot in the guide and channel list. */
+val LocalRecordingChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
 
 /** Ids of locked channels (parental PIN), for the little lock in the guide and channel list. */
 val LocalLockedChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
@@ -206,6 +213,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     /** Total of quick ◀ ▶ presses, shown as "−20 s" for a moment. */
     var pbSkipped by remember { mutableLongStateOf(0L) }
     var pbSkipToken by remember { mutableIntStateOf(0) }
+    /** Bumped when captions are switched, to refresh the CC icon. */
+    var captionsTick by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val groupsListState = rememberLazyListState()
     val recListState = rememberLazyListState()
@@ -971,7 +980,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PROGRAM_MENU -> mode = Mode.GUIDE
             Mode.RECORDINGS -> openGroups(tile = 1)
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
-            Mode.PLAYBACK -> leavePlayback()
+            // First Back hides the controls, the next one leaves.
+            Mode.PLAYBACK -> if (playbackOverlay && pbPlaying) playbackOverlay = false else leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking && multi.count > 0) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
             Mode.SEARCH -> openGroups(tile = 5)
@@ -1197,6 +1207,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     onSeekTo = { seekTo(it) },
                     onOptions = { openOptions() },
                     onClose = { leavePlayback() },
+                    onCaptions = { playbackToken++; toggleCaptions(); captionsTick++ },
+                    captionsOn = remember(captionsTick, playbackToken) { vm.player.captionsOn },
                 )
             }
             Mode.SEARCH -> GuideSearchScreen(
@@ -1388,8 +1400,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
                 StatusMessage(playerStatus, current, fallback)
                 val cur = current
-                if (cur != null && cur.id in recordingChannels) RecIndicator()
-                shift?.let { st -> if (mode == Mode.PLAYER) TimeshiftBadge(st, vm) }
+                // REC and the pause badge show with the banner / controls, then hide with them.
+                val overlays = bannerVisible || touchBar
+                if (cur != null && cur.id in recordingChannels && overlays) RecIndicator()
+                shift?.let { st -> if (mode == Mode.PLAYER && !touchBar && (overlays || st.paused)) TimeshiftBadge(st, vm) }
                 if (mode == Mode.PLAYER && bannerVisible && !touchBar && cur != null) {
                     InfoBanner(
                         cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
@@ -1417,6 +1431,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
                         } else null,
                         onMultiView = { touchBar = false; openMultiView() },
+                        onCaptions = { touchBarToken++; toggleCaptions(); captionsTick++ },
+                        captionsOn = remember(captionsTick, touchBarToken) { vm.player.captionsOn },
                     )
                 }
                 if (mode == Mode.CHANNEL_LIST) {

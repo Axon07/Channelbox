@@ -44,6 +44,7 @@ object AppIcons {
     val Pause = icon("pause", fill("M7,5H10V19H7Z M14,5H17V19H14Z"))
     val Rewind = icon("rewind", fill("M11,6L3,12L11,18Z M20,6L12,12L20,18Z"))
     val Forward = icon("forward", fill("M4,6L12,12L4,18Z M13,6L21,12L13,18Z"))
+    val More = icon("more", fill("M12,4.5A2,2 0 1,1 11.99,4.5Z M12,10A2,2 0 1,1 11.99,10Z M12,15.5A2,2 0 1,1 11.99,15.5Z"))
     val Record = icon("record", fill("M12,5A7,7 0 1,1 11.99,5Z"))
     val Stop = icon("stop", fill("M6,6H18V18H6Z"))
     val Power = icon("power", stroke("M12,3V11"), stroke("M7.05,6.05A7.5,7.5 0 1,0 16.95,6.05"))

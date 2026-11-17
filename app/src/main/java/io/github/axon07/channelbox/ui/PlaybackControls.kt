@@ -64,6 +64,9 @@ fun BoxScope.PlaybackControls(
     onSeekTo: (Long) -> Unit,
     onOptions: () -> Unit,
     onClose: () -> Unit,
+    /** Captions on/off. */
+    onCaptions: () -> Unit = onOptions,
+    captionsOn: Boolean = false,
 ) {
     // Big centre button while paused, finished or loading.
     if (visible || !ui.playing || ui.buffering) {
@@ -143,7 +146,8 @@ fun BoxScope.PlaybackControls(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconTap(AppIcons.Captions, size = 22.dp, onClick = onOptions)
+                    IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, onClick = onCaptions)
+                    IconTap(AppIcons.More, size = 22.dp, onClick = onOptions)
                 }
             }
         }
@@ -181,7 +185,7 @@ private fun Scrubber(ui: PlaybackUi, onSeekTo: (Long) -> Unit) {
 
 /** A plain white icon you can tap; [badge] = small number under it (skip seconds). */
 @Composable
-internal fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick: () -> Unit) {
+internal fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, active: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(CircleShape)
@@ -191,6 +195,8 @@ internal fun IconTap(icon: ImageVector, size: Dp, badge: String? = null, onClick
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AppIcon(icon, tint = Color.White, size = size)
+            // A small bar under an icon that's switched on (captions).
+            if (active) Box(Modifier.padding(top = 2.dp).size(width = size * 0.6f, height = 2.dp).clip(RoundedCornerShape(1.dp)).background(Palette.Accent))
             if (badge != null) Text(badge, fontSize = 9.sp, color = Color(0xCCFFFFFF), fontWeight = FontWeight.SemiBold)
         }
     }
@@ -261,6 +267,8 @@ fun BoxScope.LiveControls(
     onOptions: () -> Unit,
     onPip: (() -> Unit)?,
     onMultiView: () -> Unit,
+    onCaptions: () -> Unit,
+    captionsOn: Boolean,
 ) {
     Column(
         Modifier
@@ -271,8 +279,6 @@ fun BoxScope.LiveControls(
             .padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 52.dp, height = 30.dp))
-            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     program?.title ?: channel.name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
@@ -322,9 +328,10 @@ fun BoxScope.LiveControls(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconTap(AppIcons.Captions, size = 22.dp, onClick = onOptions)
+                IconTap(AppIcons.Captions, size = 22.dp, active = captionsOn, onClick = onCaptions)
                 IconTap(AppIcons.Grid, size = 22.dp, onClick = onMultiView)
                 if (onPip != null) IconTap(AppIcons.Pip, size = 22.dp, onClick = onPip)
+                IconTap(AppIcons.More, size = 22.dp, onClick = onOptions)
             }
         }
     }

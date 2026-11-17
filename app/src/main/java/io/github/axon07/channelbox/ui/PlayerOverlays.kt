@@ -1,3 +1,27 @@
+    Row(
+        Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = 20.dp, end = 20.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0x99000000))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(if (shift.paused) AppIcons.Pause else AppIcons.Play, tint = Color.White, size = 13.dp)
+        Spacer(Modifier.width(7.dp))
+        Text(
+            when {
+                shift.paused && !shift.buffered -> "Paused"
+                shift.paused -> "Paused  ${formatClock(behind)}"
+                else -> "−${formatClock(behind)}"
+            },
+            fontSize = 13.sp, color = Color.White,
+        )
+    }
+}
+
+/** Small red "REC" pill while the channel is recording. */
+@Composable
 package io.github.axon07.channelbox.ui
 
 import androidx.compose.runtime.LaunchedEffect
@@ -225,6 +249,10 @@ fun ChannelListPanel(
                                 ch.name, fontSize = 14.sp, color = Palette.Text, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
+                            if (ch.id in LocalRecordingChannels.current) {
+                                Spacer(Modifier.width(5.dp))
+                                Box(Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
+                            }
                             if (ch.id in LocalLockedChannels.current) {
                                 Spacer(Modifier.width(4.dp))
                                 AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
@@ -251,18 +279,19 @@ fun ChannelListPanel(
 /** Red "● REC" in the corner while the channel on screen is being recorded. */
 @Composable
 fun BoxScope.RecIndicator() {
-    Text(
-        "● REC",
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold,
-        color = Palette.Recording,
-        modifier = Modifier
+    Row(
+        Modifier
             .align(Alignment.TopStart)
             .padding(20.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xB3000000))
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0x99000000))
             .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
+        Spacer(Modifier.width(6.dp))
+        Text("REC", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White, letterSpacing = 1.sp)
+    }
 }
 
 /** Short message at the top of the screen. */

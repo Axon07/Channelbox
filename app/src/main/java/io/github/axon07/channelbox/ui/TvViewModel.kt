@@ -604,6 +604,13 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** Record (or stop recording) what's on the current channel now. */
+    /** Protected (DRM) and DASH channels can't be recorded: say so instead of adding a recording that fails. */
+    private fun canRecord(ch: ChannelEntity): Boolean {
+        if (recorder.canCapture(StreamSpecs.from(ch))) return true
+        showToast("${ch.name} is copy-protected, so it can't be recorded")
+        return false
+    }
+
     fun toggleRecordCurrent() {
         val ch = _current.value ?: return
         val running = recordings.value.firstOrNull { it.channelId == ch.id && it.status == RecStatus.RECORDING }
@@ -611,6 +618,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             stopRecording(running)
             return
         }
+        if (!canRecord(ch)) return
         val now = System.currentTimeMillis()
         val program = nowAndNext(ch.epgId?.let { upcoming.value[it] }, now).first
         viewModelScope.launch {
@@ -629,6 +637,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             stopRecording(existing)
             return
         }
+        if (!canRecord(channel)) return
         val now = System.currentTimeMillis()
         if (program.stop <= now) {
             showToast("That programme has already finished")

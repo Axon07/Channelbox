@@ -292,6 +292,10 @@ private fun GuideRow(
                 fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
+            if (channel.id in LocalRecordingChannels.current) {
+                Spacer(Modifier.width(5.dp))
+                Box(Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
+            }
             if (channel.id in LocalLockedChannels.current) {
                 Spacer(Modifier.width(4.dp))
                 AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
@@ -304,7 +308,7 @@ private fun GuideRow(
             val visible = programs.filter { it.stop > guideStart && it.start < end }
             if (visible.isEmpty()) {
                 ProgramCell(
-                    "No information",
+                    if (channel.id in LocalRecordingChannels.current) "Recording" else "No information",
                     Modifier.fillMaxSize().tap(onLongClick = { onMenu(null) }, onClick = onTune),
                     selected = rowSelected,
                     // Shade the elapsed part like a live programme so the "now" line runs through every row.
@@ -312,7 +316,7 @@ private fun GuideRow(
                         ((now - guideStart).toFloat() / (end - guideStart).coerceAtLeast(1)).coerceIn(0f, 1f)
                     } else 0f,
                     live = now in guideStart until end,
-                    recording = false,
+                    recording = channel.id in LocalRecordingChannels.current,
                     catchup = false,
                 )
             } else {
