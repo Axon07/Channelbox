@@ -154,6 +154,10 @@ interface ProgramDao {
     @Query("SELECT * FROM programs WHERE stop > :from AND start < :to ORDER BY start")
     fun observeWindow(from: Long, to: Long): Flow<List<ProgramEntity>>
 
+    /** Guide search: programmes whose title contains [query], ending after [from]. */
+    @Query("SELECT * FROM programs WHERE title LIKE '%' || :query || '%' AND stop > :from ORDER BY start LIMIT 300")
+    suspend fun search(query: String, from: Long): List<ProgramEntity>
+
     /** Blocking on purpose: called from the streaming XMLTV parser on an IO thread. */
     @Insert
     fun insertBlocking(programs: List<ProgramEntity>)

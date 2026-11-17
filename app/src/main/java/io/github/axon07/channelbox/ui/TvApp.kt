@@ -64,6 +64,8 @@ enum class Mode {
     SETTINGS, SETUP, EXIT_CONFIRM, UPDATE, OPTIONS, MULTIVIEW,
     /** Movies / TV Shows (normal focus, like Settings). */
     VOD,
+    /** Search the guide (normal focus). */
+    SEARCH,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
@@ -293,6 +295,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val rowCount = menuRows.size
     val tileMovies = rowCount + 3
     val tileShows = rowCount + 4
+    val tileSearch = rowCount + 5
+    val guideSearch = remember { GuideSearchState() }
+
+    fun openSearch() {
+        mode = Mode.SEARCH
+    }
     val libraryTiles = listOfNotNull(tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 })
 
     fun openVod(kind: String) {
@@ -310,6 +318,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         when {
             i == tileMovies -> openVod(VodKind.MOVIE)
             i == tileShows -> openVod(VodKind.SERIES)
+            i == tileSearch -> openSearch()
             i < rowCount -> when (val row = menuRows[i]) {
                 is MenuRow.Header -> if (row.collapsible) vm.toggleSection(row.key)
                 is MenuRow.Item -> {
@@ -594,6 +603,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     if (bannerVisible) bannerVisible = false else vm.showBanner()
                 }
                 AndroidKeyEvent.KEYCODE_GUIDE -> openGuide()
+                AndroidKeyEvent.KEYCODE_SEARCH -> openSearch()
                 AndroidKeyEvent.KEYCODE_MENU -> openOptions()
                 AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> vm.previousChannel()
                 in RECORD_KEYS -> vm.toggleRecordCurrent()
@@ -646,7 +656,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     val f = rowCount
                     groupsIndex = when {
                         groupsIndex in 1 until f -> groupsIndex - 1
-                        groupsIndex == 0 -> f // wrap to the shortcuts
+                        groupsIndex == 0 -> tileSearch // wrap to the shortcuts
                         groupsIndex in libraryTiles -> (f - 1).coerceAtLeast(0)
                         else -> libraryTiles.firstOrNull() ?: (f - 1).coerceAtLeast(0) // shortcuts
                     }
@@ -655,8 +665,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     val f = rowCount
                     groupsIndex = when {
                         groupsIndex < f - 1 -> groupsIndex + 1
-                        groupsIndex == f - 1 -> libraryTiles.firstOrNull() ?: f
-                        groupsIndex in libraryTiles -> f
+                        groupsIndex == f - 1 -> libraryTiles.firstOrNull() ?: tileSearch
+                        groupsIndex in libraryTiles -> tileSearch
                         else -> 0 // shortcuts: wrap to the top
                     }
                 }
@@ -668,6 +678,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     // On a closed playlist heading: open it.
                     (menuRows.getOrNull(groupsIndex) as? MenuRow.Header)?.let { it.collapsible && !it.open } == true ->
                         vm.setSectionOpen((menuRows[groupsIndex] as MenuRow.Header).key, true)
+                    groupsIndex == tileSearch -> groupsIndex = rowCount
                     groupsIndex >= rowCount && groupsIndex < rowCount + 2 -> groupsIndex++
                     groupsIndex == tileMovies && tileShows in libraryTiles -> groupsIndex = tileShows
                     else -> mode = Mode.GUIDE
@@ -684,6 +695,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         }
                         head >= 0
                     } -> Unit
+                    groupsIndex == rowCount -> groupsIndex = tileSearch
                     groupsIndex > rowCount && groupsIndex <= rowCount + 2 -> groupsIndex--
                     groupsIndex == tileShows && tileMovies in libraryTiles -> groupsIndex = tileMovies
                     else -> Unit
@@ -913,6 +925,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PLAYBACK -> leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
+            Mode.SEARCH -> openGroups(tileSearch)
             Mode.VOD -> when {
                 vodResume != null -> {
                     vodResume = null
@@ -1135,6 +1148,37 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     onClose = { leavePlayback() },
                 )
             }
+            Mode.SEARCH -> GuideSearchScreen(
+                state = guideSearch,
+                vm = vm,
+                now = now,
+                recordingKeys = recordingKeys,
+                timeFormat = timeFormat,
+                onPick = { hit ->
+                    val t = System.currentTimeMillis()
+                    val p = hit.program
+                    when {
+                        p.start > t -> {
+                            val scheduled = TvViewModel.recordingKey(hit.channel.id, p.start) in recordingKeys
+                            popup = Popup(
+                                p.title, "${hit.channel.name}  ·  ${timeFormat(p.start)} – ${timeFormat(p.stop)}",
+                                listOf(
+                                    DialogAction(if (scheduled) "Cancel recording" else "● Record") {
+                                        vm.toggleRecordProgram(hit.channel, p)
+                                        popup = null
+                                    },
+                                    DialogAction("Watch ${hit.channel.name} now") {
+                                        popup = null
+                                        tuneAndWatch(hit.channel)
+                                    },
+                                    DialogAction("Close") { popup = null },
+                                ),
+                            )
+                        }
+                        else -> programPressed(hit.channel, p)
+                    }
+                },
+            )
             Mode.VOD -> {
                 VodScreen(vodBrowser, vm, onPlay = { item, show -> playVod(item, show) })
                 vodResume?.let { (item, show, at) ->

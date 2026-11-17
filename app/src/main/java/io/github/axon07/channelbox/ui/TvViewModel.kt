@@ -901,6 +901,20 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Guide search ----------------------------------------------------------------------
+
+    data class GuideHit(val channel: ChannelEntity, val program: ProgramEntity)
+
+    /** Programmes whose title contains [query], on your channels (hidden ones left out). */
+    suspend fun searchGuide(query: String): List<GuideHit> {
+        val q = query.trim()
+        if (q.length < 2) return emptyList()
+        val byGuide = allChannels.value.filter { it.epgId != null }.groupBy { it.epgId!! }
+        return repo.searchPrograms(q, System.currentTimeMillis() - 6 * HOUR)
+            .flatMap { p -> byGuide[p.epgId].orEmpty().map { GuideHit(it, p) } }
+            .take(200)
+    }
+
     // ---- Pause live TV ---------------------------------------------------------------------
 
     /** Live TV paused or watched behind live. null = watching live. */

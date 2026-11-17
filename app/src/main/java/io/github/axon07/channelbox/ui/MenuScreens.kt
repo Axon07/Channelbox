@@ -121,6 +121,9 @@ fun GroupsPanel(
             Spacer(Modifier.height(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QuickTile("Search", AppIcons.Search, selected == rows.size + 5, Modifier.weight(1f)) {
+                onSelect(rows.size + 5)
+            }
             QuickTile("Multi-view", AppIcons.Grid, selected == rows.size, Modifier.weight(1f)) {
                 onSelect(rows.size)
             }
