@@ -117,8 +117,10 @@ fun SettingsScreen(
     onEditSource: (String?) -> Unit,
     onOpenRecordings: () -> Unit,
     onExit: () -> Unit,
+    /** Open on Network & VPN (from first-time setup, when the ISP blocks the playlist). */
+    openNetwork: Boolean = false,
 ) {
-    var category by rememberSaveable { mutableStateOf(SettingsCategory.SOURCE) }
+    var category by rememberSaveable { mutableStateOf(if (openNetwork) SettingsCategory.NETWORK else SettingsCategory.SOURCE) }
     var page by remember { mutableStateOf<Page?>(null) }
     /** Playlist shown on the PLAYLIST page. */
     var playlistId by rememberSaveable { mutableStateOf<String?>(null) }

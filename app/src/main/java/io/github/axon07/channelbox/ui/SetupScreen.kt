@@ -56,6 +56,8 @@ fun SetupScreen(
     refreshState: RefreshState,
     vm: TvViewModel,
     onDone: () -> Unit,
+    /** Opens Settings → Network & VPN (DNS, proxy, VPN, user agent). */
+    onNetwork: () -> Unit,
 ) {
     val id = rememberSaveable { initial?.id ?: Playlist.newId() }
     var type by rememberSaveable {
@@ -148,10 +150,22 @@ fun SetupScreen(
             Text(if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload")
         }
         Spacer(Modifier.height(12.dp))
+        val failed = submitted && refreshState is RefreshState.Failed
         when (refreshState) {
             is RefreshState.Running -> Text(refreshState.message, color = Palette.TextDim, fontSize = 14.sp)
             is RefreshState.Failed -> if (submitted) Text(refreshState.message, color = Palette.Error, fontSize = 14.sp)
             else -> Unit
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            if (failed) "Works in other apps or on other networks? Your internet provider may be blocking it – try another DNS, a proxy or a VPN, then save again."
+            else "Internet provider blocking IPTV? Set up DNS, a proxy, a VPN or the user agent first.",
+            fontSize = 13.sp, color = if (failed) Palette.Text else Palette.TextDim,
+            modifier = Modifier.widthIn(max = 620.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onNetwork, modifier = Modifier.tap(onClick = onNetwork)) {
+            Text("Network & VPN settings")
         }
     }
 }

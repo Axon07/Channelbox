@@ -141,6 +141,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var mode by remember { mutableStateOf(if (!settings.hasSource) Mode.SETUP else Mode.PLAYER) }
     /** Playlist being edited on the setup screen; null = adding a new one. */
     var setupPlaylistId by remember { mutableStateOf<String?>(null) }
+    /** Settings opened from first-time setup for network options. */
+    var settingsFromSetup by remember { mutableStateOf(false) }
     /** When the groups menu was opened (for [groupsBack]). */
     var groupsOpenedAt by remember { mutableLongStateOf(0L) }
     /** Last key press or touch, for closing the guide/menus when idle. */
@@ -589,6 +591,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             runCatching { rootFocus.requestFocus() }
         }
     }
+    LaunchedEffect(mode) { if (mode != Mode.SETTINGS) settingsFromSetup = false }
     // Guide and menus close back to TV after a while with no button pressed.
     val idleModes = mode == Mode.GUIDE || mode == Mode.GROUPS || mode == Mode.CHANNEL_LIST || mode == Mode.PROGRAM_MENU
     LaunchedEffect(mode, lastInput, settings.idleCloseSeconds) {
@@ -676,7 +679,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDING_MENU -> mode = Mode.RECORDINGS
             Mode.PLAYBACK -> leavePlayback()
             Mode.MULTIVIEW -> if (multiPicking) multiPicking = false else closeMultiView()
-            Mode.SETTINGS -> openGroups(filters.size + 2)
+            Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(filters.size + 2)
             Mode.SETUP -> mode = Mode.SETTINGS
         }
     }
@@ -869,6 +872,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 }
             }
             Mode.SETTINGS -> SettingsScreen(
+                openNetwork = settingsFromSetup,
                 settings = settings,
                 refreshState = refreshState,
                 channelCount = allChannels.size,
@@ -892,6 +896,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         firstRun = firstRun,
                         refreshState = refreshState,
                         vm = vm,
+                        onNetwork = {
+                            settingsFromSetup = true
+                            mode = Mode.SETTINGS
+                        },
                         onDone = { mode = if (firstRun) Mode.PLAYER else Mode.SETTINGS },
                     )
                 }
