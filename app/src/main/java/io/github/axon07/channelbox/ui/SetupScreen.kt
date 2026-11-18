@@ -177,13 +177,11 @@ fun SetupScreen(
                 save()
             }
         }
-        Button(
-            onClick = save,
-            enabled = canSave,
-            modifier = Modifier.tap(onClick = save),
-        ) {
-            Text(if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload")
-        }
+        PillButton(
+            if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload",
+            primary = canSave,
+            onClick = { if (canSave) save() },
+        )
         Spacer(Modifier.height(12.dp))
         val failed = submitted && refreshState is RefreshState.Failed
         when (refreshState) {
@@ -253,11 +251,7 @@ private fun PhonePanel(url: String?) {
 
 @Composable
 private fun TypeButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick, modifier = modifier.tap(onClick = onClick)) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier.tap(onClick = onClick)) { Text(label) }
-    }
+    PillButton(label, modifier = modifier, primary = selected, onClick = onClick)
 }
 
 @Composable

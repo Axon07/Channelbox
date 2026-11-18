@@ -1,5 +1,6 @@
 package io.github.axon07.channelbox.ui
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -434,38 +435,45 @@ fun ActionDialog(title: String, subtitle: String?, actions: List<DialogAction>) 
         delay(50)
         runCatching { first.requestFocus() }
     }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x99000000)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier
-                .widthIn(max = 720.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Palette.Panel)
-                .tap { }
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Text, textAlign = TextAlign.Center, maxLines = 2)
-            if (subtitle != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(subtitle, fontSize = 14.sp, color = Palette.TextDim, textAlign = TextAlign.Center, maxLines = 2)
-            }
-            Spacer(Modifier.height(18.dp))
+    // Short yes/no questions get two buttons side by side; menus get a tidy list.
+    val compact = actions.size <= 2 && actions.all { it.label.length <= 14 }
+    DialogCard(width = if (compact) 420.dp else 400.dp) {
+        DialogTitle(title, subtitle)
+        Spacer(Modifier.height(16.dp))
+        if (compact) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 actions.forEachIndexed { i, a ->
-                    Button(
+                    PillButton(
+                        a.label,
+                        modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
+                        primary = i == 0,
                         onClick = a.onClick,
-                        modifier = (if (i == 0) Modifier.focusRequester(first) else Modifier).tap(onClick = a.onClick),
-                    ) { Text(a.label) }
+                    )
+                }
+            }
+        } else {
+            Column(
+                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                actions.forEachIndexed { i, a ->
+                    val closing = a.label in CLOSE_LABELS
+                    if (closing && i > 0) Spacer(Modifier.height(6.dp))
+                    DialogRow(
+                        a.label,
+                        modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
+                        danger = DANGER_WORDS.any { w -> a.label.startsWith(w) },
+                        dim = closing,
+                        onClick = a.onClick,
+                    )
                 }
             }
         }
     }
 }
+
+private val CLOSE_LABELS = setOf("Close", "Cancel", "Not now", "Later")
+private val DANGER_WORDS = listOf("Delete", "Remove", "Stop recording", "Exit", "Clear")
 
 // ---- Playback options (audio, subtitles, picture size) -----------------------------------------
 

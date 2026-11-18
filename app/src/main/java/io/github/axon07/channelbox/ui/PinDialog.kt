@@ -1,5 +1,6 @@
 package io.github.axon07.channelbox.ui
 
+import androidx.compose.foundation.border
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -112,10 +113,11 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
     ) {
         Column(
             Modifier
-                .widthIn(max = 420.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Palette.Panel)
-                .padding(28.dp),
+                .widthIn(max = 380.dp)
+                .clip(DialogStyle.Shape)
+                .background(DialogStyle.Card)
+                .border(1.dp, DialogStyle.Edge, DialogStyle.Shape)
+                .padding(horizontal = 26.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 28.dp)
@@ -155,24 +157,24 @@ fun PinDialog(title: String, setup: Boolean, onSubmit: (String) -> Boolean, onCa
                             modifier = (if (row == 0 && col == 0) Modifier.focusRequester(firstKey) else Modifier)
                                 .size(width = 72.dp, height = 52.dp)
                                 .tap(onClick = action),
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                            shape = ClickableSurfaceDefaults.shape(DialogStyle.ItemShape),
                             colors = ClickableSurfaceDefaults.colors(
-                                containerColor = Color(0x1AFFFFFF),
+                                containerColor = DialogStyle.Rest,
                                 contentColor = Palette.Text,
-                                focusedContainerColor = Palette.Accent,
-                                focusedContentColor = Color.White,
+                                focusedContainerColor = DialogStyle.Focus,
+                                focusedContentColor = DialogStyle.OnFocus,
                             ),
-                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
                         ) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(k, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Text(k, fontSize = 20.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onCancel, modifier = Modifier.tap(onClick = onCancel)) { Text("Cancel") }
+            PillButton("Cancel", onClick = onCancel)
         }
     }
 }
@@ -193,20 +195,9 @@ fun TextInputDialog(
         delay(60)
         runCatching { field.requestFocus() }
     }
-    Box(
-        Modifier.fillMaxSize().background(Color(0xB3000000)).tap { },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier
-                .widthIn(max = 560.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Palette.Panel)
-                .padding(28.dp),
-        ) {
-            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
-            Spacer(Modifier.height(4.dp))
-            Text(hint, fontSize = 13.sp, color = Palette.TextDim)
+    DialogCard(width = 480.dp) {
+        run {
+            DialogTitle(title, hint)
             Spacer(Modifier.height(14.dp))
             TvTextField(
                 "", text, { text = if (numeric) it.filter(Char::isDigit).take(5) else it },
@@ -215,8 +206,8 @@ fun TextInputDialog(
             )
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { onSave(text) }, modifier = Modifier.tap { onSave(text) }) { Text("Save") }
-                Button(onClick = onCancel, modifier = Modifier.tap(onClick = onCancel)) { Text("Cancel") }
+                PillButton("Save", primary = true) { onSave(text) }
+                PillButton("Cancel", onClick = onCancel)
             }
             Spacer(Modifier.width(1.dp))
         }

@@ -127,8 +127,8 @@ fun BoxScope.NumberEntry(digits: String, match: ChannelEntity?) {
         Modifier
             .align(Alignment.TopEnd)
             .padding(24.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Palette.Panel)
+            .clip(RoundedCornerShape(12.dp))
+            .background(DialogStyle.Card.copy(alpha = 0.92f))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.End,
     ) {
@@ -152,8 +152,8 @@ fun BoxScope.StatusMessage(status: PlayerStatus, channel: ChannelEntity?, fallba
         color = if (isError) Palette.Error else Palette.Text,
         modifier = Modifier
             .align(Alignment.Center)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xB3000000))
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xCC0E141B))
             .padding(horizontal = 18.dp, vertical = 10.dp),
     )
 }

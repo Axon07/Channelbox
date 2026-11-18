@@ -1147,7 +1147,8 @@ private fun PageHeader(title: String, text: String) {
 private fun ButtonRow(vararg buttons: Pair<String, () -> Unit>) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         buttons.forEach { (label, action) ->
-            androidx.tv.material3.Button(onClick = action, modifier = Modifier.tap(onClick = action)) { Text(label) }
+            // The main action (Save / Add) is filled; the others are quiet.
+            PillButton(label, primary = label == "Save", onClick = action)
         }
     }
 }
