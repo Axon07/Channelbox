@@ -459,10 +459,13 @@ class TvRepository(
             }
         }
 
-        // Something loaded: drop what's left of the old guide. Nothing loaded: keep the old one.
-        if (count > 0) {
-            db.openHelper.writableDatabase.execSQL("DELETE FROM programs WHERE rowId <= ?", arrayOf(oldProgramsUpTo))
-        }
+        // Channels that got new listings had their old ones swapped out above. Channels the new
+        // guide didn't cover (or a download that broke part-way) keep their old listings; only the
+        // old programmes that have already finished are removed.
+        db.openHelper.writableDatabase.execSQL(
+            "DELETE FROM programs WHERE rowId <= ? AND stop < ?",
+            arrayOf(oldProgramsUpTo, keepFrom),
+        )
         val changed = channels.filter { ch -> matcher.assigned[ch.id]?.let { it != ch.epgId } == true }
         if (changed.isNotEmpty()) {
             db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }

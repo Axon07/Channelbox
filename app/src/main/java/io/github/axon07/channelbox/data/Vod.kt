@@ -246,7 +246,15 @@ class VodWriter(private val db: AppDatabase, private val playlistId: String) {
             }
             if (batch.isNotEmpty()) {
                 db.vod().insertAllBlocking(batch)
-                batch.forEach { sql.execSQL("INSERT OR IGNORE INTO vod_keep (playlistId, id) VALUES (?, ?)", arrayOf(playlistId, it.id)) }
+                // One prepared statement for the whole batch (thousands of rows a second on big lists).
+                sql.compileStatement("INSERT OR IGNORE INTO vod_keep (playlistId, id) VALUES (?, ?)").use { st ->
+                    for (item in batch) {
+                        st.clearBindings()
+                        st.bindString(1, playlistId)
+                        st.bindString(2, item.id)
+                        st.executeInsert()
+                    }
+                }
             }
         }
         batch.clear()

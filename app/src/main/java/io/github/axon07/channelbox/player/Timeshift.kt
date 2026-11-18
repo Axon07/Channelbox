@@ -30,6 +30,13 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
     @Volatile var file: File? = null
         private set
 
+    /**
+     * True when [file] is a local HLS playlist (channels whose sound is a separate stream):
+     * the video and audio segments are saved side by side instead of into one file.
+     */
+    @Volatile var isPlaylist = false
+        private set
+
     /** True while the stream is still being written to [file]. */
     @Volatile var writing = false
         private set
@@ -49,11 +56,37 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
     fun start(spec: StreamSpec, scope: CoroutineScope) {
         stop()
         dir.mkdirs()
-        dir.listFiles()?.forEach { it.delete() }
+        dir.listFiles()?.forEach { it.deleteRecursively() }
         startedAt = System.currentTimeMillis()
         writing = true
         lastError = null
+        isPlaylist = false
         job = scope.launch(Dispatchers.IO) {
+            // Separate audio: buffer both playlists, or the paused picture would have no sound.
+            val split = runCatching { recorder.splitAudio(spec) }.getOrNull()
+            if (split != null) {
+                val folder = File(dir, "hls")
+                try {
+                    val hls = recorder.folderRecorder(folder, spec, split) { _, index ->
+                        if (file == null) {
+                            isPlaylist = true
+                            file = File(index)
+                        }
+                    }
+                    hls.run {
+                        System.currentTimeMillis() - startedAt < MAX_MS && hls.bytesWritten < MAX_BYTES &&
+                            dir.usableSpace > MIN_FREE_BYTES
+                    }
+                    runCatching { hls.writePlaylists(done = true) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    lastError = e.message ?: e.javaClass.simpleName
+                } finally {
+                    writing = false
+                }
+                return@launch
+            }
             var out: OutputStream? = null
             var size = 0L
             val target = object : Recorder.CaptureTarget {
@@ -95,8 +128,15 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
         job?.cancel()
         job = null
         writing = false
-        file?.delete()
         file = null
+        isPlaylist = false
+        dir.listFiles()?.forEach { it.deleteRecursively() }
+    }
+
+    /** Enough has been buffered to start playing it. */
+    fun hasEnough(): Boolean {
+        val f = file ?: return false
+        return if (isPlaylist) f.exists() else f.length() >= 64 * 1024
     }
 
     companion object {

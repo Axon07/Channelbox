@@ -199,6 +199,15 @@ class TvPlayer(
         _status.value = PlayerStatus.Buffering
     }
 
+    /**
+     * Pause-live-TV buffer saved as a local HLS playlist (channels with separate audio): plays it
+     * from the start; the player re-reads the playlist as new segments are added.
+     */
+    fun playTimeshiftPlaylist(index: File) {
+        open(StreamSpec(Uri.fromFile(index).toString(), emptyMap(), null, StreamSpecs.MIME_HLS), onDemand = true)
+        exo.seekTo(0L)
+    }
+
     /** Recorded file. */
     fun playFile(path: String) =
         open(StreamSpec(Uri.fromFile(File(path)).toString(), emptyMap(), null, null), onDemand = true)

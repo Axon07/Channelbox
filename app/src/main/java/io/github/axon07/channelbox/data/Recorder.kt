@@ -113,16 +113,9 @@ class Recorder(
             return@withContext
         }
         // HLS whose audio is a separate playlist: save both, or the recording has no sound.
-        if (spec.mime == StreamSpecs.MIME_HLS || spec.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) {
-            val text = runCatching { fetchText(spec, spec.url) }.getOrNull()
-            if (text != null && Hls.isMaster(text)) {
-                val variant = Hls.variants(text, spec.url).maxByOrNull { it.bandwidth }
-                val audio = variant?.let { Hls.audioRendition(text, spec.url, it) }
-                if (variant != null && audio != null) {
-                    recordHlsFolder(rec, spec, variant, audio.first, audio.second)
-                    return@withContext
-                }
-            }
+        splitAudio(spec)?.let { s ->
+            recordHlsFolder(rec, spec, s.variant, s.audioUrl, s.audioAttrs)
+            return@withContext
         }
 
         val session = Session(rec.copy(status = RecStatus.RECORDING))
@@ -245,6 +238,37 @@ class Recorder(
             )
         )
     }
+
+    /** An HLS channel whose sound comes from a separate audio playlist. */
+    class SplitAudio(val variant: Hls.Variant, val audioUrl: String, val audioAttrs: Map<String, String>)
+
+    /** Returns the video variant and audio playlist if [spec] is HLS with separate audio, else null. */
+    suspend fun splitAudio(spec: StreamSpec): SplitAudio? {
+        val hls = spec.mime == StreamSpecs.MIME_HLS || spec.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+        if (!hls) return null
+        val text = runCatching { fetchText(spec, spec.url) }.getOrNull() ?: return null
+        if (!Hls.isMaster(text)) return null
+        val variant = Hls.variants(text, spec.url).maxByOrNull { it.bandwidth } ?: return null
+        val audio = Hls.audioRendition(text, spec.url, variant) ?: return null
+        return SplitAudio(variant, audio.first, audio.second)
+    }
+
+    /** Saves video + audio playlists of [split] into [folder] (pause live TV uses this too). */
+    internal fun folderRecorder(
+        folder: File,
+        spec: StreamSpec,
+        split: SplitAudio,
+        onProgress: suspend (bytes: Long, indexPath: String) -> Unit,
+    ) = HlsFolderRecorder(
+        folder = folder,
+        variant = split.variant,
+        audioUrl = split.audioUrl,
+        audioAttrs = split.audioAttrs,
+        keepEncrypted = spec.drm != null,
+        fetch = { url -> fetchBytes(spec, url) },
+        decrypt = { data, key, iv, seq -> decrypt(data, key, iv, seq) },
+        onProgress = onProgress,
+    )
 
     /** True if a channel with [spec] can be recorded (everything except Smooth Streaming). */
     fun canRecord(spec: StreamSpec): Boolean = spec.mime != StreamSpecs.MIME_SS

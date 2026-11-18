@@ -1004,18 +1004,19 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 viewModelScope.launch {
                     // The buffer may only just have started: give it a few seconds.
                     var waited = 0
-                    while ((timeshift.file?.length() ?: 0L) < 64 * 1024 && timeshift.writing && waited < 8_000) {
+                    while (!timeshift.hasEnough() && timeshift.writing && waited < 8_000) {
                         delay(250)
                         waited += 250
                     }
                     if (_shift.value?.startedAt != st.startedAt) return@launch // went live meanwhile
                     val f = timeshift.file
-                    if (f == null || f.length() == 0L) {
+                    if (f == null || !f.exists() || f.length() == 0L) {
                         val why = timeshift.lastError
                         showToast(if (why != null) "Couldn't buffer this channel ($why) – back to live" else "Nothing was buffered – back to live")
                         goLive()
                     } else {
-                        player.playTimeshift(f) { timeshift.writing }
+                        if (timeshift.isPlaylist) player.playTimeshiftPlaylist(f)
+                        else player.playTimeshift(f) { timeshift.writing }
                         _shift.value = st.copy(paused = false, onBuffer = true)
                     }
                 }
