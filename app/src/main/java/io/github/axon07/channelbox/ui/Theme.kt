@@ -50,8 +50,15 @@ fun ChannelboxTheme(content: @Composable () -> Unit) {
             onSurface = Palette.Text,
             onBackground = Palette.Text,
         ),
-        content = content,
-    )
+    ) {
+        // Arabic and other right-to-left languages: menus and settings read from the right.
+        val rtl = I18n.language in RTL_LANGUAGES
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalLayoutDirection provides
+                if (rtl) androidx.compose.ui.unit.LayoutDirection.Rtl else androidx.compose.ui.unit.LayoutDirection.Ltr,
+            content = content,
+        )
+    }
 }
 
 /** Clock formatter that follows the box's 12/24-hour setting. */

@@ -123,3 +123,14 @@ fun Text(
     I18n.tr(text), modifier, color, fontSize, fontStyle, fontWeight, fontFamily, letterSpacing,
     textDecoration, textAlign, lineHeight, overflow, softWrap, maxLines, minLines, onTextLayout, style,
 )
+
+/** Languages written right to left. */
+val RTL_LANGUAGES = setOf("ar", "he", "fa", "ur")
+
+/** Lays [content] out left-to-right even in right-to-left languages (guide timeline, player bars). */
+@Composable
+fun LtrBox(content: @Composable () -> Unit) =
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+        content = content,
+    )

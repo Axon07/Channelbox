@@ -1215,33 +1215,36 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         // In picture-in-picture only the video is shown.
         if (!inPip) when (mode) {
             Mode.GUIDE, Mode.GROUPS, Mode.PROGRAM_MENU -> {
-                GuideScreen(
-                    state = guide,
-                    channels = visible,
-                    programs = guidePrograms,
-                    filterLabel = vm.filterTitle(filter, menuSections),
-                    guideStart = guideStart,
-                    now = now,
-                    playingId = current?.id,
-                    favorites = favorites,
-                    recordingKeys = recordingKeys,
-                    canCatchUp = { ch, p -> vm.canCatchUp(ch, p) },
-                    timeFormat = timeFormat,
-                    onTune = { tuneAndWatch(it) },
-                    onProgram = { ch, p -> programPressed(ch, p) },
-                    onMenu = { ch, p -> openProgramMenu(ch, p) },
-                    onGroups = { openGroups() },
-                    onShift = { delta ->
-                        vm.setGuideStart(guideStart + delta)
-                        guide.focusTime = guideStart + delta
-                    },
-                    onNow = {
-                        val t = System.currentTimeMillis()
-                        vm.setGuideStart(t)
-                        guide.focusTime = t
-                    },
-                    onClose = { mode = Mode.PLAYER },
-                )
+                // Timelines and remote directions stay left-to-right in every language.
+                LtrBox {
+                    GuideScreen(
+                        state = guide,
+                        channels = visible,
+                        programs = guidePrograms,
+                        filterLabel = vm.filterTitle(filter, menuSections),
+                        guideStart = guideStart,
+                        now = now,
+                        playingId = current?.id,
+                        favorites = favorites,
+                        recordingKeys = recordingKeys,
+                        canCatchUp = { ch, p -> vm.canCatchUp(ch, p) },
+                        timeFormat = timeFormat,
+                        onTune = { tuneAndWatch(it) },
+                        onProgram = { ch, p -> programPressed(ch, p) },
+                        onMenu = { ch, p -> openProgramMenu(ch, p) },
+                        onGroups = { openGroups() },
+                        onShift = { delta ->
+                            vm.setGuideStart(guideStart + delta)
+                            guide.focusTime = guideStart + delta
+                        },
+                        onNow = {
+                            val t = System.currentTimeMillis()
+                            vm.setGuideStart(t)
+                            guide.focusTime = t
+                        },
+                        onClose = { mode = Mode.PLAYER },
+                    )
+                }
                 // The TV guide is still loading behind the scenes.
                 (refreshState as? RefreshState.Running)?.takeIf { it.background }?.let { r ->
                     Box(Modifier.fillMaxSize().padding(top = 10.dp, end = 16.dp), contentAlignment = Alignment.TopEnd) {
@@ -1339,28 +1342,31 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.PLAYBACK -> {
                 (playerStatus as? PlayerStatus.Error)?.let { StatusMessage(it, null, it.message) }
-                PlaybackControls(
-                    ui = PlaybackUi(
-                        title = playbackTitle,
-                        subtitle = pbSubtitle,
-                        position = pbPosition,
-                        duration = pbDuration,
-                        buffered = pbBuffered,
-                        playing = pbPlaying,
-                        buffering = pbBuffering,
-                        ended = pbEnded,
-                        skipped = pbSkipped,
-                    ),
-                    visible = playbackOverlay,
-                    onToggle = { togglePause() },
-                    onSeek = { seekBy(it) },
-                    onSeekTo = { seekTo(it) },
-                    onOptions = { openOptions() },
-                    onClose = { leavePlayback() },
-                    onCaptions = { playbackToken++; toggleCaptions(); captionsTick++ },
-                    captionsOn = remember(captionsTick, playbackToken) { vm.player.captionsOn },
-                    focused = pbFocus,
-                )
+                // Timelines and remote directions stay left-to-right in every language.
+                LtrBox {
+                    PlaybackControls(
+                        ui = PlaybackUi(
+                            title = playbackTitle,
+                            subtitle = pbSubtitle,
+                            position = pbPosition,
+                            duration = pbDuration,
+                            buffered = pbBuffered,
+                            playing = pbPlaying,
+                            buffering = pbBuffering,
+                            ended = pbEnded,
+                            skipped = pbSkipped,
+                        ),
+                        visible = playbackOverlay,
+                        onToggle = { togglePause() },
+                        onSeek = { seekBy(it) },
+                        onSeekTo = { seekTo(it) },
+                        onOptions = { openOptions() },
+                        onClose = { leavePlayback() },
+                        onCaptions = { playbackToken++; toggleCaptions(); captionsTick++ },
+                        captionsOn = remember(captionsTick, playbackToken) { vm.player.captionsOn },
+                        focused = pbFocus,
+                    )
+                }
             }
             Mode.SEARCH -> GuideSearchScreen(
                 state = guideSearch,
@@ -1507,14 +1513,17 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 )
             }
             Mode.MULTIVIEW -> {
-                MultiViewScreen(
-                    multi,
-                    onTileTap = { i ->
-                        multi.hintToken++
-                        multi.select(i)
-                    },
-                    onTileLongPress = { i -> multiOptions(i) },
-                )
+                // Timelines and remote directions stay left-to-right in every language.
+                LtrBox {
+                    MultiViewScreen(
+                        multi,
+                        onTileTap = { i ->
+                            multi.hintToken++
+                            multi.select(i)
+                        },
+                        onTileLongPress = { i -> multiOptions(i) },
+                    )
+                }
                 if (multiPicking) {
                     ChannelListPanel(
                         channels = visible,
@@ -1566,28 +1575,31 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     )
                 }
                 if (mode == Mode.PLAYER && touchBar && cur != null) {
-                    LiveControls(
-                        channel = cur,
-                        program = nowAndNext(cur.epgId?.let { upcoming[it] }, now).first,
-                        now = now,
-                        timeFormat = timeFormat,
-                        favorite = cur.id in favorites,
-                        recording = cur.id in recordingChannels,
-                        paused = shift?.paused == true,
-                        behindLive = shift != null,
-                        onPause = { touchBarToken++; vm.playPauseLive() },
-                        onLive = { touchBarToken++; vm.goLive() },
-                        onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
-                        onFavorite = { touchBarToken++; vm.toggleFavorite(cur) },
-                        onOptions = { touchBar = false; openOptions() },
-                        onPip = if (io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)) {
-                            { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
-                        } else null,
-                        onMultiView = { touchBar = false; openMultiView() },
-                        onCaptions = { touchBarToken++; toggleCaptions(); captionsTick++ },
-                        captionsOn = remember(captionsTick, touchBarToken) { vm.player.captionsOn },
-                        focused = liveFocus,
-                    )
+                    // Timelines and remote directions stay left-to-right in every language.
+                    LtrBox {
+                        LiveControls(
+                            channel = cur,
+                            program = nowAndNext(cur.epgId?.let { upcoming[it] }, now).first,
+                            now = now,
+                            timeFormat = timeFormat,
+                            favorite = cur.id in favorites,
+                            recording = cur.id in recordingChannels,
+                            paused = shift?.paused == true,
+                            behindLive = shift != null,
+                            onPause = { touchBarToken++; vm.playPauseLive() },
+                            onLive = { touchBarToken++; vm.goLive() },
+                            onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
+                            onFavorite = { touchBarToken++; vm.toggleFavorite(cur) },
+                            onOptions = { touchBar = false; openOptions() },
+                            onPip = if (io.github.axon07.channelbox.system.SetTopBox.supportsPip(LocalContext.current)) {
+                                { touchBar = false; activity?.let { io.github.axon07.channelbox.system.SetTopBox.enterPip(it) } }
+                            } else null,
+                            onMultiView = { touchBar = false; openMultiView() },
+                            onCaptions = { touchBarToken++; toggleCaptions(); captionsTick++ },
+                            captionsOn = remember(captionsTick, touchBarToken) { vm.player.captionsOn },
+                            focused = liveFocus,
+                        )
+                    }
                 }
                 if (mode == Mode.CHANNEL_LIST) {
                     ChannelListPanel(
