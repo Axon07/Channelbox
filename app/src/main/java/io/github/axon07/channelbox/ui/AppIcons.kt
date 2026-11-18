@@ -67,6 +67,8 @@ object AppIcons {
     val Search = icon("search", stroke("M10.5,4A6.5,6.5 0 1,1 10.49,4Z M15.5,15.5L20,20"))
     val Phone = icon("phone", stroke("M8,3H16V21H8Z M11,18H13"))
     val Film = icon("film", stroke("M4,5H20V19H4Z M8,5V19 M16,5V19 M4,9.5H8 M4,14.5H8 M16,9.5H20 M16,14.5H20"))
+    /** Catch-up: a clock with an arrow going back. */
+    val History = icon("history", stroke("M4.6,13A7.5,7.5 0 1,0 6.7,6.7"), stroke("M3.8,4.6V8.6H7.8"), stroke("M12,8V12.3L14.8,14"))
     val Tv = icon("tv", stroke("M3,6H21V17H3Z M8,21H16 M12,17V21"))
     val Star = star(true)
     val StarOutline = star(false)

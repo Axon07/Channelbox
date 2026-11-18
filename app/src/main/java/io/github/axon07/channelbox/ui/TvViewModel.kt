@@ -27,6 +27,7 @@ import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR
 import io.github.axon07.channelbox.player.PlayerOptions
 import io.github.axon07.channelbox.player.TvPlayer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -106,6 +107,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             PlayerOptions(
                 softwareAudio = it.preferSoftwareAudio,
                 softwareVideo = it.softwareVideo,
+                dolbyVision = it.dolbyVision,
                 buffer = it.bufferSize,
                 passthrough = it.audioPassthrough,
             )
@@ -825,6 +827,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         c.settings.setSoftwareVideo(on)
         showToast("Takes effect the next time Channelbox starts")
     }
+    fun setDolbyVision(mode: String) = viewModelScope.launch {
+        c.settings.setDolbyVision(mode)
+        showToast("Takes effect the next time Channelbox starts")
+    }
     fun setBufferSize(size: String) = viewModelScope.launch {
         c.settings.setBufferSize(size)
         showToast("Takes effect the next time Channelbox starts")
@@ -1088,6 +1094,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val startedAt: Long,
         /** Playing from the buffer (after the first resume). */
         val onBuffer: Boolean,
+        /**
+         * Rewound through the provider's archive (catch-up): the wall-clock time the archive
+         * stream playing starts at, and where it ends. Null = the pause buffer on this box.
+         */
+        val archiveFrom: Long? = null,
+        val archiveTo: Long = 0,
     )
 
     private val timeshift = Timeshift(java.io.File(app.cacheDir, "timeshift"), c.recorder)
@@ -1099,6 +1111,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val ch = _current.value ?: return
         val st = _shift.value
         when {
+            st != null && st.archiveFrom != null -> {
+                if (st.paused) player.exo.play() else player.exo.pause()
+                _shift.value = st.copy(paused = !st.paused)
+            }
             st == null -> {
                 player.hold()
                 val spec = StreamSpecs.from(ch)
@@ -1111,6 +1127,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 player.exo.pause()
                 _shift.value = st.copy(paused = true)
             }
+            !st.buffered && canRewind(ch) -> openArchive(ch, st.startedAt, paused = false) // via catch-up
             !st.buffered -> {
                 showToast("This channel can't be paused – back to live")
                 goLive()
@@ -1154,26 +1171,125 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     /** How far behind live the picture is. */
     fun behindLiveMs(): Long {
-        val st = _shift.value ?: return 0
-        val since = System.currentTimeMillis() - st.startedAt
-        return if (st.onBuffer) (since - player.exo.currentPosition).coerceAtLeast(0) else since
+        val now = System.currentTimeMillis()
+        val st = _shift.value
+        val raw = when {
+            st == null -> 0L
+            st.archiveFrom != null -> now - (st.archiveFrom + player.exo.currentPosition)
+            st.onBuffer -> (now - st.startedAt - player.exo.currentPosition)
+            else -> now - st.startedAt
+        }.coerceAtLeast(0)
+        // While ◀◀ / ▶▶ presses are adding up, show where they'll land.
+        return (raw + rewindPending).coerceAtLeast(0)
     }
 
     private fun endShift() {
+        rewindJob?.cancel()
+        rewindPending = 0
+        _rewinding.value = false
         if (_shift.value == null && !timeshift.active) return
         timeshift.stop()
         _shift.value = null
     }
 
-    /** Reaching the end of a buffer that's no longer growing (2-hour limit, stream lost) rejoins live. */
-    private fun watchShift() = viewModelScope.launch {
-        while (_shift.value != null) {
-            delay(1_000)
-            val st = _shift.value ?: break
-            if (st.onBuffer && !st.paused && player.exo.playbackState == androidx.media3.common.Player.STATE_ENDED) {
-                goLive()
+    private var shiftWatcher: Job? = null
+
+    /**
+     * Reaching the end of a buffer that's no longer growing (2-hour limit, stream lost) rejoins live.
+     * In the provider's archive, the next part is opened until it has caught up with live.
+     */
+    private fun watchShift() {
+        shiftWatcher?.cancel()
+        shiftWatcher = viewModelScope.launch {
+            while (_shift.value != null) {
+                delay(1_000)
+                val st = _shift.value ?: break
+                if (st.onBuffer && !st.paused && player.exo.playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                    val ch = _current.value
+                    if (st.archiveFrom != null && ch != null && System.currentTimeMillis() - st.archiveTo > 90_000) {
+                        openArchive(ch, st.archiveTo, paused = false)
+                    } else {
+                        goLive()
+                    }
+                }
             }
         }
+    }
+
+    // ---- Rewinding live TV through the provider's archive (catch-up) ------------------------
+
+    /** True when [channel] (default: the one playing) can be rewound – the provider keeps an archive. */
+    fun canRewind(channel: ChannelEntity? = _current.value): Boolean =
+        channel != null && Catchup.isAvailable(channel.catchupType, channel.catchupSource, channel.catchupDays)
+
+    private var rewindPending = 0L
+    private var rewindJob: Job? = null
+    private val _rewinding = MutableStateFlow(false)
+
+    /** True while ◀◀ / ▶▶ presses are adding up (before the archive opens). */
+    val rewinding: StateFlow<Boolean> = _rewinding.asStateFlow()
+
+    /**
+     * ◀◀ / ▶▶ on live TV: moves [deltaMs] through the provider's archive (negative = back).
+     * Quick presses (or holding the key) add up, and the archive opens once they stop.
+     */
+    fun skipLive(deltaMs: Long) {
+        val ch = _current.value ?: return
+        if (!canRewind(ch)) {
+            if (deltaMs < 0) showToast("This channel can't be rewound – it has no catch-up")
+            return
+        }
+        if (deltaMs > 0 && _shift.value == null) return // already live
+        rewindPending -= deltaMs
+        _rewinding.value = true
+        rewindJob?.cancel()
+        rewindJob = viewModelScope.launch {
+            delay(700)
+            val behind = behindLiveMs().coerceAtMost(ch.catchupDays * 24 * HOUR - 5 * 60_000L)
+            rewindPending = 0
+            _rewinding.value = false
+            playBehindLive(ch, behind)
+        }
+        showBanner()
+    }
+
+    private fun playBehindLive(ch: ChannelEntity, behind: Long) {
+        if (behind < 20_000) {
+            goLive()
+            return
+        }
+        val st = _shift.value
+        val from = System.currentTimeMillis() - behind
+        val start = st?.archiveFrom
+        if (st != null && start != null && from >= start && from < st.archiveTo - 5_000) {
+            player.exo.seekTo(from - start) // inside the part already open: just seek
+            return
+        }
+        openArchive(ch, from, paused = st?.paused == true)
+    }
+
+    /** Plays the channel from the provider's archive, starting at wall-clock time [from]. */
+    private fun openArchive(ch: ChannelEntity, from: Long, paused: Boolean) {
+        // Archive links are per minute on most providers (Xtream): open at the minute, then seek.
+        val start = from - from % 60_000
+        val end = maxOf(System.currentTimeMillis(), start + 60_000)
+        val live = StreamSpecs.from(ch)
+        val url = Catchup.buildUrl(ch.streamUrl, ch.catchupType, ch.catchupSource, start, end)
+        if (url == null) {
+            showToast("Catch-up isn't available for this channel")
+            goLive()
+            return
+        }
+        if (timeshift.active) timeshift.stop()
+        val archive = StreamSpecs.parse(url, live.headers, ch.drmType, ch.drmKey, null)
+        player.playOnDemand(StreamSpec(archive.url, archive.headers, archive.drm, archive.mime), startAt = from - start)
+        if (paused) player.exo.pause()
+        _shift.value = LiveShift(
+            paused = paused, buffered = true, startedAt = from, onBuffer = true,
+            archiveFrom = start, archiveTo = end,
+        )
+        watchShift()
+        showBanner()
     }
 
     // ---- Playback -------------------------------------------------------------------------

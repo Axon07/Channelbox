@@ -224,6 +224,10 @@ fun ChannelListPanel(
                                 ch.name, fontSize = 14.sp, color = Palette.Text, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
+                            if (io.github.axon07.channelbox.data.Catchup.isAvailable(ch.catchupType, ch.catchupSource, ch.catchupDays)) {
+                                Spacer(Modifier.width(5.dp))
+                                AppIcon(AppIcons.History, tint = Palette.TextDim, size = 13.dp)
+                            }
                             if (ch.id in LocalRecordingChannels.current) {
                                 Spacer(Modifier.width(5.dp))
                                 Box(Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
@@ -311,7 +315,7 @@ fun BoxScope.TimeshiftBadge(shift: TvViewModel.LiveShift, vm: TvViewModel) {
     LaunchedEffect(shift) {
         while (true) {
             behind = vm.behindLiveMs()
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(250)
         }
     }
     Row(

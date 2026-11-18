@@ -423,6 +423,33 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (
         value = if (settings.softwareVideo) "Software" else "Hardware",
         onClick = { vm.setSoftwareVideo(!settings.softwareVideo) },
     )
+    val hdrScreen = remember { io.github.axon07.channelbox.system.Hdr.displayLabel(context) }
+    val dvDecoder = remember { io.github.axon07.channelbox.system.Hdr.hasDolbyVisionDecoder() }
+    SettingCard(
+        title = "Dolby Vision",
+        description = "Auto uses Dolby Vision when the TV supports it, otherwise it plays as HDR10. Choose Off if the picture looks purple or green. Applies after restarting",
+        value = when (settings.dolbyVision) {
+            "on" -> "On"
+            "off" -> "Off (HDR10)"
+            else -> "Auto"
+        },
+        onClick = {
+            vm.setDolbyVision(
+                when (settings.dolbyVision) {
+                    "auto" -> "on"
+                    "on" -> "off"
+                    else -> "auto"
+                }
+            )
+        },
+    )
+    SettingCard(
+        title = "HDR on this TV",
+        description = if (dvDecoder) "This box can decode Dolby Vision. HDR needs the hardware video decoder"
+        else "This box has no Dolby Vision decoder. HDR needs the hardware video decoder",
+        value = hdrScreen ?: "Not supported",
+        onClick = {},
+    )
     SettingCard(
         title = "Audio decoder",
         description = "Try software if some channels play without sound. Applies after restarting",

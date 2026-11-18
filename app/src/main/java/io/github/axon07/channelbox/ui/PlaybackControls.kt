@@ -58,11 +58,14 @@ data class PlaybackUi(
 enum class PlaybackSlot { REWIND, PLAY, FORWARD, CAPTIONS, OPTIONS }
 
 /** Buttons on the live TV controls, in remote order. */
-enum class LiveSlot { FAVORITE, RECORD, PAUSE, LIVE, CAPTIONS, MULTIVIEW, PIP, OPTIONS }
+enum class LiveSlot { FAVORITE, RECORD, REWIND, PAUSE, LIVE, CAPTIONS, MULTIVIEW, PIP, OPTIONS }
 
-/** The live buttons actually shown (LIVE only after a pause, PiP only where the box supports it). */
-fun liveSlots(behindLive: Boolean, pip: Boolean): List<LiveSlot> = LiveSlot.entries.filter {
-    (it != LiveSlot.LIVE || behindLive) && (it != LiveSlot.PIP || pip)
+/**
+ * The live buttons actually shown (LIVE only after a pause, PiP only where the box supports it,
+ * rewind only on channels with catch-up).
+ */
+fun liveSlots(behindLive: Boolean, pip: Boolean, rewind: Boolean = false): List<LiveSlot> = LiveSlot.entries.filter {
+    (it != LiveSlot.LIVE || behindLive) && (it != LiveSlot.PIP || pip) && (it != LiveSlot.REWIND || rewind)
 }
 
 @Composable
@@ -285,6 +288,8 @@ fun BoxScope.LiveControls(
     behindLive: Boolean,
     onPause: () -> Unit,
     onLive: () -> Unit,
+    /** ◀◀ through the provider's archive; null when the channel has no catch-up. */
+    onRewind: (() -> Unit)? = null,
     onRecord: () -> Unit,
     onFavorite: () -> Unit,
     onOptions: () -> Unit,
@@ -344,6 +349,7 @@ fun BoxScope.LiveControls(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconTapTint(if (recording) AppIcons.Stop else AppIcons.Record, Palette.Recording, onRecord, size = 24.dp, selected = focused == LiveSlot.RECORD)
+                if (onRewind != null) IconTap(AppIcons.Rewind, size = 26.dp, selected = focused == LiveSlot.REWIND, onClick = onRewind)
                 IconTap(if (paused) AppIcons.Play else AppIcons.Pause, size = 38.dp, selected = focused == LiveSlot.PAUSE, onClick = onPause)
                 if (behindLive) IconTap(AppIcons.Forward, size = 26.dp, badge = "LIVE", selected = focused == LiveSlot.LIVE, onClick = onLive)
                 else Spacer(Modifier.width(38.dp))

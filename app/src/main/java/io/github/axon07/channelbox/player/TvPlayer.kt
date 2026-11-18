@@ -57,6 +57,8 @@ data class PlayerOptions(
     val softwareVideo: Boolean = false,
     val buffer: String = "medium",
     val passthrough: Boolean = true,
+    /** Dolby Vision: "auto" (only when the TV shows it), "on" or "off" (played as HDR10). */
+    val dolbyVision: String = "auto",
 )
 
 /** What's playing right now, for the info banner. */
@@ -136,6 +138,17 @@ class TvPlayer(
         exo.trackSelectionParameters = b.build()
     }
 
+    /**
+     * Whether Dolby Vision video goes to the box's Dolby Vision decoder. When it doesn't, Media3
+     * falls back to the HEVC / AVC base layer, so most Dolby Vision streams still play as HDR10
+     * (or SDR) instead of with the purple / green picture a DV decoder gives on a non-DV TV.
+     */
+    private val dolbyVisionAllowed: Boolean = when (options.dolbyVision) {
+        "on" -> true
+        "off" -> false
+        else -> io.github.axon07.channelbox.system.Hdr.displaySupportsDolbyVision(context)
+    }
+
     // FFmpeg (bundled) decodes AC3 / E-AC3 / DTS / TrueHD audio when the box can't.
     private val renderers = object : DefaultRenderersFactory(context) {
         // Passthrough off: decode everything to PCM, as if the TV had no Dolby / DTS receiver.
@@ -159,8 +172,11 @@ class TvPlayer(
         )
         .setEnableDecoderFallback(true)
         .setMediaCodecSelector { mime, secure, tunneling ->
+            if (mime == MimeTypes.VIDEO_DOLBY_VISION && !dolbyVisionAllowed) return@setMediaCodecSelector emptyList()
             val all = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
-            val software = if (mime.startsWith("video/")) options.softwareVideo else options.softwareAudio
+            // HDR / Dolby Vision only come out of the hardware decoder, so it stays first for Dolby Vision.
+            val software = if (mime.startsWith("video/")) options.softwareVideo && mime != MimeTypes.VIDEO_DOLBY_VISION
+            else options.softwareAudio
             // Software first when chosen; hardware stays as a fallback (protected video has no software decoder).
             if (software) all.sortedBy { !it.softwareOnly } else all
         }
@@ -516,6 +532,7 @@ class TvPlayer(
                 if (f.height > 0) "${f.height}p" else null,
                 f.frameRate.takeIf { it > 0 }?.let { "${Math.round(it)} fps" },
                 codecName(f.sampleMimeType ?: f.codecs),
+                dynamicRange(f),
             ).joinToString(" · ").ifEmpty { null }
         }
         val audio = a?.let { describe(it, 1).substringAfter("Track 1 · ", describe(it, 1)) }
@@ -524,8 +541,23 @@ class TvPlayer(
         return StreamInfo(video, audio, bits)
     }
 
+    /** "Dolby Vision", "HDR10" or "HLG" for HDR video; null for normal (SDR) video. */
+    private fun dynamicRange(f: Format): String? {
+        val dv = f.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION ||
+            f.codecs?.let { c -> listOf("dvh1", "dvhe", "dva1", "dvav", "dav1").any { c.startsWith(it) } } == true
+        val transfer = f.colorInfo?.colorTransfer
+        return when {
+            dv && dolbyVisionAllowed -> "Dolby Vision"
+            dv -> "Dolby Vision as HDR10"
+            transfer == C.COLOR_TRANSFER_ST2084 -> "HDR10"
+            transfer == C.COLOR_TRANSFER_HLG -> "HLG"
+            else -> null
+        }
+    }
+
     private fun codecName(mime: String?): String? = when {
         mime == null -> null
+        mime == MimeTypes.VIDEO_DOLBY_VISION -> "H.265"
         mime.contains("avc") || mime == MimeTypes.VIDEO_H264 -> "H.264"
         mime.contains("hev") || mime.contains("hvc") || mime == MimeTypes.VIDEO_H265 -> "H.265"
         mime.contains("av01") || mime == MimeTypes.VIDEO_AV1 -> "AV1"

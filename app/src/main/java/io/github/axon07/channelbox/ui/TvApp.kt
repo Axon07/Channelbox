@@ -133,6 +133,9 @@ fun TvApp(vm: TvViewModel) {
 /** Ids of channels recording right now, for the red dot in the guide and channel list. */
 val LocalRecordingChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
 
+/** How far one ◀◀ / ▶▶ press moves through live TV on channels with catch-up. */
+const val REWIND_STEP = 30_000L
+
 /** Whether the guide shows channel numbers beside the names. */
 val LocalShowChannelNumbers = androidx.compose.runtime.staticCompositionLocalOf { false }
 
@@ -147,6 +150,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val visible by vm.visibleChannels.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val shift by vm.shift.collectAsStateWithLifecycle()
+    val rewinding by vm.rewinding.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
     val menuSections by vm.menuSections.collectAsStateWithLifecycle()
     val expandedSections by vm.expanded.collectAsStateWithLifecycle()
@@ -678,6 +682,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         when (slot) {
             LiveSlot.FAVORITE -> vm.toggleFavorite(cur)
             LiveSlot.RECORD -> vm.toggleRecordCurrent()
+            LiveSlot.REWIND -> vm.skipLive(-REWIND_STEP)
             LiveSlot.PAUSE -> vm.playPauseLive()
             LiveSlot.LIVE -> { vm.goLive(); liveFocus = LiveSlot.PAUSE }
             LiveSlot.CAPTIONS -> { toggleCaptions(); captionsTick++ }
@@ -689,7 +694,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     /** Moves the live-controls highlight left / right. */
     fun moveLiveFocus(delta: Int) {
-        val slots = liveSlots(shift != null, pipSupported)
+        val slots = liveSlots(shift != null, pipSupported, vm.canRewind(current))
         val i = slots.indexOf(liveFocus).coerceAtLeast(0)
         liveFocus = slots[(i + delta).coerceIn(0, slots.lastIndex)]
         touchBarToken++
@@ -800,7 +805,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> vm.playPauseLive()
                 AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> if (shift?.paused != true) vm.playPauseLive()
                 AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> if (shift?.paused == true) vm.playPauseLive()
-                AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_STOP ->
+                // ◀◀ / ▶▶ rewind live TV through the provider's archive (channels with catch-up).
+                AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> vm.skipLive(-REWIND_STEP)
+                AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD ->
+                    if (shift?.archiveFrom != null) vm.skipLive(REWIND_STEP) else if (shift != null) vm.goLive() else return false
+                AndroidKeyEvent.KEYCODE_MEDIA_STOP ->
                     if (shift != null) vm.goLive() else return false
                 else -> return false
             }
@@ -1577,7 +1586,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 // REC and the pause badge show with the banner / controls, then hide with them.
                 val overlays = bannerVisible || touchBar
                 if (cur != null && cur.id in recordingChannels && overlays) RecIndicator()
-                shift?.let { st -> if (mode == Mode.PLAYER && !touchBar && (overlays || st.paused)) TimeshiftBadge(st, vm) }
+                // Rewinding from live: show where the ◀◀ presses will land before the archive opens.
+                (shift ?: if (rewinding) TvViewModel.LiveShift(paused = false, buffered = true, startedAt = 0, onBuffer = true) else null)
+                    ?.let { st -> if (mode == Mode.PLAYER && (overlays || st.paused || touchBar || rewinding)) TimeshiftBadge(st, vm) }
                 if (mode == Mode.PLAYER && bannerVisible && !touchBar && cur != null) {
                     InfoBanner(
                         cur, cur.id in favorites, cur.epgId?.let { upcoming[it] }, now, timeFormat,
@@ -1600,6 +1611,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             behindLive = shift != null,
                             onPause = { touchBarToken++; vm.playPauseLive() },
                             onLive = { touchBarToken++; vm.goLive() },
+                            onRewind = if (vm.canRewind(cur)) {
+                                { touchBarToken++; vm.skipLive(-REWIND_STEP) }
+                            } else null,
                             onRecord = { touchBarToken++; vm.toggleRecordCurrent() },
                             onFavorite = { touchBarToken++; vm.toggleFavorite(cur) },
                             onOptions = { touchBar = false; openOptions() },

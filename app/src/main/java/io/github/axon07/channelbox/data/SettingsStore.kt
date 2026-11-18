@@ -139,6 +139,8 @@ data class AppSettings(
     val preferSoftwareAudio: Boolean = false,
     /** Decode video in software instead of the box's hardware decoder. */
     val softwareVideo: Boolean = false,
+    /** Dolby Vision: "auto" (when the TV shows it), "on" or "off" (play as HDR10). */
+    val dolbyVision: String = "auto",
     /** Playback buffer: none, small, medium, large, xlarge. */
     val bufferSize: String = "medium",
     /** Send Dolby / DTS audio untouched to a receiver or soundbar that supports it. */
@@ -206,6 +208,7 @@ class SettingsStore(private val context: Context) {
         val AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
         val SOFTWARE_AUDIO = booleanPreferencesKey("prefer_software_audio")
         val SOFTWARE_VIDEO = booleanPreferencesKey("software_video")
+        val DOLBY_VISION = stringPreferencesKey("dolby_vision")
         val BUFFER_SIZE = stringPreferencesKey("buffer_size")
         val PASSTHROUGH = booleanPreferencesKey("audio_passthrough")
         val AFR = booleanPreferencesKey("auto_frame_rate")
@@ -281,6 +284,7 @@ class SettingsStore(private val context: Context) {
         autoUpdateCheck = this[Keys.AUTO_UPDATE] ?: true,
         preferSoftwareAudio = this[Keys.SOFTWARE_AUDIO] ?: false,
         softwareVideo = this[Keys.SOFTWARE_VIDEO] ?: false,
+        dolbyVision = this[Keys.DOLBY_VISION] ?: "auto",
         bufferSize = this[Keys.BUFFER_SIZE] ?: "medium",
         audioPassthrough = this[Keys.PASSTHROUGH] ?: true,
         autoFrameRate = this[Keys.AFR] ?: false,
@@ -422,6 +426,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }
     suspend fun setPreferSoftwareAudio(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_AUDIO] = on }
     suspend fun setSoftwareVideo(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_VIDEO] = on }
+    suspend fun setDolbyVision(mode: String) = context.dataStore.edit { it[Keys.DOLBY_VISION] = mode }
     suspend fun setBufferSize(size: String) = context.dataStore.edit { it[Keys.BUFFER_SIZE] = size }
     suspend fun setAudioPassthrough(on: Boolean) = context.dataStore.edit { it[Keys.PASSTHROUGH] = on }
     suspend fun setAutoFrameRate(on: Boolean) = context.dataStore.edit { it[Keys.AFR] = on }

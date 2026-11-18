@@ -303,6 +303,10 @@ private fun GuideRow(
                 fontSize = 13.sp, lineHeight = 15.sp, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
+            if (io.github.axon07.channelbox.data.Catchup.isAvailable(channel.catchupType, channel.catchupSource, channel.catchupDays)) {
+                Spacer(Modifier.width(5.dp))
+                AppIcon(AppIcons.History, tint = Palette.TextDim, size = 13.dp)
+            }
             if (channel.id in LocalRecordingChannels.current) {
                 Spacer(Modifier.width(5.dp))
                 Box(Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Recording))
