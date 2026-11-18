@@ -104,6 +104,23 @@ Buffer sizes in detail:
 On live channels the buffer can only fill up to the live point, so a bigger buffer mostly helps with dropouts and
 movies; it doesn't put you further behind live.
 
+## Languages
+
+**Settings → Language** switches the whole app straight away. English is the default.
+
+| | | | |
+|---|---|---|---|
+| English | Français (French) | Español (Spanish) | Português (Portuguese) |
+| Deutsch (German) | Italiano (Italian) | Nederlands (Dutch) | Polski (Polish) |
+| Українська (Ukrainian) | Русский (Russian) | Română (Romanian) | Ελληνικά (Greek) |
+| Magyar (Hungarian) | Türkçe (Turkish) | العربية (Arabic, right-to-left) | हिन्दी (Hindi) |
+| ਪੰਜਾਬੀ (Punjabi) | 中文 (Chinese, Simplified) | 日本語 (Japanese) | Tiếng Việt (Vietnamese) |
+| Filipino | | | |
+
+Translations live in `app/src/main/assets/i18n/<code>.json` (English text → translation). Anything not
+translated shows in English. To add or fix a language, run `python3 tools/i18n_keys.py` for the full list
+of texts, edit the file and open a pull request – corrections from native speakers are very welcome.
+
 ## Remote control
 
 | Button | Watching TV | Channel list | Guide |
