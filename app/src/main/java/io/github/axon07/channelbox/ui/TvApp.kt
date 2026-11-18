@@ -502,7 +502,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Plays a past programme from the provider's archive. */
-    fun watchCatchUp(channel: ChannelEntity, program: ProgramEntity) {
+    fun watchCatchUp(channel: ChannelEntity, program: ProgramEntity) = vm.withChannelAccess(channel) {
         if (vm.playCatchUp(channel, program)) {
             playbackTitle = program.title
             pbSubtitle = "Catch-up · ${channel.name} · " + java.text.DateFormat.getDateTimeInstance(
@@ -530,17 +530,23 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     fun openRecording(r: RecordingEntity) {
         val path = r.filePath
-        if (path != null && File(path).length() > 0) {
-            playbackTitle = r.title
-            pbSubtitle = "Recording · ${r.channelName}"
-            playbackReturn = Mode.RECORDINGS
-            vm.playRecording(r)
-            playbackToken++
-            mode = Mode.PLAYBACK
+        // Network recordings (smb://, WebDAV) aren't local files: they're playable once they have a path.
+        val playable = path != null && (!path.startsWith("/") || File(path).length() > 0)
+        if (playable) scope.launch {
+            vm.withChannelAccess(vm.channelOf(r)) { playRecordingNow(r) }
         } else {
             menuRecording = r
             mode = Mode.RECORDING_MENU
         }
+    }
+
+    fun playRecordingNow(r: RecordingEntity) {
+        playbackTitle = r.title
+        pbSubtitle = "Recording · ${r.channelName}"
+        playbackReturn = Mode.RECORDINGS
+        vm.playRecording(r)
+        playbackToken++
+        mode = Mode.PLAYBACK
     }
 
     fun leavePlayback() {
@@ -688,7 +694,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.RECORDINGS -> recordings.getOrNull(recIndex)?.let { openRecording(it) }
             Mode.PLAYBACK -> pbFocus?.let { pressPlaybackSlot(it) } ?: togglePause()
             Mode.MULTIVIEW -> if (multiPicking) {
-                visible.getOrNull(multiPickIndex)?.let { multi.assign(vm, multi.pickTarget, it) }
+                visible.getOrNull(multiPickIndex)?.let { ch -> vm.withChannelAccess(ch) { multi.assign(vm, multi.pickTarget, ch) } }
                 multiPicking = false
             } else {
                 pickForTile(multi.focused)
@@ -1501,7 +1507,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         upcoming = upcoming,
                         now = now,
                         onSelect = { i ->
-                            visible.getOrNull(i)?.let { multi.assign(vm, multi.pickTarget, it) }
+                            visible.getOrNull(i)?.let { ch -> vm.withChannelAccess(ch) { multi.assign(vm, multi.pickTarget, ch) } }
                             multiPicking = false
                         },
                         onFavorite = { i -> visible.getOrNull(i)?.let { vm.toggleFavorite(it) } },

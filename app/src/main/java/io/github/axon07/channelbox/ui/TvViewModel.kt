@@ -1062,6 +1062,22 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Playback -------------------------------------------------------------------------
 
+    /**
+     * Runs [action] straight away, or after the PIN if [channel] is locked – for everything that
+     * shows a channel other than tuning it (multi-view tiles, catch-up, recordings).
+     */
+    fun withChannelAccess(channel: ChannelEntity?, action: () -> Unit) {
+        if (channel != null && isLocked(channel) && !unlocked) {
+            requirePin("Enter your PIN to watch ${channel.name}", forChannel = true, action = action)
+        } else {
+            action()
+        }
+    }
+
+    /** The channel a recording came from, if it's still in the lineup. */
+    suspend fun channelOf(recording: RecordingEntity): ChannelEntity? =
+        repo.allChannels().firstOrNull { it.id == recording.channelId }
+
     fun tune(channel: ChannelEntity) {
         if (isLocked(channel) && !unlocked) {
             requirePin("Enter your PIN to watch ${channel.name}", forChannel = true) { tune(channel) }
@@ -1127,6 +1143,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onForeground() {
+        // Live TV paused (not yet playing the buffer): stay paused – restarting the live stream here
+        // would play live behind the pause and use a second connection.
+        val st = _shift.value
+        if (st != null && !st.onBuffer) return
         if (!(libraryOpen && player.isLive)) player.resume()
     }
     fun onBackground() = player.stop()
