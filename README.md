@@ -68,7 +68,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press ◀ while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
-| **Set-top box mode** | Optional start on boot, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → side menu → "Press Back again to exit"; the last step can also be set to never exit, or exit straight away |
+| **Set-top box mode** | Optional start on boot and on wake from sleep, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → side menu → "Press Back again to exit"; the last step can also be set to never exit, or exit straight away |
 | **Touch & mouse** | Tap the picture for the controls (record, pause, live, favourite, CC, multi-view, mini player, ⋯); swipe up/down to change channel; tap anything in the list or guide |
 | **Background refresh** | Playlist and guide reload every 6/12/24/48 hours, or only when you choose |
 
@@ -157,9 +157,9 @@ tag, builds the signed APK and attaches it; installed apps will offer the update
 
 ## Making it act like a cable box
 
-1. **Settings → Start when the box turns on** (off by default).
-   Also consider **Settings → Back button while watching TV → Open the guide (never exit)** so nobody exits by accident.
-2. On Android 10 and newer, Android only lets an app open itself after boot if it has the *Display over other apps* permission. Use **Settings → Permission for start on boot**. Some TV firmware hides that screen; grant it over adb instead:
+1. **Settings → Start-up → Start when the box turns on** and/or **Start when the box wakes up** (both off by default).
+   Also consider **Settings → Start-up → Back button → Never exit (set-top box)** so nobody exits by accident.
+2. On Android 10 and newer, Android only lets an app open itself if it has the *Display over other apps* permission. Use **Settings → Start-up → Permission to start by itself**. Some TV firmware hides that screen; grant it over adb instead:
    ```bash
    adb shell appops set io.github.axon07.channelbox SYSTEM_ALERT_WINDOW allow
    ```

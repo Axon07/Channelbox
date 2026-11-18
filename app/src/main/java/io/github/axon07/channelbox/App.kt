@@ -33,10 +33,25 @@ class App : Application(), ImageLoaderFactory {
         val network = runBlocking { settings.current().network }
         UserAgent.apply(network.userAgent)
         container = AppContainer(this, settings, network)
-        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scope.launch {
             RefreshWorker.schedule(this@App, container.settings.current().refreshHours)
             container.recorder.tidyUp()
         }
+        // "Start when the box wakes up": the screen-on broadcast only reaches running apps, so it's
+        // listened for here (the app is kept around in the background on most boxes).
+        val wake = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+                scope.launch {
+                    if (container.settings.current().startOnWake) {
+                        io.github.axon07.channelbox.system.SetTopBox.bringToFront(this@App, listOf(1_500L, 2_500L, 4_000L))
+                    }
+                }
+            }
+        }
+        val filter = android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON)
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(wake, filter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(wake, filter)
     }
 
     /**

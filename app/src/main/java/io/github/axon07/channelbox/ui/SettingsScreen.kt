@@ -553,7 +553,15 @@ private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -
     var resumeTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumeTick++ }
     val isHome = remember(resumeTick) { SetTopBox.isHomeScreen(context) }
-    val canAutoStart = remember(resumeTick) { SetTopBox.canStartFromBackground(context) }
+    var canAutoStart by remember { mutableStateOf(SetTopBox.canStartFromBackground(context)) }
+    // Re-check on return, and again shortly after: some boxes report the change a moment late.
+    LaunchedEffect(resumeTick) {
+        repeat(5) {
+            canAutoStart = SetTopBox.canStartFromBackground(context)
+            if (canAutoStart) return@LaunchedEffect
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
 
     SettingCard(
         title = "Start when the box turns on",
@@ -561,10 +569,17 @@ private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -
         toggle = settings.startOnBoot,
         onClick = { vm.setStartOnBoot(!settings.startOnBoot) },
     )
+    SettingCard(
+        title = "Start when the box wakes up",
+        description = "Go back to live TV when the box comes out of sleep",
+        toggle = settings.startOnWake,
+        onClick = { vm.setStartOnWake(!settings.startOnWake) },
+    )
     if (SetTopBox.needsOverlayPermission()) {
         SettingCard(
-            title = "Permission to start on boot",
-            description = if (canAutoStart) "Granted" else "Android needs \"Display over other apps\" allowed for this",
+            title = "Permission to start by itself",
+            description = if (canAutoStart) "Allowed – Channelbox can open on power-on and wake"
+            else "Needed for both options above: allow \"Display over other apps\"",
             value = if (canAutoStart) "Granted" else "Allow",
             onClick = {
                 if (!SetTopBox.openOverlaySettings(context)) {

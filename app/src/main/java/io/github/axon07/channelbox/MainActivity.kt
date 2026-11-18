@@ -40,13 +40,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        onScreen = true
         vm.onForeground()
         vm.resumePendingUpdate()
     }
 
     override fun onStop() {
         // Stop the stream when the user leaves (Home, screensaver) so it doesn't keep downloading.
+        onScreen = false
         vm.onBackground()
         super.onStop()
+    }
+
+    companion object {
+        /** True while Channelbox is on screen (so boot / wake don't start it twice). */
+        @Volatile
+        var onScreen = false
     }
 }

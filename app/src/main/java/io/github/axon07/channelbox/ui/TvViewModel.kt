@@ -1196,6 +1196,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }
+    fun setStartOnWake(on: Boolean) = viewModelScope.launch { c.settings.setStartOnWake(on) }
     fun setInvertChannelKeys(on: Boolean) = viewModelScope.launch { c.settings.setInvertChannelKeys(on) }
     fun setCaptionsByDefault(on: Boolean) = viewModelScope.launch { c.settings.setCaptionsByDefault(on) }
     fun setBackAction(action: BackAction) = viewModelScope.launch { c.settings.setBackAction(action) }

@@ -35,8 +35,44 @@ object SetTopBox {
     /** Android 10+ blocks opening an app from the background unless it may draw over other apps. */
     fun needsOverlayPermission(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
-    fun canStartFromBackground(context: Context): Boolean =
-        !needsOverlayPermission() || Settings.canDrawOverlays(context)
+    /**
+     * Settings.canDrawOverlays() can keep saying "no" for a while after the permission is turned on
+     * (a known Android bug), so the app-ops record is checked as well.
+     */
+    fun canStartFromBackground(context: Context): Boolean {
+        if (!needsOverlayPermission() || Settings.canDrawOverlays(context)) return true
+        return try {
+            val ops = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            @Suppress("DEPRECATION")
+            val mode = ops.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                android.os.Process.myUid(),
+                context.packageName,
+            )
+            mode == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Brings live TV to the front after boot or wake. The TV's own launcher often starts at the same
+     * time and covers us, so it tries a few times until Channelbox is actually on screen.
+     */
+    suspend fun bringToFront(context: Context, delays: List<Long>) {
+        for (wait in delays) {
+            kotlinx.coroutines.delay(wait)
+            if (io.github.axon07.channelbox.MainActivity.onScreen) return
+            try {
+                context.startActivity(
+                    Intent(context, io.github.axon07.channelbox.MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                )
+            } catch (_: Exception) {
+                // Blocked (no "Display over other apps" permission): try again, it may be granted later.
+            }
+        }
+    }
 
     /** Opens the system screen to grant the permission. Returns false if the TV firmware hides it. */
     fun openOverlaySettings(context: Context): Boolean = try {

@@ -125,6 +125,8 @@ data class AppSettings(
     /** Every TV service, in lineup order. Enabled ones are merged into one channel list. */
     val playlists: List<Playlist> = emptyList(),
     val startOnBoot: Boolean = false,
+    /** Open live TV when the box wakes from sleep. */
+    val startOnWake: Boolean = false,
     val invertChannelKeys: Boolean = false,
     /** Turn subtitles / closed captions on when a channel or video starts (off unless chosen). */
     val captionsByDefault: Boolean = false,
@@ -175,6 +177,7 @@ class SettingsStore(private val context: Context) {
         val XT_USER = stringPreferencesKey("xt_user")
         val XT_PASS = stringPreferencesKey("xt_pass")
         val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
+        val START_ON_WAKE = booleanPreferencesKey("start_on_wake")
         val INVERT_KEYS = booleanPreferencesKey("invert_channel_keys")
         val CAPTIONS_DEFAULT = booleanPreferencesKey("captions_by_default")
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
@@ -240,6 +243,7 @@ class SettingsStore(private val context: Context) {
     private fun Preferences.toSettings() = AppSettings(
         playlists = playlists(),
         startOnBoot = this[Keys.START_ON_BOOT] ?: false,
+        startOnWake = this[Keys.START_ON_WAKE] ?: false,
         invertChannelKeys = this[Keys.INVERT_KEYS] ?: false,
         captionsByDefault = this[Keys.CAPTIONS_DEFAULT] ?: false,
         refreshHours = this[Keys.REFRESH_HOURS] ?: 12,
@@ -319,6 +323,7 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun setStartOnBoot(on: Boolean) = context.dataStore.edit { it[Keys.START_ON_BOOT] = on }
+    suspend fun setStartOnWake(on: Boolean) = context.dataStore.edit { it[Keys.START_ON_WAKE] = on }
     suspend fun setInvertChannelKeys(on: Boolean) = context.dataStore.edit { it[Keys.INVERT_KEYS] = on }
     suspend fun setCaptionsByDefault(on: Boolean) = context.dataStore.edit { it[Keys.CAPTIONS_DEFAULT] = on }
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
