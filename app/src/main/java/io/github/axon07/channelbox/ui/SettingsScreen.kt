@@ -354,6 +354,12 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (
         )
     }
     SettingCard(
+        title = "Captions on by default",
+        description = "Turn on subtitles or closed captions when a channel or video starts. CC switches them any time",
+        toggle = settings.captionsByDefault,
+        onClick = { vm.setCaptionsByDefault(!settings.captionsByDefault) },
+    )
+    SettingCard(
         title = "Reverse channel up / down",
         description = "Swap which way ▲ and ▼ change the channel",
         toggle = settings.invertChannelKeys,

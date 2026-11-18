@@ -103,6 +103,28 @@ class TvPlayer(
     /** Login for playing recordings saved on an SMB share. */
     var storageSettings: () -> StorageSettings = { StorageSettings() }
 
+    /** Settings → captions on by default. */
+    var captionsByDefault: () -> Boolean = { false }
+
+    /** Captions turned on / off with CC or the menu this session; carries over to the next channel. */
+    private var captionsWanted: Boolean? = null
+
+    /**
+     * Captions start off unless asked for. Without this the player picks up the box's accessibility
+     * caption setting and streams that flag a subtitle track as default, so CC came on by itself.
+     */
+    private fun applyCaptionDefault() {
+        val on = captionsWanted ?: captionsByDefault()
+        val b = exo.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !on)
+        if (on) {
+            b.setPreferredTextLanguage(java.util.Locale.getDefault().language)
+                .setSelectUndeterminedTextLanguage(true)
+        }
+        exo.trackSelectionParameters = b.build()
+    }
+
     // FFmpeg (bundled) decodes AC3 / E-AC3 / DTS / TrueHD audio when the box can't.
     private val renderers = DefaultRenderersFactory(context)
         .setExtensionRendererMode(
@@ -164,6 +186,7 @@ class TvPlayer(
      */
     fun playTimeshift(file: File, growing: () -> Boolean) {
         handler.removeCallbacksAndMessages(null)
+        applyCaptionDefault()
         onDemand = true
         spec = null
         val source = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(
@@ -182,6 +205,7 @@ class TvPlayer(
 
     private fun open(stream: StreamSpec, onDemand: Boolean) {
         handler.removeCallbacksAndMessages(null)
+        applyCaptionDefault()
         this.onDemand = onDemand
         spec = stream
         val isHttp = stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true)
@@ -462,7 +486,9 @@ class TvPlayer(
             builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
         } else if (group == null) {
             builder.setTrackTypeDisabled(type, true)
+            if (type == C.TRACK_TYPE_TEXT) captionsWanted = false
         } else {
+            if (type == C.TRACK_TYPE_TEXT) captionsWanted = true
             builder.setTrackTypeDisabled(type, false)
                 .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, option.index))
         }

@@ -105,6 +105,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     /** Extra players for multi-view (released when multi-view closes). */
     fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, softwareAudio, handleAudioFocus = false).also {
         it.storageSettings = { settings.value?.storage ?: StorageSettings() }
+        it.captionsByDefault = { settings.value?.captionsByDefault ?: false }
     }
 
     /** True while the app is shrunk to a picture-in-picture window. */
@@ -903,6 +904,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         player.storageSettings = { settings.value?.storage ?: StorageSettings() }
+        player.captionsByDefault = { settings.value?.captionsByDefault ?: false }
         // Settings that apply immediately.
         viewModelScope.launch {
             c.settings.flow.collect { s ->
@@ -1189,6 +1191,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }
     fun setInvertChannelKeys(on: Boolean) = viewModelScope.launch { c.settings.setInvertChannelKeys(on) }
+    fun setCaptionsByDefault(on: Boolean) = viewModelScope.launch { c.settings.setCaptionsByDefault(on) }
     fun setBackAction(action: BackAction) = viewModelScope.launch { c.settings.setBackAction(action) }
 
     fun setRefreshHours(hours: Int) = viewModelScope.launch {
