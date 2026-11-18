@@ -116,7 +116,8 @@ movies; it doesn't put you further behind live.
 | Magyar (Hungarian) | Türkçe (Turkish) | العربية (Arabic, right-to-left) | हिन्दी (Hindi) |
 | ਪੰਜਾਬੀ (Punjabi) | 中文 (Chinese, Simplified) | 日本語 (Japanese) | Tiếng Việt (Vietnamese) |
 | Filipino (Tagalog) | বাংলা (Bengali) | اردو (Urdu, right-to-left) | Bahasa Indonesia (Indonesian) |
-| فارسی (Persian, right-to-left) | 한국어 (Korean) | | |
+| فارسی (Persian, right-to-left) | 한국어 (Korean) | Shqip (Albanian) | Srpski (Serbian) |
+| Hrvatski (Croatian) | Soomaali (Somali) | ไทย (Thai) | |
 
 Translations live in `app/src/main/assets/i18n/<code>.json` (English text → translation). Anything not
 translated shows in English. To add or fix a language, run `python3 tools/i18n_keys.py` for the full list
