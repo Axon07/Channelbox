@@ -581,7 +581,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private var toastId = 0
 
     fun showToast(text: String) {
-        _toast.value = Toast(++toastId, text)
+        _toast.value = Toast(++toastId, tr(text))
     }
 
     fun clearToast(id: Int) {
@@ -1357,6 +1357,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setStartOnWake(on: Boolean) = viewModelScope.launch { c.settings.setStartOnWake(on) }
     fun setInvertChannelKeys(on: Boolean) = viewModelScope.launch { c.settings.setInvertChannelKeys(on) }
     fun setCaptionsByDefault(on: Boolean) = viewModelScope.launch { c.settings.setCaptionsByDefault(on) }
+
+    /** Switches the app's language straight away. */
+    fun setLanguage(code: String) = viewModelScope.launch {
+        c.settings.setLanguage(code)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { I18n.load(getApplication(), code) }
+    }
     fun setBackAction(action: BackAction) = viewModelScope.launch { c.settings.setBackAction(action) }
 
     fun setRefreshHours(hours: Int) = viewModelScope.launch {

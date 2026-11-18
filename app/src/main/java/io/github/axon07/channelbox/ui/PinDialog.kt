@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 
 private const val PIN_LENGTH = 4

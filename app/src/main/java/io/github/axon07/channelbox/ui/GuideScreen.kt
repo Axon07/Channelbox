@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Text
 import io.github.axon07.channelbox.data.ChannelEntity
 import io.github.axon07.channelbox.data.ProgramEntity
 import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR

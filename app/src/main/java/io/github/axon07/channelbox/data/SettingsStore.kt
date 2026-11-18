@@ -130,6 +130,8 @@ data class AppSettings(
     val invertChannelKeys: Boolean = false,
     /** Turn subtitles / closed captions on when a channel or video starts (off unless chosen). */
     val captionsByDefault: Boolean = false,
+    /** App language ("en" = English). */
+    val language: String = "en",
     val refreshHours: Int = 12,
     val backAction: BackAction = BackAction.ASK_EXIT,
     val autoUpdateCheck: Boolean = true,
@@ -190,6 +192,7 @@ class SettingsStore(private val context: Context) {
         val START_ON_WAKE = booleanPreferencesKey("start_on_wake")
         val INVERT_KEYS = booleanPreferencesKey("invert_channel_keys")
         val CAPTIONS_DEFAULT = booleanPreferencesKey("captions_by_default")
+        val LANGUAGE = stringPreferencesKey("language")
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
@@ -265,6 +268,7 @@ class SettingsStore(private val context: Context) {
         startOnWake = this[Keys.START_ON_WAKE] ?: false,
         invertChannelKeys = this[Keys.INVERT_KEYS] ?: false,
         captionsByDefault = this[Keys.CAPTIONS_DEFAULT] ?: false,
+        language = this[Keys.LANGUAGE] ?: "en",
         refreshHours = this[Keys.REFRESH_HOURS] ?: 12,
         backAction = runCatching { BackAction.valueOf(this[Keys.BACK_ACTION] ?: "") }
             .getOrDefault(BackAction.ASK_EXIT),
@@ -356,6 +360,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setStartOnWake(on: Boolean) = context.dataStore.edit { it[Keys.START_ON_WAKE] = on }
     suspend fun setInvertChannelKeys(on: Boolean) = context.dataStore.edit { it[Keys.INVERT_KEYS] = on }
     suspend fun setCaptionsByDefault(on: Boolean) = context.dataStore.edit { it[Keys.CAPTIONS_DEFAULT] = on }
+    suspend fun setLanguage(code: String) = context.dataStore.edit { it[Keys.LANGUAGE] = code }
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
     suspend fun setRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }

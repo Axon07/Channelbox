@@ -52,7 +52,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import io.github.axon07.channelbox.data.VodEntity
 import io.github.axon07.channelbox.data.VodKind

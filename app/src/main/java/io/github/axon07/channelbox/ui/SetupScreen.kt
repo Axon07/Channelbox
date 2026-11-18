@@ -46,7 +46,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
 import androidx.tv.material3.Button
 import androidx.tv.material3.OutlinedButton
-import androidx.tv.material3.Text
 import io.github.axon07.channelbox.data.Playlist
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType

@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 
 /** Shared look for pop-ups: flat dark card, quiet rows, a light pill on the focused item. */
 object DialogStyle {

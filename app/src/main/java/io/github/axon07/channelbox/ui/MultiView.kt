@@ -37,7 +37,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Text
 import io.github.axon07.channelbox.data.ChannelEntity
 import io.github.axon07.channelbox.data.StreamSpecs
 import io.github.axon07.channelbox.player.TvPlayer

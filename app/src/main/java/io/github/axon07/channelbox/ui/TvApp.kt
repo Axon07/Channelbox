@@ -1245,7 +1245,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 // The TV guide is still loading behind the scenes.
                 (refreshState as? RefreshState.Running)?.takeIf { it.background }?.let { r ->
                     Box(Modifier.fillMaxSize().padding(top = 10.dp, end = 16.dp), contentAlignment = Alignment.TopEnd) {
-                        androidx.tv.material3.Text(
+                        Text(
                             r.message, fontSize = 12.sp, color = Color.White,
                             modifier = Modifier
                                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))

@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 
 /** What the guide search shows; kept outside the screen so it survives watching a result. */

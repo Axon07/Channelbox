@@ -34,6 +34,11 @@ class App : Application(), ImageLoaderFactory {
         UserAgent.apply(network.userAgent)
         container = AppContainer(this, settings, network)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // The chosen language, before the first screen draws (English needs nothing).
+        runCatching {
+            val code = kotlinx.coroutines.runBlocking { container.settings.current().language }
+            if (code != "en") io.github.axon07.channelbox.ui.I18n.load(this, code)
+        }
         scope.launch {
             RefreshWorker.schedule(this@App, container.settings.current().refreshHours)
             container.recorder.tidyUp()

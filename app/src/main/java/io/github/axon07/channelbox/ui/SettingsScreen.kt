@@ -59,7 +59,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 import io.github.axon07.channelbox.BuildConfig
 import io.github.axon07.channelbox.data.AppSettings
 import io.github.axon07.channelbox.data.SettingsStore
@@ -84,6 +83,7 @@ private enum class SettingsCategory(val title: String, val blurb: String) {
     NETWORK("Network & VPN", "VPN, proxy and private DNS"),
     RECORDINGS("Recordings", "Where recordings are saved"),
     STARTUP("Start-up & exit", "Make it behave like a cable box"),
+    LANGUAGE("Language", "The language Channelbox uses"),
     PARENTAL("Parental & hidden", "PIN, locked and hidden channels"),
     UPDATES("Updates", "Keep Channelbox up to date"),
     ABOUT("About", "Version and this device"),
@@ -95,6 +95,7 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
     SettingsCategory.NETWORK -> AppIcons.Shield
     SettingsCategory.RECORDINGS -> AppIcons.Record
     SettingsCategory.STARTUP -> AppIcons.Power
+    SettingsCategory.LANGUAGE -> AppIcons.Globe
     SettingsCategory.PARENTAL -> AppIcons.Lock
     SettingsCategory.UPDATES -> AppIcons.Refresh
     SettingsCategory.ABOUT -> AppIcons.Info
@@ -232,6 +233,18 @@ fun SettingsScreen(
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
                         SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { openPage(it) }
                         SettingsCategory.STARTUP -> StartupSettings(settings, vm, onExit) { openPage(it) }
+                        SettingsCategory.LANGUAGE -> {
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            val languages = remember { I18n.available(ctx) }
+                            ChoiceList(
+                                options = languages,
+                                selected = I18n.language,
+                                onSelect = { vm.setLanguage(it) },
+                            )
+                            if (languages.size == 1) {
+                                Text("More languages are on the way.", fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp))
+                            }
+                        }
                         SettingsCategory.PARENTAL -> ParentalSettings(settings, vm)
                         SettingsCategory.UPDATES -> UpdateSettings(settings, vm)
                         SettingsCategory.ABOUT -> AboutSettings(vm)
