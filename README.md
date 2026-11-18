@@ -157,9 +157,9 @@ tag, builds the signed APK and attaches it; installed apps will offer the update
 
 ## Making it act like a cable box
 
-1. **Settings → Start-up → Start when the box turns on** and/or **Start when the box wakes up** (both off by default).
-   Also consider **Settings → Start-up → Back button → Never exit (set-top box)** so nobody exits by accident.
-2. On Android 10 and newer, Android only lets an app open itself if it has the *Display over other apps* permission. Use **Settings → Start-up → Permission to start by itself**. Some TV firmware hides that screen; grant it over adb instead:
+1. **Settings → Start-up & exit → Start when the box turns on** and/or **Start when the box wakes up** (both off by default).
+   Also consider **Settings → Start-up & exit → Back button → Never exit (set-top box)** so nobody exits by accident.
+2. On Android 10 and newer, Android only lets an app open itself if it has the *Display over other apps* permission. Use **Settings → Start-up & exit → Permission to start by itself**. Some TV firmware hides that screen; grant it over adb instead:
    ```bash
    adb shell appops set io.github.axon07.channelbox SYSTEM_ALERT_WINDOW allow
    ```
