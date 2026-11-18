@@ -528,6 +528,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
 
+    fun playRecordingNow(r: RecordingEntity) {
+        playbackTitle = r.title
+        pbSubtitle = "Recording · ${r.channelName}"
+        playbackReturn = Mode.RECORDINGS
+        vm.playRecording(r)
+        playbackToken++
+        mode = Mode.PLAYBACK
+    }
+
     fun openRecording(r: RecordingEntity) {
         val path = r.filePath
         // Network recordings (smb://, WebDAV) aren't local files: they're playable once they have a path.
@@ -538,15 +547,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             menuRecording = r
             mode = Mode.RECORDING_MENU
         }
-    }
-
-    fun playRecordingNow(r: RecordingEntity) {
-        playbackTitle = r.title
-        pbSubtitle = "Recording · ${r.channelName}"
-        playbackReturn = Mode.RECORDINGS
-        vm.playRecording(r)
-        playbackToken++
-        mode = Mode.PLAYBACK
     }
 
     fun leavePlayback() {
