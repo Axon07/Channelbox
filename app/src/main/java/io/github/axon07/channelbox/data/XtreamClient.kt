@@ -37,6 +37,25 @@ class XtreamClient(private val http: OkHttpClient) {
                 Login("${uri.scheme}://${uri.host}$port$prefix", user, pass)
             }.getOrNull()
 
+            private val livePattern = Regex(
+                """^(https?://[^/?#]+)/(?:live/)?([^/?#]+)/([^/?#]+)/(\d+)(?:\.[A-Za-z0-9]+)?(?:[?#|].*)?$""",
+                RegexOption.IGNORE_CASE,
+            )
+
+            /**
+             * The login and stream id inside an Xtream live link (…/live/USER/PASS/123.ts, or
+             * …/USER/PASS/123), or null.
+             */
+            fun fromLiveUrl(url: String): Pair<Login, String>? = livePattern.find(url.trim())?.let { m ->
+                runCatching {
+                    Login(
+                        m.groupValues[1],
+                        java.net.URLDecoder.decode(m.groupValues[2], "UTF-8"),
+                        java.net.URLDecoder.decode(m.groupValues[3], "UTF-8"),
+                    ) to m.groupValues[4]
+                }.getOrNull()
+            }
+
             private val streamPattern = Regex("""^(https?://[^/]+)/(?:movie|series)/([^/]+)/([^/]+)/[^/?#]+""", RegexOption.IGNORE_CASE)
 
             /** The login inside an Xtream movie/episode link (…/series/USER/PASS/123.mp4), or null. */
@@ -103,12 +122,45 @@ class XtreamClient(private val http: OkHttpClient) {
                 logo = o["stream_icon"]?.takeIf { it.isNotBlank() },
                 url = login.liveUrl(id),
                 epgId = o["epg_channel_id"]?.takeIf { it.isNotBlank() },
-                catchupDays = if (o["tv_archive"] == "1") o["tv_archive_duration"]?.toIntOrNull() ?: 0 else 0,
+                catchupDays = archiveDays(o),
                 catchupType = "default",
                 catchupSource = login.timeshiftTemplate(id) + (serverZone?.let { "{tz=$it}" } ?: ""),
             )
         }
         return ParsedPlaylist(channels, listOf(login.xmltvUrl))
+    }
+
+    /** Catch-up (archive) of an Xtream server's live channels. */
+    class Archive(val days: Map<String, Int>, private val login: Login, private val serverZone: String?) {
+        /** The archive link template for [streamId] (see [Catchup]). */
+        fun source(streamId: String) = login.timeshiftTemplate(streamId) + (serverZone?.let { "{tz=$it}" } ?: "")
+    }
+
+    /**
+     * Which live channels have an archive, and for how many days – for M3U playlists that are
+     * Xtream links underneath (the M3U itself rarely says). Null if the login doesn't work.
+     */
+    suspend fun archive(login: Login): Archive? {
+        val auth = getJson(login.api()) as? JsonObject ?: return null
+        val userInfo = auth["user_info"] as? JsonObject ?: return null
+        if (userInfo.str("auth") == "0") return null
+        val serverZone = (auth["server_info"] as? JsonObject)?.str("timezone")?.takeIf { it.isNotBlank() }
+        val days = HashMap<String, Int>()
+        streamObjects(login.api("get_live_streams")) { o ->
+            val id = o["stream_id"] ?: return@streamObjects
+            archiveDays(o).takeIf { it > 0 }?.let { days[id] = it }
+        }
+        return Archive(days, login, serverZone)
+    }
+
+    /**
+     * Days of archive for a live stream. Servers send tv_archive as 1, "1" or true, and some leave
+     * the duration out or at 0 – those still have an archive, so assume a week (the server limits it).
+     */
+    private fun archiveDays(o: Map<String, String>): Int {
+        val on = o["tv_archive"]?.trim()?.lowercase()
+        if (on != "1" && on != "true") return 0
+        return o["tv_archive_duration"]?.trim()?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 } ?: 7
     }
 
     /**

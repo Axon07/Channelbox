@@ -332,6 +332,7 @@ class TvRepository(
                             }
                         }
                     }
+                    if (p.type != SourceType.XTREAM && live > 0) addXtreamArchive(p, lineup, start)
                     writer.finish()
                     if (live == 0 && writer.count == 0) {
                         throw IOException(
@@ -423,6 +424,36 @@ class TvRepository(
      * held only once. A channel keeps its own number when it's free; otherwise it gets the next free
      * one, so a second playlist continues after the first. The same link is only listed once.
      */
+    /**
+     * Most provider M3U playlists are Xtream links underneath, and the M3U doesn't say which
+     * channels the provider keeps an archive of. Like TiviMate, ask the server's API and turn on
+     * catch-up (and rewinding live TV) for those channels. Anything going wrong just leaves it off.
+     */
+    private suspend fun addXtreamArchive(p: Playlist, lineup: Lineup, start: Int) {
+        val added = lineup.since(start)
+        if (added.none { it.catchupDays <= 0 }) return
+        // The login: from the playlist link (get.php) or from the channel links themselves.
+        val login = XtreamClient.Login.fromM3uUrl(p.m3uUrl)
+            ?: added.asSequence().mapNotNull { XtreamClient.Login.fromLiveUrl(it.streamUrl)?.first }.firstOrNull()
+            ?: return
+        _state.value = RefreshState.Running("Checking catch-up for ${p.displayName}…")
+        val archive = try {
+            XtreamClient(http).archive(login)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } ?: return
+        if (archive.days.isEmpty()) return
+        lineup.update(start) { ch ->
+            if (ch.catchupDays > 0 && !ch.catchupType.isNullOrBlank()) return@update ch
+            val (chLogin, id) = XtreamClient.Login.fromLiveUrl(ch.streamUrl) ?: return@update ch
+            if (chLogin.user != login.user) return@update ch
+            val days = archive.days[id] ?: return@update ch
+            ch.copy(catchupDays = days, catchupType = "default", catchupSource = archive.source(id))
+        }
+    }
+
     private class Lineup {
         private val channels = ArrayList<ChannelEntity>()
         private val used = HashSet<Int>()
@@ -458,6 +489,14 @@ class TvRepository(
                 playlistId = playlistId,
             )
             p.tvgName?.takeIf { it != p.name }?.let { tvgNames[p.url] = it }
+        }
+
+        /** Channels added since [from] (one playlist's). */
+        fun since(from: Int): List<ChannelEntity> = channels.subList(from, channels.size)
+
+        /** Changes the channels added since [from]. */
+        fun update(from: Int, change: (ChannelEntity) -> ChannelEntity) {
+            for (i in from until channels.size) channels[i] = change(channels[i])
         }
 
         /** Drops what a playlist added before it failed. */

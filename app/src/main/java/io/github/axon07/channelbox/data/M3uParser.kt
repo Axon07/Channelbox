@@ -155,7 +155,11 @@ object M3uParser {
             logo = a["tvg-logo"]?.takeIf { it.isNotBlank() },
             url = url,
             epgId = a["tvg-id"]?.takeIf { it.isNotBlank() },
-            catchupDays = attr("catchup-days", "tvg-rec", "timeshift")?.trim()?.toIntOrNull() ?: 0,
+            // A catch-up mode without a number of days still has an archive: assume a week.
+            catchupDays = attr("catchup-days", "tvg-rec", "timeshift")?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+                ?: if (attr("catchup", "catchup-type")?.lowercase()?.let { it != "disabled" && it != "0" } == true ||
+                    attr("catchup-source") != null
+                ) 7 else 0,
             headers = if (p.headers.isEmpty()) emptyMap() else LinkedHashMap(p.headers),
             drmType = p.drmType,
             drmKey = p.drmKey,
