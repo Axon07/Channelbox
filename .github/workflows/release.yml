@@ -59,7 +59,7 @@ jobs:
             echo "## What's changed"
             echo
             git log "$range" --no-merges --pretty=format:'%s' \
-              | grep -viE 'claude|^readme|^merge|declaration order|^fix build|^wip' \
+              | grep -viE 'claude|^readme|^merge|declaration order|build fix|^fix build|^wip' \
               | sed -E 's/; /\n/g' \
               | sed -E 's/^[[:space:]]+//; /^$/d; s/^(.)/\U\1/; s/^/- /' \
               | awk '!seen[$0]++'
