@@ -215,7 +215,7 @@ fun SettingsScreen(
                         Text(category.blurb, fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 1.dp))
                     }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     when (category) {
                         SettingsCategory.SOURCE -> SourceSettings(
                             settings, refreshState, channelCount, vm, onEditSource,
@@ -1075,7 +1075,7 @@ fun IconBadge(icon: ImageVector, size: androidx.compose.ui.unit.Dp = 30.dp, high
 
 /** Colours shared by every row: quiet at rest, a bright pill with dark text when focused (Google TV style). */
 private object Rows {
-    val Rest = Color(0x0AFFFFFF)
+    val Rest = Color.Transparent
     val Focus = Color(0xFFECF1F6)
     val Pressed = Color(0xFFD9E1EA)
     val OnFocus = Color(0xFF0E141B)
@@ -1174,7 +1174,7 @@ private fun SettingCard(
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 58.dp)
+                .heightIn(min = 52.dp)
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1183,9 +1183,11 @@ private fun SettingCard(
                     title, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                     color = if (focused) Rows.OnFocus else Palette.Text,
                 )
-                if (!description.isNullOrBlank()) {
+                val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
+                // Less clutter: the explanation shows only for the row you're on (always on touch screens).
+                androidx.compose.animation.AnimatedVisibility(visible = !description.isNullOrBlank() && (focused || touch)) {
                     Text(
-                        description, fontSize = 12.sp, lineHeight = 16.sp,
+                        description.orEmpty(), fontSize = 12.sp, lineHeight = 16.sp,
                         color = if (focused) Rows.OnFocusDim else Palette.TextDim, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp),
                     )
@@ -1261,7 +1263,7 @@ private fun ChoiceList(options: List<Pair<String, String>>, selected: String, on
             runCatching { first.requestFocus() }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         options.forEachIndexed { i, (key, label) ->
             val isSelected = key == selected
             var focused by remember { mutableStateOf(false) }
