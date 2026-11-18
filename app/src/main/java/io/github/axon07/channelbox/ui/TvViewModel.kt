@@ -1169,8 +1169,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun savePlaylist(p: Playlist) = reload { c.settings.savePlaylist(p) }
 
     fun removePlaylist(id: String) = reload {
-        c.settings.removePlaylist(id)
-        repo.forgetPlaylist(id)
+        // Finish the clean-up even if another change (e.g. adding a playlist) starts a new reload.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            c.settings.removePlaylist(id)
+            repo.forgetPlaylist(id)
+        }
+    }
+
+    /** Throws away every saved channel, movie & show and guide entry, then loads the playlists fresh. */
+    fun clearSavedData() = reload {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { repo.clearSavedData() }
     }
 
     fun setPlaylistEnabled(id: String, on: Boolean) = reload { c.settings.setPlaylistEnabled(id, on) }
