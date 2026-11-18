@@ -1,5 +1,7 @@
 package io.github.axon07.channelbox.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
@@ -1212,6 +1214,18 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     },
                     onClose = { mode = Mode.PLAYER },
                 )
+                // The TV guide is still loading behind the scenes.
+                (refreshState as? RefreshState.Running)?.takeIf { it.background }?.let { r ->
+                    Box(Modifier.fillMaxSize().padding(top = 10.dp, end = 16.dp), contentAlignment = Alignment.TopEnd) {
+                        androidx.tv.material3.Text(
+                            r.message, fontSize = 12.sp, color = Color.White,
+                            modifier = Modifier
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                                .background(Color(0xCC1B2430))
+                                .padding(horizontal = 12.dp, vertical = 5.dp),
+                        )
+                    }
+                }
                 if (mode == Mode.GROUPS) {
                     GroupsPanel(
                         rows = menuRows,
@@ -1503,7 +1517,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             )
             Mode.PLAYER, Mode.CHANNEL_LIST -> {
                 val fallback = when (val r = refreshState) {
-                    is RefreshState.Running -> r.message
+                    is RefreshState.Running -> if (r.background && allChannels.isNotEmpty()) null else r.message
                     is RefreshState.Failed -> "Couldn't load channels: ${r.message}\nPress OK for settings"
                     else -> if (allChannels.isEmpty()) "No channels yet – press OK for settings" else null
                 }

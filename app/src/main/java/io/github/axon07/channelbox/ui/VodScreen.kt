@@ -222,6 +222,24 @@ private fun LibraryScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
+            // Fetch the posters just below what's on screen, so they're ready when you scroll to them.
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            LaunchedEffect(items) {
+                val list = items ?: return@LaunchedEffect
+                val loader = coil.Coil.imageLoader(ctx)
+                val asked = HashSet<String>()
+                androidx.compose.runtime.snapshotFlow { b.grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                    .collect { last ->
+                        val from = (last + 1).coerceAtMost(list.size)
+                        val to = (last + 1 + PREFETCH).coerceAtMost(list.size)
+                        list.subList(from, to).forEach { item ->
+                            val url = item.poster?.takeIf { it.isNotBlank() } ?: return@forEach
+                            if (asked.add(url)) {
+                                loader.enqueue(coil.request.ImageRequest.Builder(ctx).data(url).size(300, 450).build())
+                            }
+                        }
+                    }
+            }
             when {
                 items == null -> Text("Loading…", color = Palette.TextDim, fontSize = 14.sp)
                 b.query.isNotBlank() && b.query.trim().length < 2 -> Text("Type at least 2 letters", color = Palette.TextDim, fontSize = 14.sp)
@@ -553,3 +571,6 @@ private fun EpisodeRow(ep: VodEntity, progress: VodProgressEntity?, modifier: Mo
         }
     }
 }
+
+/** Posters fetched ahead of scrolling. */
+private const val PREFETCH = 36

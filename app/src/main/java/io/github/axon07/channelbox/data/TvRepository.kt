@@ -19,7 +19,8 @@ import java.io.IOException
 
 sealed interface RefreshState {
     data object Idle : RefreshState
-    data class Running(val message: String) : RefreshState
+    /** [background]: channels are ready and only the guide is still loading – the app can be used. */
+    data class Running(val message: String, val background: Boolean = false) : RefreshState
     data class Failed(val message: String) : RefreshState
     data class Done(val channels: Int, val programmes: Int) : RefreshState
 }
@@ -137,10 +138,14 @@ class TvRepository(
     }
 
     /** Reloads every enabled playlist and the TV guide. Returns true when at least one playlist loaded. */
-    suspend fun refresh(): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Reloads every playlist, then the guide. [onChannels] runs as soon as the channels (and movies &
+     * shows) are saved, so the app can go to the guide while the TV guide keeps loading behind it.
+     */
+    suspend fun refresh(onChannels: suspend () -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             try {
-                refreshLocked()
+                refreshLocked(onChannels)
             } finally {
                 vodChanged()
             }
@@ -149,7 +154,7 @@ class TvRepository(
 
     // Runs on an IO thread: Room's blocking calls (movies & shows are written while streaming) aren't
     // allowed on the main thread.
-    private suspend fun refreshLocked(): Boolean {
+    private suspend fun refreshLocked(onChannels: suspend () -> Unit): Boolean {
         return try {
             val s = settings.current()
             val sources = s.playlists.filter { it.enabled }
@@ -281,6 +286,11 @@ class TvRepository(
 
             // Movies & shows of playlists that were removed or turned off.
             db.vod().deleteOtherPlaylists(sources.map { it.id })
+            // Channels and movies & shows are in: usable now, even if the guide takes a while (or the
+            // app is closed before it finishes – it won't redo everything on the next start).
+            settings.setLastRefresh(System.currentTimeMillis())
+            vodChanged()
+            runCatching { onChannels() }
 
             var programmes = 0
             val guides = epgUrls.distinct()
@@ -366,6 +376,11 @@ class TvRepository(
     }
 
     /** Loads every guide source; a source that fails is skipped. Returns the number of programmes stored. */
+    /** Highest programme row from before the current guide load; older rows are the old guide. */
+    private var oldProgramsUpTo = 0L
+    /** Guide ids whose old programmes were already swapped for new ones in this load. */
+    private val replaced = HashSet<String>()
+
     private suspend fun importEpg(
         urls: List<String>,
         channels: List<ChannelEntity>,
@@ -379,10 +394,14 @@ class TvRepository(
         val keepTo = now + settings.current().guideDays.coerceIn(1, 14) * 24 * HOUR
         val filled = HashSet<String>() // guide ids that already have programmes from an earlier source
 
-        db.programs().clear()
+        // The old guide stays on screen while the new one loads: each channel's old programmes are
+        // swapped out when its new ones arrive, and leftovers are removed at the end.
+        oldProgramsUpTo = db.openHelper.readableDatabase.query("SELECT IFNULL(MAX(rowId), 0) FROM programs")
+            .use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        replaced.clear()
         var count = 0
         urls.forEachIndexed { index, url ->
-            _state.value = RefreshState.Running(
+            _state.value = RefreshState.Running(background = true, message = 
                 if (urls.size > 1) "Loading TV guide ${index + 1} of ${urls.size}…" else "Loading TV guide…"
             )
             try {
@@ -394,6 +413,10 @@ class TvRepository(
             }
         }
 
+        // Something loaded: drop what's left of the old guide. Nothing loaded: keep the old one.
+        if (count > 0) {
+            db.openHelper.writableDatabase.execSQL("DELETE FROM programs WHERE rowId <= ?", arrayOf(oldProgramsUpTo))
+        }
         val changed = channels.filter { ch -> matcher.assigned[ch.id]?.let { it != ch.epgId } == true }
         if (changed.isNotEmpty()) {
             db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }
@@ -414,7 +437,13 @@ class TvRepository(
 
         fun flush() {
             if (batch.isEmpty()) return
-            db.runInTransaction { db.programs().insertBlocking(batch) }
+            db.runInTransaction {
+                val sql = db.openHelper.writableDatabase
+                batch.asSequence().map { it.epgId }.distinct().filter { replaced.add(it) }.forEach { id ->
+                    sql.execSQL("DELETE FROM programs WHERE epgId = ? AND rowId <= ?", arrayOf(id, oldProgramsUpTo))
+                }
+                db.programs().insertBlocking(batch)
+            }
             count += batch.size
             batch.clear()
         }

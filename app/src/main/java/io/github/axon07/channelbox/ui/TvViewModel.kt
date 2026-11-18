@@ -934,7 +934,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             if (hasChannels) ensurePlaying()
             val stale = s.refreshHours > 0 && System.currentTimeMillis() - s.lastRefresh > s.refreshHours * HOUR
             if (!hasChannels || stale) {
-                if (repo.refresh()) ensurePlaying()
+                val ready: suspend () -> Unit = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ensurePlaying() } }
+                if (repo.refresh(ready)) ensurePlaying()
             }
         }
     }
@@ -1177,16 +1178,21 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun movePlaylist(id: String, delta: Int) = reload { c.settings.movePlaylist(id, delta) }
 
     private suspend fun reloadAfterSourceChange() {
-        val ok = repo.refresh()
-        val ids = repo.allChannels().map { it.id }.toSet()
-        // Keep watching the same channel if it's still there (e.g. after adding a second playlist).
-        if (_current.value?.id !in ids) {
-            if (_current.value != null) player.stop()
-            _current.value = null
-            previous = null
+        // Runs once the channels are saved – the guide may still be loading.
+        val channelsReady: suspend () -> Unit = {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                val ids = repo.allChannels().map { it.id }.toSet()
+                // Keep watching the same channel if it's still there (e.g. after adding a second playlist).
+                if (_current.value?.id !in ids) {
+                    if (_current.value != null) player.stop()
+                    _current.value = null
+                    previous = null
+                }
+                if (_filter.value != ChannelFilter.All && _filter.value !in filters.value) _filter.value = ChannelFilter.All
+                ensurePlaying()
+            }
         }
-        if (_filter.value != ChannelFilter.All && _filter.value !in filters.value) _filter.value = ChannelFilter.All
-        if (ok) ensurePlaying()
+        if (repo.refresh(channelsReady)) ensurePlaying()
     }
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }

@@ -101,7 +101,8 @@ fun SetupScreen(
     LaunchedEffect(refreshState, submitted) {
         if (!submitted) return@LaunchedEffect
         if (refreshState is RefreshState.Running) sawRunning = true
-        if (sawRunning && refreshState is RefreshState.Done) onDone()
+        // Done, or only the TV guide is still loading: go to TV and let it finish in the background.
+        if (sawRunning && (refreshState is RefreshState.Done || (refreshState as? RefreshState.Running)?.background == true)) onDone()
     }
 
     val first = remember { FocusRequester() }

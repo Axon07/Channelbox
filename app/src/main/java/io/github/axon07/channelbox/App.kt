@@ -47,7 +47,17 @@ class App : Application(), ImageLoaderFactory {
      */
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
-            .okHttpClient { container.http }
+            // Posters come from slow servers: more downloads at once, and give up sooner on stuck ones.
+            .okHttpClient {
+                container.http.newBuilder()
+                    .dispatcher(okhttp3.Dispatcher().apply {
+                        maxRequests = 64
+                        maxRequestsPerHost = 16
+                    })
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+            }
             .respectCacheHeaders(false)
             .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.2).build() }
             .diskCache {

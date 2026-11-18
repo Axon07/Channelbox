@@ -216,7 +216,7 @@ class VodBuilder(private val playlistId: String) {
  */
 class VodWriter(private val db: AppDatabase, private val playlistId: String) {
     private val batch = ArrayList<VodEntity>(BATCH)
-    private var cleared = false
+    private var started = false
     var count = 0
         private set
 
@@ -226,19 +226,38 @@ class VodWriter(private val db: AppDatabase, private val playlistId: String) {
         if (batch.size >= BATCH) flush()
     }
 
+    /**
+     * New items replace old ones with the same id as they arrive; the old list stays visible
+     * meanwhile. The ids written are noted in a side table, so [finish] can drop what's gone.
+     */
     private fun flush() {
+        val sql = db.openHelper.writableDatabase
         db.runInTransaction {
-            if (!cleared) {
-                db.vod().deleteForPlaylistBlocking(playlistId)
-                cleared = true
+            if (!started) {
+                sql.execSQL("CREATE TABLE IF NOT EXISTS vod_keep (playlistId TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (playlistId, id))")
+                sql.execSQL("DELETE FROM vod_keep WHERE playlistId = ?", arrayOf(playlistId))
+                started = true
             }
-            if (batch.isNotEmpty()) db.vod().insertAllBlocking(batch)
+            if (batch.isNotEmpty()) {
+                db.vod().insertAllBlocking(batch)
+                batch.forEach { sql.execSQL("INSERT OR IGNORE INTO vod_keep (playlistId, id) VALUES (?, ?)", arrayOf(playlistId, it.id)) }
+            }
         }
         batch.clear()
     }
 
-    /** Writes what's left; a playlist with no movies or shows loses its old ones too. */
-    fun finish() = flush()
+    /** Writes what's left, then removes this playlist's movies & shows that weren't in the new list. */
+    fun finish() {
+        flush()
+        val sql = db.openHelper.writableDatabase
+        db.runInTransaction {
+            sql.execSQL(
+                "DELETE FROM vod WHERE playlistId = ? AND id NOT IN (SELECT id FROM vod_keep WHERE playlistId = ?)",
+                arrayOf(playlistId, playlistId),
+            )
+            sql.execSQL("DELETE FROM vod_keep WHERE playlistId = ?", arrayOf(playlistId))
+        }
+    }
 
     private companion object {
         const val BATCH = 1_000
