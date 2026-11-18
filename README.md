@@ -56,12 +56,12 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Playback** | Media3/ExoPlayer: HLS, MPEG-TS, DASH (`.mpd`, also `.mpd/…` links), Smooth Streaming, RTSP, RTMP and UDP multicast (`udp://@239.…`). Unknown links are tried as TS → HLS → DASH. A broken channel shows a message and retries – it never crashes the app |
 | **Stream options** | Kodi-style `url|User-Agent=…&Referer=…`, `#EXTVLCOPT:http-user-agent/http-referrer`, `#EXTHTTP:{…}`, `#KODIPROP:inputstream.adaptive.stream_headers` |
 | **DRM** | `#KODIPROP` `license_type`/`license_key`, `drm_legacy` and `drm` (JSON). ClearKey with keys in the playlist (`kid:key`, JSON, or key only) – also on streams whose manifest only lists PlayReady/Widevine. Widevine and PlayReady license servers with headers (`url|Header=Value|…`); PlayReady falls back to Widevine on boxes without it, and Widevine retries at security level L3 when L1 fails |
-| **Catch-up / archive** | Watch programmes that already aired, straight from the guide (↺). M3U `catchup` = `default` / `append` / `shift` / `flussonic` / `xc` with `catchup-source` templates (`${start}`, `{utc}`, `{duration:60}`, `{Y}-{m}-{d}` …), and Xtream Codes archives (server time zone aware). Also "watch from the start" for shows that are on now |
+| **Catch-up / archive** | Watch programmes that already aired, straight from the guide (↺). M3U `catchup` = `default` / `append` / `shift` / `flussonic` / `xc` with `catchup-source` templates (`${start}`, `{utc}`, `{duration:60}`, `{Y}-{m}-{d}` …), and Xtream Codes archives (server time zone aware). Also "watch from the start" for shows that are on now. Channels with catch-up show a ↺ clock icon in the guide and channel list, and can be **rewound while watching live** (⏪ on the remote or the control bar, 30 s per press; ⏩ skips ahead, ■ / LIVE returns to live) |
 | **Audio, quality & subtitles** | CC turns captions on and off. The ⋯ menu (or hold OK / Menu) picks subtitles, audio track, quality and picture size (fit, zoom, stretch). Optional maximum quality for slow connections |
 | **Backup & restore** | Settings → Playlist & guide → Back up data / Restore data: playlists (with logins), settings, favourites and channel changes in one file. Uses the box's file picker, or the Download folder on boxes without one |
 | **Organise** | Settings → Playlist & guide → Organise (or hold OK on a group or channel → Select…): tick many groups to hide or show at once, put groups in your order, tick many channels to add to Favourites or hide, and sort Favourites. Hold OK on a row to move it (▲ ▼, OK to drop) |
 | **Jellyfin** | Add your own Jellyfin server's movies & shows to Movies and TV Shows – next to your provider's (in their own categories) or instead of them. Settings → Playlist & guide → Jellyfin. Plays straight from the server |
-| **Player engine** | Buffer size (none → very large), hardware or software video and audio decoding, audio passthrough for Dolby / DTS receivers, and auto frame rate (AFR) to match the TV's refresh rate to the video |
+| **Player engine** | Buffer size (none → very large), hardware or software video and audio decoding, audio passthrough for Dolby / DTS receivers, auto frame rate (AFR) to match the TV's refresh rate to the video, and HDR10 / HLG / Dolby Vision on boxes and TVs that support them |
 | **Audio formats** | Bundled FFmpeg decoder plays Dolby Digital (AC3), Dolby Digital+ (E-AC3), DTS and TrueHD on boxes that can't – no more silent sports channels. Optional "decode all audio in software" setting |
 | **Network & VPN** | Built-in **WireGuard VPN** (paste or load a config from any VPN provider; only Channelbox or the whole box), **HTTP / SOCKS5 proxy**, **encrypted DNS** (DNS-over-HTTPS: Cloudflare, Google, Quad9, AdGuard or custom) and a **user agent** setting – for privacy and for networks that interfere with streaming |
 | **Multi-view** | Watch up to 4 channels at once (green button, ⋯ menu → Multi-view, or the on-screen button). The layout adapts to 2, 3 or 4 tiles; add more with Menu. Hold OK / long-press a tile for full screen, change or remove. Sound follows the highlighted tile |
@@ -89,6 +89,7 @@ applies straight away.
 | Audio decoder | Hardware · Software | Hardware | Software if some channels play without sound |
 | Audio passthrough | On · Off | On | Off if Dolby / DTS channels are silent through the TV's speakers; on to send them untouched to a receiver or soundbar |
 | Auto frame rate (AFR) | On · Off | Off | On for smoother motion: the TV switches refresh rate to match the video (e.g. 50 Hz for European channels, 23.976 Hz for films). Waits ~1.5 s after a channel change; the screen may blank for a moment |
+| Dolby Vision | Auto · On · Off (HDR10) | Auto | Auto plays Dolby Vision only when the TV supports it and otherwise falls back to HDR10. Off if the picture looks purple or green. *HDR on this TV* (just below) shows what your TV and box support. HDR10 and HLG play automatically with the hardware decoder |
 | Captions on by default | On · Off | Off | On to start every channel and video with subtitles / CC |
 | Maximum quality | Best available · up to 1080p · 720p · 480p · Automatic | Best available | Lower on a slow connection, or Automatic to follow the connection speed |
 
@@ -142,7 +143,8 @@ of texts, edit the file and open a pull request – corrections from native spea
 | CC / Subtitles | Captions on/off | – | – |
 | Green | Multi-view | – | – |
 | ⏯ Play/Pause | Pause live TV / resume | – | – |
-| ⏩ / ■ Stop | Back to live (after a pause) | – | – |
+| ⏪ Rewind | Rewind live TV, 30 s per press (channels with catch-up ↺) | – | – |
+| ⏩ / ■ Stop | ⏩ 30 s ahead after rewinding · back to live (after a pause) | – | – |
 | Search | Search the guide | – | Search the guide |
 
 **Groups menu:** ▲▼ choose, OK select, ▶ to the guide, ◀ or Back to the side menu, hold OK on a group to rename / move / hide / lock it.
