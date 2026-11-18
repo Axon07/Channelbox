@@ -284,7 +284,10 @@ fun TvTextField(
             textStyle = TextStyle(color = Color.White, fontSize = if (lines == 1) 16.sp else 12.sp),
             cursorBrush = SolidColor(Color.White),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+            // No auto-capitals or autocorrect: addresses, usernames and passwords must stay as typed.
             keyboardOptions = KeyboardOptions(
+                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
                 keyboardType = if (password) KeyboardType.Password else keyboardType,
                 imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default,
             ),

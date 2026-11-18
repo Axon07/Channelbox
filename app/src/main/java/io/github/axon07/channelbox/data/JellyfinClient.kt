@@ -39,9 +39,7 @@ class JellyfinClient(private val http: OkHttpClient, private val settings: Jelly
     /** A signed-in session. */
     data class Session(val server: String, val userId: String, val token: String)
 
-    private val server = settings.server.trim().trimEnd('/').let {
-        if (it.startsWith("http://") || it.startsWith("https://")) it else "http://$it"
-    }
+    private val server = normalizeServer(settings.server)
 
     private val authHeader =
         """MediaBrowser Client="Channelbox", Device="Android TV", DeviceId="channelbox-${settings.user.hashCode()}", Version="1.0""""

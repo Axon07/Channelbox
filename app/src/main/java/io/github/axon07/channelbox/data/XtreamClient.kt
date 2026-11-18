@@ -51,13 +51,17 @@ class XtreamClient(private val http: OkHttpClient) {
             }
         }
 
+        /**
+         * The server address, tidied: "http://" added if missing, and the scheme and host made
+         * lower case ("HTTP://Example.COM:8080" from a TV keyboard stuck on capitals works too –
+         * web addresses don't care, but "HTTP://" wasn't recognised and the host wasn't found).
+         * Username and password stay exactly as typed: those are case-sensitive.
+         */
         val base: String
-            get() = server.trim().trimEnd('/').let {
-                if (it.startsWith("http://") || it.startsWith("https://")) it else "http://$it"
-            }
+            get() = normalizeServer(server)
 
-        private val u get() = enc(user)
-        private val p get() = enc(pass)
+        private val u get() = enc(user.trim())
+        private val p get() = enc(pass.trim())
 
         fun api(action: String? = null, extra: String = "") =
             "$base/player_api.php?username=$u&password=$p" + (action?.let { "&action=$it" } ?: "") + extra
@@ -236,5 +240,20 @@ class XtreamClient(private val http: OkHttpClient) {
     private fun JsonObject.str(key: String): String? {
         val v = this[key] as? JsonPrimitive ?: return null
         return if (v is JsonNull) null else v.content
+    }
+}
+
+/** "HTTP://Example.COM:8080/path/" → "http://example.com:8080/path"; adds http:// when missing. */
+internal fun normalizeServer(server: String): String {
+    val raw = server.trim().trimEnd('/')
+    val m = Regex("""^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/]*)(.*)$""").find(raw)
+    return if (m != null) {
+        val (scheme, host, rest) = m.destructured
+        "${scheme.lowercase()}://${host.lowercase()}$rest"
+    } else {
+        val slash = raw.indexOf('/')
+        val host = if (slash < 0) raw else raw.substring(0, slash)
+        val rest = if (slash < 0) "" else raw.substring(slash)
+        "http://${host.lowercase()}$rest"
     }
 }
