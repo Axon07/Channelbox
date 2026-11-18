@@ -168,6 +168,12 @@ abstract class ChannelDao {
 
     @Query("DELETE FROM favorites WHERE channelId IN (:ids)")
     abstract suspend fun removeFavorites(ids: List<String>)
+
+    @Query("DELETE FROM favorites")
+    abstract suspend fun clearFavorites()
+
+    @Query("SELECT channelId FROM favorites ORDER BY position, rowid")
+    abstract suspend fun favoriteOrder(): List<String>
 }
 
 @Dao
@@ -296,6 +302,12 @@ data class OverrideEntity(
 interface OverrideDao {
     @Query("SELECT * FROM overrides")
     fun observeAll(): kotlinx.coroutines.flow.Flow<List<OverrideEntity>>
+
+    @Query("SELECT * FROM overrides")
+    suspend fun all(): List<OverrideEntity>
+
+    @Query("DELETE FROM overrides")
+    suspend fun clear()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(items: List<OverrideEntity>)

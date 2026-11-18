@@ -318,6 +318,28 @@ private fun SourceSettings(
             },
         )
     }
+    // Backup & restore: the system file picker where there is one; otherwise the Download folder.
+    val saveFile = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { vm.backupTo(it) } }
+    val openFile = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.restoreFrom(it) } }
+    SettingCard(
+        title = "Back up data",
+        description = "Save playlists, settings, favourites and channel changes to a file. It includes your logins – keep it private",
+        onClick = {
+            try { saveFile.launch(vm.backupFileName()) } catch (e: android.content.ActivityNotFoundException) { vm.backupToDownloads() }
+        },
+    )
+    SettingCard(
+        title = "Restore data",
+        description = "Load a backup file. Replaces your current settings, favourites and channel changes",
+        onClick = {
+            try { openFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
+            catch (e: android.content.ActivityNotFoundException) { vm.restoreLatest() }
+        },
+    )
     SettingCard(
         title = "Organise channels & groups",
         description = "Hide many groups at once, put them in your order, add lots of channels to Favourites and sort them",
@@ -623,6 +645,12 @@ private fun ParentalSettings(settings: AppSettings, vm: TvViewModel) {
 @Composable
 private fun StartupSettings(settings: AppSettings, vm: TvViewModel, onExit: () -> Unit, openPage: (Page) -> Unit) {
     val context = LocalContext.current
+    SettingCard(
+        title = "Turn on last channel on app start",
+        description = "Off: Channelbox opens on the TV guide instead of playing",
+        toggle = settings.playLastOnStart,
+        onClick = { vm.setPlayLastOnStart(!settings.playLastOnStart) },
+    )
     // Re-read system state (permissions, launcher) whenever we come back to the screen.
     var resumeTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumeTick++ }

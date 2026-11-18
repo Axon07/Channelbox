@@ -166,6 +166,8 @@ data class AppSettings(
     /** Version the user chose "Skip this version" for. */
     val skippedVersion: String? = null,
     val lastChannelId: String? = null,
+    /** Start playing the last channel when the app opens (otherwise open on the guide). */
+    val playLastOnStart: Boolean = true,
     val lastRefresh: Long = 0L,
 ) {
     /** False until at least one playlist has been added (first-run setup). */
@@ -194,6 +196,7 @@ class SettingsStore(private val context: Context) {
         val CAPTIONS_DEFAULT = booleanPreferencesKey("captions_by_default")
         val LANGUAGE = stringPreferencesKey("language")
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
+        val PLAY_LAST = booleanPreferencesKey("play_last_on_start")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val BACK_ACTION = stringPreferencesKey("back_action")
@@ -320,6 +323,7 @@ class SettingsStore(private val context: Context) {
         ),
         skippedVersion = this[Keys.SKIPPED_VERSION],
         lastChannelId = this[Keys.LAST_CHANNEL],
+        playLastOnStart = this[Keys.PLAY_LAST] ?: true,
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
     )
 
@@ -362,6 +366,53 @@ class SettingsStore(private val context: Context) {
     suspend fun setCaptionsByDefault(on: Boolean) = context.dataStore.edit { it[Keys.CAPTIONS_DEFAULT] = on }
     suspend fun setLanguage(code: String) = context.dataStore.edit { it[Keys.LANGUAGE] = code }
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
+    suspend fun setPlayLastOnStart(on: Boolean) = context.dataStore.edit { it[Keys.PLAY_LAST] = on }
+
+    /** Every setting as JSON values (for a backup file). */
+    suspend fun exportAll(): kotlinx.serialization.json.JsonObject {
+        val prefs = context.dataStore.data.first().asMap()
+        return kotlinx.serialization.json.buildJsonObject {
+            for ((k, v) in prefs) {
+                val typed = when (v) {
+                    is Boolean -> kotlinx.serialization.json.JsonPrimitive(v) to "b"
+                    is Int -> kotlinx.serialization.json.JsonPrimitive(v) to "i"
+                    is Long -> kotlinx.serialization.json.JsonPrimitive(v) to "l"
+                    is Float -> kotlinx.serialization.json.JsonPrimitive(v) to "f"
+                    is Double -> kotlinx.serialization.json.JsonPrimitive(v) to "d"
+                    is String -> kotlinx.serialization.json.JsonPrimitive(v) to "s"
+                    is Set<*> -> kotlinx.serialization.json.JsonArray(v.map { kotlinx.serialization.json.JsonPrimitive(it.toString()) }) to "ss"
+                    else -> continue
+                }
+                put(k.name, kotlinx.serialization.json.buildJsonObject {
+                    put("t", kotlinx.serialization.json.JsonPrimitive(typed.second))
+                    put("v", typed.first)
+                })
+            }
+        }
+    }
+
+    /** Replaces every setting with the ones from a backup ([exportAll]'s format). */
+    suspend fun importAll(json: kotlinx.serialization.json.JsonObject) = context.dataStore.edit { p ->
+        p.clear()
+        for ((k, e) in json) {
+            val o = e as? kotlinx.serialization.json.JsonObject ?: continue
+            val t = (o["t"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: continue
+            val v = o["v"] ?: continue
+            val prim = v as? kotlinx.serialization.json.JsonPrimitive
+            when (t) {
+                "b" -> prim?.content?.toBooleanStrictOrNull()?.let { p[booleanPreferencesKey(k)] = it }
+                "i" -> prim?.content?.toIntOrNull()?.let { p[androidx.datastore.preferences.core.intPreferencesKey(k)] = it }
+                "l" -> prim?.content?.toLongOrNull()?.let { p[androidx.datastore.preferences.core.longPreferencesKey(k)] = it }
+                "f" -> prim?.content?.toFloatOrNull()?.let { p[androidx.datastore.preferences.core.floatPreferencesKey(k)] = it }
+                "d" -> prim?.content?.toDoubleOrNull()?.let { p[androidx.datastore.preferences.core.doublePreferencesKey(k)] = it }
+                "s" -> prim?.content?.let { p[stringPreferencesKey(k)] = it }
+                "ss" -> (v as? kotlinx.serialization.json.JsonArray)?.let { arr ->
+                    p[androidx.datastore.preferences.core.stringSetPreferencesKey(k)] =
+                        arr.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.toSet()
+                }
+            }
+        }
+    }
     suspend fun setRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }
     suspend fun setPreferSoftwareAudio(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_AUDIO] = on }

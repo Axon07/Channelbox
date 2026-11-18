@@ -1049,11 +1049,15 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.dropRemovedPlaylists() }
             if (!s.hasSource) return@launch
             val hasChannels = repo.allChannels().isNotEmpty()
-            if (hasChannels) ensurePlaying()
+            // "Turn on last channel on app start" off: open on the guide without playing.
+            val autoPlay = s.playLastOnStart
+            if (hasChannels && autoPlay) ensurePlaying()
             val stale = s.refreshHours > 0 && System.currentTimeMillis() - s.lastRefresh > s.refreshHours * HOUR
             if (!hasChannels || stale) {
-                val ready: suspend () -> Unit = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ensurePlaying() } }
-                if (repo.refresh(ready)) ensurePlaying()
+                val ready: suspend () -> Unit = {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { if (autoPlay) ensurePlaying() }
+                }
+                if (repo.refresh(ready) && autoPlay) ensurePlaying()
             }
         }
     }
@@ -1355,6 +1359,51 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }
     fun setStartOnWake(on: Boolean) = viewModelScope.launch { c.settings.setStartOnWake(on) }
+    fun setPlayLastOnStart(on: Boolean) = viewModelScope.launch { c.settings.setPlayLastOnStart(on) }
+
+    // ---- Backup & restore -------------------------------------------------------------------
+
+    fun backupFileName() = c.backup.suggestedName()
+
+    fun backupTo(uri: android.net.Uri) = viewModelScope.launch {
+        runCatching { c.backup.writeTo(uri, c.backup.create()) }
+            .onSuccess { showToast("Backup saved") }
+            .onFailure { showToast("Backup failed: ${it.message}") }
+    }
+
+    /** No file picker on this box: save to the Download folder instead. */
+    fun backupToDownloads() = viewModelScope.launch {
+        runCatching { c.backup.saveToDownloads(c.backup.create()) }
+            .onSuccess { showToast("Backup saved to $it") }
+            .onFailure { showToast("Backup failed: ${it.message}") }
+    }
+
+    fun restoreFrom(uri: android.net.Uri) = viewModelScope.launch {
+        runCatching { c.backup.restore(c.backup.readFrom(uri)) }
+            .onSuccess { afterRestore() }
+            .onFailure { showToast("Couldn't restore: ${it.message}") }
+    }
+
+    /** No file picker on this box: restore the newest backup in the Download folder. */
+    fun restoreLatest() = viewModelScope.launch {
+        val text = runCatching { c.backup.readLatestFromDownloads() }.getOrNull()
+        if (text == null) {
+            showToast("No backup found in the Download folder")
+            return@launch
+        }
+        runCatching { c.backup.restore(text) }
+            .onSuccess { afterRestore() }
+            .onFailure { showToast("Couldn't restore: ${it.message}") }
+    }
+
+    private fun afterRestore() {
+        showToast("Backup restored – reloading channels")
+        viewModelScope.launch {
+            val code = c.settings.current().language
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { I18n.load(getApplication(), code) }
+        }
+        reload { }
+    }
     fun setInvertChannelKeys(on: Boolean) = viewModelScope.launch { c.settings.setInvertChannelKeys(on) }
     fun setCaptionsByDefault(on: Boolean) = viewModelScope.launch { c.settings.setCaptionsByDefault(on) }
 

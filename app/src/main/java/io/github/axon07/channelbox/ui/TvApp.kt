@@ -167,7 +167,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val vpnState by vm.vpnState.collectAsStateWithLifecycle()
     val timeFormat = rememberTimeFormatter()
 
-    var mode by remember { mutableStateOf(if (!settings.hasSource) Mode.SETUP else Mode.PLAYER) }
+    var mode by remember {
+        mutableStateOf(
+            when {
+                !settings.hasSource -> Mode.SETUP
+                !settings.playLastOnStart -> Mode.GUIDE // "Turn on last channel on app start" off
+                else -> Mode.PLAYER
+            }
+        )
+    }
     /** Playlist being edited on the setup screen; null = adding a new one. */
     var setupPlaylistId by remember { mutableStateOf<String?>(null) }
     /** Settings opened from first-time setup for network options. */
