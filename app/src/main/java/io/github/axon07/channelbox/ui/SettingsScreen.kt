@@ -104,7 +104,7 @@ private enum class Page(val title: String) {
     VPN("WireGuard VPN"), PROXY("Proxy"), DNS("Encrypted DNS"), USER_AGENT("User agent"),
     SMB("Network share (SMB)"), WEBDAV("WebDAV folder"),
     // Pick-one lists
-    SCALE("Picture size"), QUALITY("Maximum quality"), REFRESH("Reload automatically"),
+    SCALE("Picture size"), QUALITY("Maximum quality"), BUFFER("Buffer size"), REFRESH("Reload automatically"),
     BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"), GUIDE_DAYS("Days of TV guide"),
     PLAYLIST("Playlist"),
 }
@@ -349,10 +349,34 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (
         onClick = { openPage(Page.QUALITY) },
     )
     SettingCard(
-        title = "Decode all audio in software",
-        description = "Try this if some channels play without sound. Takes effect after restarting the app.",
-        toggle = settings.preferSoftwareAudio,
+        title = "Buffer size",
+        description = "How much video is loaded ahead. Bigger rides out a shaky connection; smaller starts channels faster",
+        value = BUFFER_CHOICES.firstOrNull { it.first == settings.bufferSize }?.second ?: "Medium",
+        onClick = { openPage(Page.BUFFER) },
+    )
+    SettingCard(
+        title = "Video decoder",
+        description = "Hardware is faster and smoother. Try software if a channel shows green blocks or won't play. Applies after restarting",
+        value = if (settings.softwareVideo) "Software" else "Hardware",
+        onClick = { vm.setSoftwareVideo(!settings.softwareVideo) },
+    )
+    SettingCard(
+        title = "Audio decoder",
+        description = "Try software if some channels play without sound. Applies after restarting",
+        value = if (settings.preferSoftwareAudio) "Software" else "Hardware",
         onClick = { vm.setPreferSoftwareAudio(!settings.preferSoftwareAudio) },
+    )
+    SettingCard(
+        title = "Audio passthrough",
+        description = "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting",
+        toggle = settings.audioPassthrough,
+        onClick = { vm.setAudioPassthrough(!settings.audioPassthrough) },
+    )
+    SettingCard(
+        title = "Auto frame rate (AFR)",
+        description = "Switch the TV's refresh rate to match the video for smoother motion. The screen may blank for a moment when it changes",
+        toggle = settings.autoFrameRate,
+        onClick = { vm.setAutoFrameRate(!settings.autoFrameRate) },
     )
     SettingCard(
         title = "Back to TV when idle",
@@ -873,6 +897,14 @@ private fun SubPage(
                 onSelect = { vm.setIdleClose(it.toInt()); onClose() },
             )
         }
+        Page.BUFFER -> {
+            PageHeader("Buffer size", "How much video is loaded ahead. Takes effect the next time Channelbox starts.")
+            ChoiceList(
+                options = BUFFER_CHOICES,
+                selected = settings.bufferSize,
+                onSelect = { vm.setBufferSize(it); onClose() },
+            )
+        }
         Page.QUALITY -> {
             PageHeader("Maximum quality", "Channelbox picks the best quality your connection can handle, up to this limit.")
             ChoiceList(
@@ -1331,3 +1363,11 @@ private fun BackLink(label: String, onBack: () -> Unit) {
         Text("‹  $label", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Palette.TextDim)
     }
 }
+
+private val BUFFER_CHOICES = listOf(
+    "none" to "None – fastest start",
+    "small" to "Small",
+    "medium" to "Medium (recommended)",
+    "large" to "Large",
+    "xlarge" to "Very large – for shaky connections",
+)

@@ -23,6 +23,8 @@ jobs:
       SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history and tags, for the list of changes
 
       - uses: actions/setup-java@v4
         with:
@@ -47,6 +49,27 @@ jobs:
         # A fixed name keeps .../releases/latest/download/channelbox.apk (and Downloader codes) always current.
         run: cp app/build/outputs/apk/release/app-release.apk channelbox.apk
 
+      - name: List of changes
+        # Every change since the previous release, one line each, from the commit titles only
+        # (no tooling or co-author lines). Housekeeping commits are left out.
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range="${prev:+$prev..}${GITHUB_REF_NAME}"
+          {
+            echo "## What's changed"
+            echo
+            git log "$range" --no-merges --pretty=format:'%s' \
+              | grep -viE 'claude|^readme|^merge|declaration order|^fix build|^wip' \
+              | sed -E 's/; /\n/g' \
+              | sed -E 's/^[[:space:]]+//; /^$/d; s/^(.)/\U\1/; s/^/- /' \
+              | awk '!seen[$0]++'
+            echo
+            echo "**Install:** Downloader code \`5502923\`, or download \`channelbox.apk\` below. Boxes already running Channelbox will offer the update."
+          } > release-notes.md
+          cat release-notes.md
+
       - uses: softprops/action-gh-release@v2
         with:
           files: channelbox.apk
+          body_path: release-notes.md
+          append_body: true # keeps anything you wrote in the release, adds the list below it

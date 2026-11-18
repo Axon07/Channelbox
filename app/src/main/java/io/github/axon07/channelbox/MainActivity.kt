@@ -6,7 +6,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import android.content.res.Configuration
+import io.github.axon07.channelbox.system.AutoFrameRate
 import io.github.axon07.channelbox.system.SetTopBox
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import io.github.axon07.channelbox.ui.ChannelboxTheme
 import io.github.axon07.channelbox.ui.TvApp
 import io.github.axon07.channelbox.ui.TvViewModel
@@ -21,6 +30,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             ChannelboxTheme {
                 TvApp(vm)
+            }
+        }
+        // Auto frame rate: follow the playing video's frame rate when switched on (waits a moment
+        // so flicking through channels doesn't make the TV switch modes for every one).
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(vm.player.frameRate, vm.settings) { fps, s -> if (s?.autoFrameRate == true) fps else 0f }
+                    .distinctUntilChanged()
+                    .collectLatest { fps ->
+                        if (fps > 0f) delay(1_500)
+                        AutoFrameRate.apply(this@MainActivity, fps)
+                    }
             }
         }
     }

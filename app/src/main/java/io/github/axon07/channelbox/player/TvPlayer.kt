@@ -48,6 +48,17 @@ sealed interface PlayerStatus {
     data class Error(val message: String) : PlayerStatus
 }
 
+/**
+ * Engine options that need a new player (applied when Channelbox starts).
+ * [buffer]: none, small, medium, large, xlarge.
+ */
+data class PlayerOptions(
+    val softwareAudio: Boolean = false,
+    val softwareVideo: Boolean = false,
+    val buffer: String = "medium",
+    val passthrough: Boolean = true,
+)
+
 /** What's playing right now, for the info banner. */
 data class StreamInfo(val video: String?, val audio: String?, val bitrate: String?)
 
@@ -68,7 +79,7 @@ data class TrackOption(val label: String, val group: Tracks.Group?, val index: I
 class TvPlayer(
     private val context: Context,
     private val http: OkHttpClient,
-    preferSoftwareAudio: Boolean = false,
+    private val options: PlayerOptions = PlayerOptions(),
     /**
      * Take Android's audio focus. Off for multi-view tiles: each tile asking for focus would pause
      * the others (only the newest tile kept playing).
@@ -126,15 +137,37 @@ class TvPlayer(
     }
 
     // FFmpeg (bundled) decodes AC3 / E-AC3 / DTS / TrueHD audio when the box can't.
-    private val renderers = DefaultRenderersFactory(context)
+    private val renderers = object : DefaultRenderersFactory(context) {
+        // Passthrough off: decode everything to PCM, as if the TV had no Dolby / DTS receiver.
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean,
+        ): androidx.media3.exoplayer.audio.AudioSink? {
+            if (options.passthrough) return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+            @Suppress("DEPRECATION")
+            return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+                .build()
+        }
+    }
         .setExtensionRendererMode(
-            if (preferSoftwareAudio) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+            if (options.softwareAudio) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
             else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
         )
         .setEnableDecoderFallback(true)
+        .setMediaCodecSelector { mime, secure, tunneling ->
+            val all = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
+            val software = if (mime.startsWith("video/")) options.softwareVideo else options.softwareAudio
+            // Software first when chosen; hardware stays as a fallback (protected video has no software decoder).
+            if (software) all.sortedBy { !it.softwareOnly } else all
+        }
 
     val exo: ExoPlayer = ExoPlayer.Builder(context, renderers)
         .setBandwidthMeter(bandwidthMeter)
+        .setLoadControl(loadControl(options.buffer))
         .build()
         .apply {
             setAudioAttributes(
@@ -167,9 +200,22 @@ class TvPlayer(
 
                 override fun onTracksChanged(tracks: Tracks) {
                     _tracksVersion.value++
+                    updateFrameRate()
                 }
+
+                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = updateFrameRate()
             })
         }
+
+    private val _frameRate = MutableStateFlow(0f)
+
+    /** Frame rate of the video playing (0 = unknown / nothing), for auto frame rate. */
+    val frameRate: StateFlow<Float> = _frameRate.asStateFlow()
+
+    private fun updateFrameRate() {
+        val fps = exo.videoFormat?.frameRate ?: 0f
+        _frameRate.value = if (fps > 0f) fps else 0f
+    }
 
     /** Live channel. */
     fun play(stream: StreamSpec) = open(stream, onDemand = false)
@@ -542,3 +588,21 @@ class TvPlayer(
 
 /** [TvPlayer.setMaxQuality] value: let quality follow the connection speed. */
 const val ADAPTIVE = -1
+
+/**
+ * Buffer sizes (how much video is loaded ahead). Bigger rides out a shaky connection but starts
+ * channels a little slower; "none" starts fastest. Values: minimum / maximum buffered, and how
+ * much is needed to start (and to restart after running out).
+ */
+private fun loadControl(size: String): androidx.media3.exoplayer.LoadControl {
+    val (min, max, start, restart) = when (size) {
+        "none" -> listOf(1_500, 4_000, 500, 1_000)
+        "small" -> listOf(5_000, 15_000, 1_000, 2_000)
+        "large" -> listOf(30_000, 60_000, 4_000, 8_000)
+        "xlarge" -> listOf(60_000, 120_000, 6_000, 12_000)
+        else -> listOf(15_000, 30_000, 2_000, 4_000) // medium
+    }
+    return androidx.media3.exoplayer.DefaultLoadControl.Builder()
+        .setBufferDurationsMs(min, max, start, restart)
+        .build()
+}

@@ -135,6 +135,14 @@ data class AppSettings(
     val autoUpdateCheck: Boolean = true,
     /** Decode audio with FFmpeg even when the box has its own decoder (fixes silent channels on some boxes). */
     val preferSoftwareAudio: Boolean = false,
+    /** Decode video in software instead of the box's hardware decoder. */
+    val softwareVideo: Boolean = false,
+    /** Playback buffer: none, small, medium, large, xlarge. */
+    val bufferSize: String = "medium",
+    /** Send Dolby / DTS audio untouched to a receiver or soundbar that supports it. */
+    val audioPassthrough: Boolean = true,
+    /** Switch the TV's refresh rate to match the video (auto frame rate). */
+    val autoFrameRate: Boolean = false,
     /** Picture size: 0 = fit, 1 = zoom (fill, crop edges), 2 = stretch. */
     val videoScale: Int = 0,
     /** Highest resolution to pick automatically (0 = no limit). */
@@ -186,6 +194,10 @@ class SettingsStore(private val context: Context) {
         val BACK_ACTION = stringPreferencesKey("back_action")
         val AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
         val SOFTWARE_AUDIO = booleanPreferencesKey("prefer_software_audio")
+        val SOFTWARE_VIDEO = booleanPreferencesKey("software_video")
+        val BUFFER_SIZE = stringPreferencesKey("buffer_size")
+        val PASSTHROUGH = booleanPreferencesKey("audio_passthrough")
+        val AFR = booleanPreferencesKey("auto_frame_rate")
         val VIDEO_SCALE = intPreferencesKey("video_scale")
         val MAX_QUALITY = intPreferencesKey("max_quality")
         val PIP = booleanPreferencesKey("pip_on_leave")
@@ -251,6 +263,10 @@ class SettingsStore(private val context: Context) {
             .getOrDefault(BackAction.ASK_EXIT),
         autoUpdateCheck = this[Keys.AUTO_UPDATE] ?: true,
         preferSoftwareAudio = this[Keys.SOFTWARE_AUDIO] ?: false,
+        softwareVideo = this[Keys.SOFTWARE_VIDEO] ?: false,
+        bufferSize = this[Keys.BUFFER_SIZE] ?: "medium",
+        audioPassthrough = this[Keys.PASSTHROUGH] ?: true,
+        autoFrameRate = this[Keys.AFR] ?: false,
         videoScale = this[Keys.VIDEO_SCALE] ?: 0,
         maxQuality = this[Keys.MAX_QUALITY] ?: 0,
         pipOnLeave = this[Keys.PIP] ?: false,
@@ -330,6 +346,10 @@ class SettingsStore(private val context: Context) {
     suspend fun setRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
     suspend fun setBackAction(action: BackAction) = context.dataStore.edit { it[Keys.BACK_ACTION] = action.name }
     suspend fun setPreferSoftwareAudio(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_AUDIO] = on }
+    suspend fun setSoftwareVideo(on: Boolean) = context.dataStore.edit { it[Keys.SOFTWARE_VIDEO] = on }
+    suspend fun setBufferSize(size: String) = context.dataStore.edit { it[Keys.BUFFER_SIZE] = size }
+    suspend fun setAudioPassthrough(on: Boolean) = context.dataStore.edit { it[Keys.PASSTHROUGH] = on }
+    suspend fun setAutoFrameRate(on: Boolean) = context.dataStore.edit { it[Keys.AFR] = on }
     suspend fun setVideoScale(scale: Int) = context.dataStore.edit { it[Keys.VIDEO_SCALE] = scale }
     suspend fun setMaxQuality(height: Int) = context.dataStore.edit { it[Keys.MAX_QUALITY] = height }
     suspend fun setPipOnLeave(on: Boolean) = context.dataStore.edit { it[Keys.PIP] = on }

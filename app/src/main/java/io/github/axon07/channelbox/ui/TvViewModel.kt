@@ -24,6 +24,7 @@ import io.github.axon07.channelbox.data.VodKind
 import io.github.axon07.channelbox.data.VodProgressEntity
 import kotlinx.coroutines.flow.Flow
 import io.github.axon07.channelbox.data.TvRepository.Companion.HOUR
+import io.github.axon07.channelbox.player.PlayerOptions
 import io.github.axon07.channelbox.player.TvPlayer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -99,11 +100,21 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private val c = app.container
     private val repo = c.repository
     // The audio decoder choice is read once at start (changing it takes effect after a restart).
-    private val softwareAudio = runBlocking { c.settings.current().preferSoftwareAudio }
-    val player = TvPlayer(app, c.http, softwareAudio)
+    /** Engine options are read once: changing them takes effect the next time Channelbox starts. */
+    private val playerOptions = runBlocking {
+        c.settings.current().let {
+            PlayerOptions(
+                softwareAudio = it.preferSoftwareAudio,
+                softwareVideo = it.softwareVideo,
+                buffer = it.bufferSize,
+                passthrough = it.audioPassthrough,
+            )
+        }
+    }
+    val player = TvPlayer(app, c.http, playerOptions)
 
     /** Extra players for multi-view (released when multi-view closes). */
-    fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, softwareAudio, handleAudioFocus = false).also {
+    fun newTilePlayer(): TvPlayer = TvPlayer(getApplication(), c.http, playerOptions, handleAudioFocus = false).also {
         it.storageSettings = { settings.value?.storage ?: StorageSettings() }
         it.captionsByDefault = { settings.value?.captionsByDefault ?: false }
     }
@@ -722,6 +733,19 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         c.settings.setPreferSoftwareAudio(on)
         showToast("Takes effect the next time Channelbox starts")
     }
+    fun setSoftwareVideo(on: Boolean) = viewModelScope.launch {
+        c.settings.setSoftwareVideo(on)
+        showToast("Takes effect the next time Channelbox starts")
+    }
+    fun setBufferSize(size: String) = viewModelScope.launch {
+        c.settings.setBufferSize(size)
+        showToast("Takes effect the next time Channelbox starts")
+    }
+    fun setAudioPassthrough(on: Boolean) = viewModelScope.launch {
+        c.settings.setAudioPassthrough(on)
+        showToast("Takes effect the next time Channelbox starts")
+    }
+    fun setAutoFrameRate(on: Boolean) = viewModelScope.launch { c.settings.setAutoFrameRate(on) }
 
     fun setVideoScale(scale: Int) = viewModelScope.launch { c.settings.setVideoScale(scale) }
     fun setMaxQuality(height: Int) = viewModelScope.launch { c.settings.setMaxQuality(height) }
