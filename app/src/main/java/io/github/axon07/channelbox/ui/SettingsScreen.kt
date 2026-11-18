@@ -285,6 +285,21 @@ private fun SourceSettings(
         value = if (refreshState is RefreshState.Running) "Loading…" else "Reload",
         onClick = { vm.refreshNow() },
     )
+    if (settings.playlists.isNotEmpty()) {
+        var confirmClear by remember { mutableStateOf(false) }
+        SettingCard(
+            title = if (confirmClear) "Press again to clear and reload" else "Clear saved channels and reload",
+            description = "Deletes all saved channels, movies & shows and guide, then loads your playlists fresh. " +
+                "Favourites, recordings and your own names and numbers are kept.",
+            highlight = confirmClear,
+            onClick = {
+                if (confirmClear) {
+                    confirmClear = false
+                    vm.clearSavedData()
+                } else confirmClear = true
+            },
+        )
+    }
     SettingCard(
         title = "Days of TV guide",
         description = "Fewer days load faster and use less space with very big guides",

@@ -121,6 +121,10 @@ abstract class ChannelDao {
     @Query("DELETE FROM channels")
     abstract suspend fun clear()
 
+    /** Channels left behind by playlists that were removed or turned off (old rows count as "main"). */
+    @Query("DELETE FROM channels WHERE IFNULL(playlistId, 'main') NOT IN (:keep)")
+    abstract suspend fun deleteOtherPlaylists(keep: List<String>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertAll(channels: List<ChannelEntity>)
 

@@ -114,6 +114,24 @@ class TvRepository(
     }
 
     /**
+     * Deletes every saved channel, movie & show and guide entry so the next reload starts from
+     * scratch. Favourites, recordings, watch positions and your own names/numbers are kept.
+     */
+    suspend fun clearSavedData() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            db.withTransaction {
+                db.channels().clear()
+                db.programs().clear()
+                db.vod().deleteOtherPlaylists(emptyList())
+            }
+            _playlistErrors.value = emptyMap()
+            settings.setLastRefresh(0L)
+            vodChanged()
+            compact(force = true)
+        }
+    }
+
+    /**
      * SQLite keeps the file at its biggest size after rows are deleted, so a huge playlist that was
      * replaced or removed would keep holding the space. This rewrites the file to its real size when
      * there's a lot to gain (or always, with [force]). Needs free space while it runs; skipped if short.
@@ -166,6 +184,12 @@ class TvRepository(
                 compact()
                 return false
             }
+
+            // Anything still stored for a playlist that's gone or off is dropped first, so it can't
+            // show up under the remaining playlists, even if this load fails or is cut short.
+            val keepIds = sources.map { it.id }
+            db.channels().deleteOtherPlaylists(keepIds)
+            db.vod().deleteOtherPlaylists(keepIds)
 
             val lineup = Lineup() // live channels, numbered as they arrive
             val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
