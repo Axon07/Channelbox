@@ -97,7 +97,7 @@ class AppContainer(context: Context, val settings: SettingsStore, val startupNet
     val storage = RecordingStorage(context, http, settings)
     val recorder = Recorder(context, database, http, storage)
     val updater = Updater(context, http)
-    val backup = Backup(context, database, settings)
+    val backup = io.github.axon07.channelbox.data.Backup(context, database, settings)
 }
 
 val Context.container: AppContainer get() = (applicationContext as App).container
