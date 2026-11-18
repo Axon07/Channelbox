@@ -428,6 +428,17 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Hold OK on a channel → change how it shows up. */
+    var organiseStart by remember { mutableStateOf<String?>(null) }
+    var organiseReturn by remember { mutableStateOf(Mode.GROUPS) }
+
+    /** Opens the organiser on the groups list, or on one group's channels ([group] = playlist's name). */
+    fun openOrganise(group: String?) {
+        popup = null
+        organiseStart = group
+        organiseReturn = if (mode == Mode.ORGANISE) organiseReturn else mode
+        mode = Mode.ORGANISE
+    }
+
     fun editChannel(ch: ChannelEntity) {
         val locked = vm.isLocked(ch)
         popup = Popup(
@@ -460,17 +471,6 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Hold OK on a group in the groups menu. */
-    var organiseStart by remember { mutableStateOf<String?>(null) }
-    var organiseReturn by remember { mutableStateOf(Mode.GROUPS) }
-
-    /** Opens the organiser on the groups list, or on one group's channels ([group] = playlist's name). */
-    fun openOrganise(group: String?) {
-        popup = null
-        organiseStart = group
-        organiseReturn = if (mode == Mode.ORGANISE) organiseReturn else mode
-        mode = Mode.ORGANISE
-    }
-
     fun editGroup(group: String) {
         val label = if (group == ChannelFilter.UNGROUPED) "Other channels" else group
         val locked = vm.isGroupLocked(group)

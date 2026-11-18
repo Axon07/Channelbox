@@ -184,7 +184,7 @@ private fun ChannelsOrganiser(vm: TvViewModel, group: String, onBack: () -> Unit
             },
         )
         val sel = selected.toList()
-        val actions = buildList {
+        val actions = buildList<Pair<String, () -> Unit>> {
             if (!favourites) add("★ Add to Favourites${count(sel.size)}" to { vm.addFavorites(sel); selected.clear() })
             add("Remove from Favourites${count(sel.size)}" to { vm.removeFavorites(sel); selected.clear() })
             add("Hide${count(sel.size)}" to { vm.setChannelsHidden(sel, true); selected.clear() })
