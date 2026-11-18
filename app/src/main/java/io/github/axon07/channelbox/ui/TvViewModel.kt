@@ -232,6 +232,89 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun showAgain(item: HiddenItem) = edit(item.id) { it.copy(hidden = false) }
 
+    // ---- Organise: many channels / groups at once ---------------------------------------
+
+    /** A group as the organiser shows it (hidden ones too). [original] is the playlist's name. */
+    data class OrgGroup(val original: String, val shown: String, val count: Int, val hidden: Boolean)
+
+    /** A channel as the organiser shows it (hidden ones too). */
+    data class OrgChannel(val channel: ChannelEntity, val hidden: Boolean, val favorite: Boolean)
+
+    /** Channels of the playlists that are on, with your names – hidden ones included. */
+    private val everyChannel: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides, c.settings.flow) { saved, ov, s ->
+        val live = s.playlists.filter { it.enabled }.mapTo(HashSet()) { it.id }
+        saved.filter { playlistOf(it) in live }.map { ch ->
+            val o = ov[channelKey(ch.id)]
+            ch.copy(name = o?.name ?: ch.name, number = o?.position ?: ch.number)
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /** Every group in menu order, hidden ones included. */
+    val organiseGroups: StateFlow<List<OrgGroup>> = combine(everyChannel, overrides) { list, ov ->
+        val counts = list.groupingBy { it.groupTitle }.eachCount()
+        val names = list.map { it.groupTitle }.distinct()
+        val ordered = names.filter { it != ChannelFilter.UNGROUPED } + names.filter { it == ChannelFilter.UNGROUPED }
+        ordered.sortedBy { ov[groupKey(it)]?.position ?: Int.MAX_VALUE }.map { g ->
+            val o = ov[groupKey(g)]
+            OrgGroup(g, groupLabel(o?.name ?: g), counts[g] ?: 0, o?.hidden == true)
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /** Channels of one group ([group] = the playlist's name), or Favourites in your order when null. */
+    fun organiseChannels(group: String?): kotlinx.coroutines.flow.Flow<List<OrgChannel>> =
+        combine(everyChannel, overrides, favoriteOrder) { list, ov, favs ->
+            val favSet = favs.toHashSet()
+            val chosen = if (group == null) {
+                val byId = list.associateBy { it.id }
+                favs.mapNotNull { byId[it] }
+            } else {
+                list.filter { it.groupTitle == group }.sortedBy { it.number }
+            }
+            chosen.map { ch ->
+                OrgChannel(
+                    ch,
+                    hidden = ov[channelKey(ch.id)]?.hidden == true || ov[groupKey(ch.groupTitle)]?.hidden == true,
+                    favorite = ch.id in favSet,
+                )
+            }
+        }
+
+    fun setGroupsHidden(originals: Collection<String>, hidden: Boolean) = viewModelScope.launch {
+        if (originals.isEmpty()) return@launch
+        repo.putOverrides(originals.map { g ->
+            (overrides.value[groupKey(g)] ?: OverrideEntity(groupKey(g))).copy(hidden = hidden)
+        })
+        showToast(if (hidden) "${originals.size} hidden" else "${originals.size} shown again")
+    }
+
+    /** Saves the order of every group (playlist names, top first). */
+    fun setGroupOrder(originals: List<String>) = viewModelScope.launch {
+        repo.putOverrides(originals.mapIndexed { i, g ->
+            (overrides.value[groupKey(g)] ?: OverrideEntity(groupKey(g))).copy(position = i)
+        })
+    }
+
+    fun setChannelsHidden(ids: Collection<String>, hidden: Boolean) = viewModelScope.launch {
+        if (ids.isEmpty()) return@launch
+        repo.putOverrides(ids.map { id ->
+            (overrides.value[channelKey(id)] ?: OverrideEntity(channelKey(id))).copy(hidden = hidden)
+        })
+        showToast(if (hidden) "${ids.size} hidden" else "${ids.size} shown again")
+    }
+
+    fun addFavorites(ids: List<String>) = viewModelScope.launch {
+        val new = ids.filter { it !in favorites.value }
+        repo.addFavorites(new)
+        showToast(if (new.isEmpty()) "Already in Favourites" else "${new.size} added to Favourites")
+    }
+
+    fun removeFavorites(ids: List<String>) = viewModelScope.launch {
+        repo.removeFavorites(ids)
+        showToast("${ids.size} removed from Favourites")
+    }
+
+    fun setFavoriteOrder(ids: List<String>) = viewModelScope.launch { repo.setFavoriteOrder(ids) }
+
     fun resetEdits() = viewModelScope.launch {
         repo.resetEdits()
         showToast("Channel and group changes undone")
@@ -337,7 +420,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setVodCategoryLocked(kind: String, category: String, locked: Boolean) = setLocked(vodKey(kind, category), locked, category)
     fun unlockItem(item: HiddenItem) = setLocked(item.id, false, item.label)
 
-    val favorites: StateFlow<Set<String>> = repo.favorites
+    /** Favourite channel ids in your order. */
+    val favoriteOrder: StateFlow<List<String>> = repo.favoriteOrder
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val favorites: StateFlow<Set<String>> = favoriteOrder.map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     private val _filter = MutableStateFlow<ChannelFilter>(ChannelFilter.All)
@@ -440,10 +527,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val recordingsFolder: java.io.File get() = c.recorder.directory()
 
     val visibleChannels: StateFlow<List<ChannelEntity>> =
-        combine(allChannels, favorites, _filter) { list, favs, f ->
+        combine(allChannels, favoriteOrder, _filter) { list, favs, f ->
             when (f) {
                 ChannelFilter.All -> list
-                ChannelFilter.Favorites -> list.filter { it.id in favs }
+                // In your order.
+                ChannelFilter.Favorites -> list.associateBy { it.id }.let { byId -> favs.mapNotNull { byId[it] } }
                 is ChannelFilter.Group -> list.filter {
                     it.groupTitle == f.name && (f.playlistId == null || playlistOf(it) == f.playlistId)
                 }

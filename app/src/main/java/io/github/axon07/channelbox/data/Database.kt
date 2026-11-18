@@ -97,7 +97,11 @@ interface RecordingDao {
 }
 
 @Entity(tableName = "favorites")
-data class FavoriteEntity(@PrimaryKey val channelId: String)
+data class FavoriteEntity(
+    @PrimaryKey val channelId: String,
+    /** Your order in Favourites (lowest first). */
+    @ColumnInfo(defaultValue = "0") val position: Int = 0,
+)
 
 @Entity(tableName = "programs", indices = [Index(value = ["epgId", "start"]), Index(value = ["start"])])
 data class ProgramEntity(
@@ -143,14 +147,27 @@ abstract class ChannelDao {
     @Query("UPDATE channels SET epgId = :epgId WHERE id = :id")
     abstract suspend fun setEpgId(id: String, epgId: String)
 
-    @Query("SELECT channelId FROM favorites")
+    /** Favourites in your order (new ones at the end). */
+    @Query("SELECT channelId FROM favorites ORDER BY position, rowid")
     abstract fun observeFavorites(): Flow<List<String>>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun addFavorite(favorite: FavoriteEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun addFavorites(favorites: List<FavoriteEntity>)
+
+    @Query("SELECT IFNULL(MAX(position), 0) FROM favorites")
+    abstract suspend fun lastFavoritePosition(): Int
+
+    @Query("UPDATE favorites SET position = :position WHERE channelId = :id")
+    abstract suspend fun setFavoritePosition(id: String, position: Int)
+
     @Query("DELETE FROM favorites WHERE channelId = :id")
     abstract suspend fun removeFavorite(id: String)
+
+    @Query("DELETE FROM favorites WHERE channelId IN (:ids)")
+    abstract suspend fun removeFavorites(ids: List<String>)
 }
 
 @Dao
@@ -175,7 +192,7 @@ interface ProgramDao {
         ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class,
         VodEntity::class, VodProgressEntity::class, OverrideEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -233,6 +250,13 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** v7: your own channel/group names, numbers, hidden and locked items. */
+        /** v8: your order of favourites. */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorites ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -244,7 +268,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .build()
     }

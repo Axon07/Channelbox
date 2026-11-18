@@ -39,7 +39,9 @@ class TvRepository(
     val playlistErrors: StateFlow<Map<String, String>> = _playlistErrors.asStateFlow()
 
     val channels: Flow<List<ChannelEntity>> = db.channels().observeAll()
-    val favorites: Flow<Set<String>> = db.channels().observeFavorites().map { it.toSet() }
+    /** Favourite channel ids in your order. */
+    val favoriteOrder: Flow<List<String>> = db.channels().observeFavorites()
+    val favorites: Flow<Set<String>> = favoriteOrder.map { it.toSet() }
 
     fun programs(from: Long, to: Long): Flow<List<ProgramEntity>> = db.programs().observeWindow(from, to)
 
@@ -105,8 +107,23 @@ class TvRepository(
     }
 
     suspend fun setFavorite(channelId: String, favorite: Boolean) {
-        if (favorite) db.channels().addFavorite(FavoriteEntity(channelId))
+        if (favorite) addFavorites(listOf(channelId))
         else db.channels().removeFavorite(channelId)
+    }
+
+    /** Adds channels to the end of Favourites (ones already there stay where they are). */
+    suspend fun addFavorites(ids: List<String>) = db.withTransaction {
+        val start = db.channels().lastFavoritePosition() + 1
+        db.channels().addFavorites(ids.mapIndexed { i, id -> FavoriteEntity(id, start + i) })
+    }
+
+    suspend fun removeFavorites(ids: List<String>) = db.withTransaction {
+        ids.chunked(500).forEach { db.channels().removeFavorites(it) }
+    }
+
+    /** Saves the order of Favourites. */
+    suspend fun setFavoriteOrder(ids: List<String>) = db.withTransaction {
+        ids.forEachIndexed { i, id -> db.channels().setFavoritePosition(id, i) }
     }
 
     /**

@@ -68,6 +68,8 @@ enum class Mode {
     VOD,
     /** Search the guide (normal focus). */
     SEARCH,
+    /** Organise many channels / groups at once (normal focus). */
+    ORGANISE,
 }
 
 /** Screens where we read the remote ourselves (the others use normal focus). */
@@ -431,6 +433,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         popup = Popup(
             ch.name, "Channel ${ch.number}",
             listOf(
+                DialogAction("Select several…") { openOrganise(vm.originalGroup(ch.groupTitle)) },
                 DialogAction("Rename") {
                     popup = null
                     textInput = TextInput("Rename ${ch.name}", ch.name, "Leave empty to use the playlist's name", false) {
@@ -457,6 +460,17 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
 
     /** Hold OK on a group in the groups menu. */
+    var organiseStart by remember { mutableStateOf<String?>(null) }
+    var organiseReturn by remember { mutableStateOf(Mode.GROUPS) }
+
+    /** Opens the organiser on the groups list, or on one group's channels ([group] = playlist's name). */
+    fun openOrganise(group: String?) {
+        popup = null
+        organiseStart = group
+        organiseReturn = if (mode == Mode.ORGANISE) organiseReturn else mode
+        mode = Mode.ORGANISE
+    }
+
     fun editGroup(group: String) {
         val label = if (group == ChannelFilter.UNGROUPED) "Other channels" else group
         val locked = vm.isGroupLocked(group)
@@ -469,6 +483,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         vm.renameGroup(group, it)
                     }
                 },
+                DialogAction("Select channels…") { openOrganise(vm.originalGroup(group)) },
+                DialogAction("Organise groups…") { openOrganise(null) },
                 DialogAction("Move up") { vm.moveGroup(group, -1); if (groupsIndex > 0) groupsIndex-- },
                 DialogAction("Move down") { vm.moveGroup(group, 1); groupsIndex++ },
                 DialogAction("Hide") {
@@ -1093,6 +1109,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.MULTIVIEW -> if (multiPicking && multi.count > 0) multiPicking = false else closeMultiView()
             Mode.SETTINGS -> if (!settings.hasSource) mode = Mode.SETUP else openGroups(tile = 2)
             Mode.SEARCH -> openGroups(tile = 5)
+            Mode.ORGANISE -> mode = organiseReturn
             Mode.VOD -> when {
                 vodResume != null -> {
                     vodResume = null
@@ -1389,7 +1406,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     )
                 }
             }
+            Mode.ORGANISE -> OrganiseScreen(vm, start = organiseStart, onExit = { mode = organiseReturn })
             Mode.SETTINGS -> SettingsScreen(
+                onOrganise = { openOrganise(null) },
                 openNetwork = settingsFromSetup,
                 settings = settings,
                 refreshState = refreshState,

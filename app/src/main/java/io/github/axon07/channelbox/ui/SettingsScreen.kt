@@ -123,6 +123,8 @@ fun SettingsScreen(
     onEditSource: (String?) -> Unit,
     onOpenRecordings: () -> Unit,
     onExit: () -> Unit,
+    /** Opens the channel & group organiser. */
+    onOrganise: () -> Unit = {},
     /** Open on Network & VPN (from first-time setup, when the ISP blocks the playlist). */
     openNetwork: Boolean = false,
 ) {
@@ -224,6 +226,7 @@ fun SettingsScreen(
                                 playlistId = id
                                 openPage(Page.PLAYLIST)
                             },
+                            onOrganise = onOrganise,
                         ) { openPage(it) }
                         SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { openPage(it) }
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
@@ -249,6 +252,7 @@ private fun SourceSettings(
     vm: TvViewModel,
     onEditSource: (String?) -> Unit,
     onPlaylist: (String) -> Unit,
+    onOrganise: () -> Unit,
     openPage: (Page) -> Unit,
 ) {
     val counts by vm.playlistCounts.collectAsStateWithLifecycle()
@@ -301,6 +305,11 @@ private fun SourceSettings(
             },
         )
     }
+    SettingCard(
+        title = "Organise channels & groups",
+        description = "Hide many groups at once, put them in your order, add lots of channels to Favourites and sort them",
+        onClick = onOrganise,
+    )
     SettingCard(
         title = "Jellyfin",
         description = errors[io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID]?.let { "Last load failed: $it" }
