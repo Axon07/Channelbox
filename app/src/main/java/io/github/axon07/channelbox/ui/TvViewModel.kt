@@ -128,7 +128,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun originalGroup(shown: String): String = groupOriginals[shown] ?: shown
 
     /** The playlist's channels with your names, numbers and hidden items applied. */
-    val allChannels: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides) { list, ov ->
+    val allChannels: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides, c.settings.flow) { saved, ov, s ->
+        // Only channels of playlists that exist and are on: a removed playlist disappears at once,
+        // without waiting for the reload that deletes its rows.
+        val live = s.playlists.filter { it.enabled }.mapTo(HashSet()) { it.id }
+        val list = saved.filter { playlistOf(it) in live }
         if (ov.isEmpty()) {
             groupOriginals = emptyMap()
             return@combine list
