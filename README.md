@@ -47,7 +47,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Add from your phone** | The add-playlist screen shows a QR code: scan it, type the link or login on your phone, press Send. Works only on your home network and only while that screen is open |
 | **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
 | **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. Marks programmes set to record and locked channels; adapts to small screens |
-| **Groups menu** | Back from the guide: channel groups (one section per playlist when you have several), with shortcuts to Search, Movies, TV Shows, Recordings and Settings |
+| **Groups menu** | Back from the guide: channel groups (one section per playlist when you have several). Back again (or ◀) opens the side menu: Search, Live TV, Movies, TV Shows, Recordings and Settings |
 | **Movies & TV Shows** | From the playlist or the provider's Xtream API: poster grid by category, search, "Continue watching", seasons and episodes, resume where you stopped. Xtream-style M3U links get real posters and details from the API automatically |
 | **Pause live TV** | Play/Pause while watching: the channel is buffered on the box from that moment (up to 2 hours); resume behind live, ⏩ to jump back to live |
 | **Guide search** | Search programme titles across the whole guide; watch what's on, catch up on what aired, record what's coming |
@@ -68,7 +68,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Zapping** | Channel ▲/▼, number entry, previous channel, now/next info banner with a progress bar |
 | **Channel list** | Press ◀ while watching: channels by group with what's on now |
 | **Favourites** | Hold OK on a channel in the list or guide |
-| **Set-top box mode** | Optional start on boot, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → "Exit?"; the last step can also be set to never exit, or exit straight away |
+| **Set-top box mode** | Optional start on boot, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → side menu → "Press Back again to exit"; the last step can also be set to never exit, or exit straight away |
 | **Touch & mouse** | Tap the picture for the controls (record, pause, live, favourite, CC, multi-view, mini player, ⋯); swipe up/down to change channel; tap anything in the list or guide |
 | **Background refresh** | Playlist and guide reload every 6/12/24/48 hours, or only when you choose |
 
@@ -85,7 +85,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | 0–9 | Go to channel number | Go to channel number | Jump to channel |
 | Guide | Open guide | Open guide | Back to TV |
 | Menu | ⋯ menu | Open guide | Groups menu |
-| Back | Open guide | Close | Groups menu → Back again: "Exit?" |
+| Back | Open guide | Close | Groups → side menu → press Back twice to exit |
 | Last / Recall | Previous channel | Previous channel | – |
 | CC / Subtitles | Captions on/off | – | – |
 | Green | Multi-view | – | – |
@@ -93,7 +93,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | ⏩ / ■ Stop | Back to live (after a pause) | – | – |
 | Search | Search the guide | – | Search the guide |
 
-**Groups menu:** ▲▼ choose, OK select, ▶ or Back to the guide, hold OK on a group to rename / move / hide / lock it.
+**Groups menu:** ▲▼ choose, OK select, ▶ to the guide, ◀ or Back to the side menu, hold OK on a group to rename / move / hide / lock it.
 Search, Movies, TV Shows, Recordings and Settings are in the shortcut bar.
 **Guide:** hold OK on a programme → *Edit channel…* to rename, renumber, hide or lock the channel.
 **Playing a movie, episode, recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, ▼ to move onto the buttons (◀ ▶ choose, OK press, ▲ back),

@@ -64,6 +64,7 @@ fun GroupsPanel(
     recordingCount: Int,
     movieCount: Int,
     showCount: Int,
+    showRail: Boolean = true,
     onSelect: (Int) -> Unit,
 ) {
     LaunchedEffect(selected) {
@@ -79,7 +80,7 @@ fun GroupsPanel(
     ) {
         // Shortcut rail (scrolls if the screen is too short, e.g. a phone on its side).
         val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
-        Column(
+        if (showRail) Column(
             Modifier
                 .fillMaxHeight()
                 .width(if (compact) 72.dp else 84.dp)
@@ -90,7 +91,7 @@ fun GroupsPanel(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             RailItem("Search", AppIcons.Search, selected == n + 5) { onSelect(n + 5) }
-            RailItem("Live TV", AppIcons.List, highlighted = !inRail, selected = false) { onSelect(rows.indexOfFirst { it is MenuRow.Item }.coerceAtLeast(0)) }
+            RailItem("Live TV", AppIcons.List, highlighted = !inRail, selected = selected == n + 6) { onSelect(n + 6) }
             if (movieCount > 0) RailItem("Movies", AppIcons.Film, selected == n + 3) { onSelect(n + 3) }
             if (showCount > 0) RailItem("TV Shows", AppIcons.Tv, selected == n + 4) { onSelect(n + 4) }
             RailItem(if (recordingCount > 0) "Recordings ($recordingCount)" else "Recordings", AppIcons.Record, selected == n + 1) { onSelect(n + 1) }

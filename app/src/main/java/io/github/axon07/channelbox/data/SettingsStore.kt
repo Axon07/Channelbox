@@ -75,7 +75,7 @@ data class Playlist(
 
 /** What the last Back press does (TV → guide → groups → this). */
 enum class BackAction(val label: String) {
-    ASK_EXIT("Ask before exiting"),
+    ASK_EXIT("Press Back twice to exit"),
     OPEN_GUIDE("Never exit (set-top box)"),
     EXIT("Exit right away"),
 }

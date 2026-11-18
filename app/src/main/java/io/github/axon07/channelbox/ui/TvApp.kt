@@ -170,6 +170,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     var settingsFromSetup by remember { mutableStateOf(false) }
     /** When the groups menu was opened (for [groupsBack]). */
     var groupsOpenedAt by remember { mutableLongStateOf(0L) }
+    /** When Back was pressed on the side menu: a second Back soon after exits. */
+    var exitArmedAt by remember { mutableLongStateOf(0L) }
     val vodBrowser = remember { VodBrowser() }
     val movieCount by vm.movieCount.collectAsStateWithLifecycle()
     val showCount by vm.showCount.collectAsStateWithLifecycle()
@@ -272,22 +274,36 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         mode = Mode.EXIT_CONFIRM
     }
 
-    /** Back on the groups menu – the last step before leaving. */
+    /** Back on the side menu – the last step before leaving. */
     fun lastBack() {
         when (settings.backAction) {
-            BackAction.ASK_EXIT -> askExit(Mode.GROUPS)
-            BackAction.OPEN_GUIDE -> mode = Mode.PLAYER // never exit: go round to live TV
+            BackAction.ASK_EXIT -> {
+                val t = android.os.SystemClock.uptimeMillis()
+                if (t - exitArmedAt < EXIT_AGAIN_MS) {
+                    exitArmedAt = 0L
+                    exitApp()
+                } else {
+                    exitArmedAt = t
+                    vm.showToast("Press Back again to exit")
+                }
+            }
+            BackAction.OPEN_GUIDE -> mode = Mode.GUIDE // never exit: go round to the guide
             BackAction.EXIT -> exitApp()
         }
     }
 
     /**
-     * Back on the groups menu. Pressed quickly after arriving (Back, Back, Back from TV), it's the
-     * last step: ask to exit. After spending time in the menu it just closes the menu, back to TV.
+     * Back in the groups menu: Guide → Back shows the groups, Back again the side menu
+     * (Search, Live TV, Movies…), Back again "press Back again to exit".
      */
     fun groupsBack() {
-        if (android.os.SystemClock.uptimeMillis() - groupsOpenedAt < QUICK_BACK_MS) lastBack()
-        else mode = Mode.PLAYER
+        val rows = menuRows.size
+        if (groupsIndex < rows) {
+            groupsLastRow = groupsIndex
+            groupsIndex = rows + 6 // the Live TV tile on the side menu
+        } else {
+            lastBack()
+        }
     }
 
     fun openMultiView() {
@@ -360,6 +376,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val tileMovies = rowCount + 3
     val tileShows = rowCount + 4
     val tileSearch = rowCount + 5
+    val tileLive = rowCount + 6
     val guideSearch = remember { GuideSearchState() }
 
     fun openSearch() {
@@ -367,7 +384,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     }
     // The shortcut rail, top to bottom (matches GroupsPanel).
     val railTiles = listOfNotNull(
-        tileSearch, tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 },
+        tileSearch, tileLive, tileMovies.takeIf { movieCount > 0 }, tileShows.takeIf { showCount > 0 },
         rowCount + 1, rowCount + 2, // Recordings, Settings (Multi-view: hold OK or the green button while watching)
     )
 
@@ -387,6 +404,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             i == tileMovies -> openVod(VodKind.MOVIE)
             i == tileShows -> openVod(VodKind.SERIES)
             i == tileSearch -> openSearch()
+            // Live TV: back to the guide on the group you were on.
+            i == tileLive -> mode = Mode.GUIDE
             i < rowCount -> when (val row = menuRows[i]) {
                 is MenuRow.Header -> if (row.collapsible) vm.toggleSection(row.key)
                 is MenuRow.Item -> {
@@ -1203,6 +1222,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         recordingCount = recordings.count { it.status != RecStatus.CANCELLED },
                         movieCount = movieCount,
                         showCount = showCount,
+                        // The side menu shows once you go to it (◀ or Back); always on touch screens.
+                        showRail = groupsIndex >= rowCount ||
+                            androidx.compose.ui.platform.LocalInputModeManager.current.inputMode ==
+                            androidx.compose.ui.input.InputMode.Touch,
                         onSelect = { selectGroupItem(it) },
                     )
                 }
@@ -1584,4 +1607,4 @@ private data class TextInput(
 )
 
 /** Back presses closer together than this go straight through the menus to "Exit?". */
-private const val QUICK_BACK_MS = 2_000L
+private const val EXIT_AGAIN_MS = 2_500L
