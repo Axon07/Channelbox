@@ -76,7 +76,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 
 | Button | Watching TV | Channel list | Guide |
 |---|---|---|---|
-| ▲ / ▼, CH+ / CH− | Change channel | Move | Move (CH± = page) |
+| ▲ / ▼, CH+ / CH− | Change channel | Move (wraps top ↔ bottom) | Move, wraps top ↔ bottom (CH± = page) |
 | ◀ | Open channel list | Previous group | Earlier |
 | ▶ / Info | Show/hide info banner | Next group | Later |
 | OK | Control bar (OK again = pause; ◀ ▶ record, live, CC, multi-view, ⋯; ▲ hide) | Watch | On now: watch · finished: catch-up · future: record menu |

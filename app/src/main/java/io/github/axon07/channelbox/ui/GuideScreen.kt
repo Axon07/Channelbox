@@ -84,9 +84,18 @@ class GuideState {
     fun programAt(channel: ChannelEntity?, programs: Map<String, List<ProgramEntity>>, time: Long = focusTime) =
         channel?.epgId?.let { programs[it] }?.firstOrNull { it.start <= time && time < it.stop }
 
-    fun moveVertical(delta: Int, channelCount: Int) {
+    /**
+     * Moves up / down. At the top, ▲ jumps to the last channel; at the bottom, ▼ jumps to the first
+     * ([wrap] is off while a key is held, so holding ▼ stops at the end instead of flying round).
+     */
+    fun moveVertical(delta: Int, channelCount: Int, wrap: Boolean = false) {
         if (channelCount == 0) return
-        row = (row + delta).coerceIn(0, channelCount - 1)
+        val last = channelCount - 1
+        row = when {
+            wrap && delta < 0 && row == 0 -> last
+            wrap && delta > 0 && row == last -> 0
+            else -> (row + delta).coerceIn(0, last)
+        }
     }
 
     fun moveHorizontal(delta: Int, channel: ChannelEntity?, programs: Map<String, List<ProgramEntity>>, vm: TvViewModel) {

@@ -714,6 +714,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
         }
     }
 
+    /** Repeat count of the key being handled (0 = a fresh press). */
+    var keyRepeat = 0
+
     fun onKeyDown(code: Int): Boolean {
         if (mode == Mode.PLAYER || mode == Mode.CHANNEL_LIST || mode == Mode.GUIDE) {
             digitOf(code)?.let { d ->
@@ -786,10 +789,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.GUIDE -> {
                 val channel = visible.getOrNull(guide.row)
                 when (code) {
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> guide.moveVertical(-1, visible.size)
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> guide.moveVertical(1, visible.size)
-                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> guide.moveVertical(-7, visible.size)
-                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> guide.moveVertical(7, visible.size)
+                    // Top ↔ bottom wrap on a fresh press (not while holding the key).
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> guide.moveVertical(-1, visible.size, wrap = keyRepeat == 0)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> guide.moveVertical(1, visible.size, wrap = keyRepeat == 0)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> guide.moveVertical(-7, visible.size, wrap = keyRepeat == 0)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> guide.moveVertical(7, visible.size, wrap = keyRepeat == 0)
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> guide.moveHorizontal(-1, channel, guidePrograms, vm)
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> guide.moveHorizontal(1, channel, guidePrograms, vm)
                     AndroidKeyEvent.KEYCODE_GUIDE -> mode = Mode.PLAYER
@@ -922,6 +926,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             return true
         }
+        keyRepeat = native.repeatCount
         return if (isDown) onKeyDown(code) else true
     }
 
