@@ -94,7 +94,7 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | Search | Search the guide | – | Search the guide |
 
 **Groups menu:** ▲▼ choose, OK select, ▶ to the guide, ◀ or Back to the side menu, hold OK on a group to rename / move / hide / lock it.
-Search, Movies, TV Shows, Recordings and Settings are in the shortcut bar.
+Search, Live TV, Movies, TV Shows, Recordings and Settings are on the side menu.
 **Guide:** hold OK on a programme → *Edit channel…* to rename, renumber, hide or lock the channel.
 **Playing a movie, episode, recording or catch-up:** OK / ⏯ pause, ◀ ▶ (or ⏪ ⏩) skip 10 s back / 30 s ahead, ▼ to move onto the buttons (◀ ▶ choose, OK press, ▲ back),
 CC for captions, hold OK for the ⋯ menu, Back hides the controls and then returns to the list.
