@@ -168,6 +168,8 @@ data class AppSettings(
     val lastChannelId: String? = null,
     /** Start playing the last channel when the app opens (otherwise open on the guide). */
     val playLastOnStart: Boolean = true,
+    /** Show channel numbers beside the names in the TV guide. */
+    val showChannelNumbers: Boolean = false,
     val lastRefresh: Long = 0L,
 ) {
     /** False until at least one playlist has been added (first-run setup). */
@@ -197,6 +199,7 @@ class SettingsStore(private val context: Context) {
         val LANGUAGE = stringPreferencesKey("language")
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
         val PLAY_LAST = booleanPreferencesKey("play_last_on_start")
+        val SHOW_NUMBERS = booleanPreferencesKey("guide_show_numbers")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val BACK_ACTION = stringPreferencesKey("back_action")
@@ -324,6 +327,7 @@ class SettingsStore(private val context: Context) {
         skippedVersion = this[Keys.SKIPPED_VERSION],
         lastChannelId = this[Keys.LAST_CHANNEL],
         playLastOnStart = this[Keys.PLAY_LAST] ?: true,
+        showChannelNumbers = this[Keys.SHOW_NUMBERS] ?: false,
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
     )
 
@@ -367,6 +371,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setLanguage(code: String) = context.dataStore.edit { it[Keys.LANGUAGE] = code }
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
     suspend fun setPlayLastOnStart(on: Boolean) = context.dataStore.edit { it[Keys.PLAY_LAST] = on }
+    suspend fun setShowChannelNumbers(on: Boolean) = context.dataStore.edit { it[Keys.SHOW_NUMBERS] = on }
 
     /** Every setting as JSON values (for a backup file). */
     suspend fun exportAll(): kotlinx.serialization.json.JsonObject {

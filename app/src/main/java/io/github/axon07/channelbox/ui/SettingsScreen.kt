@@ -364,6 +364,12 @@ private fun SourceSettings(
         onClick = { openPage(Page.GUIDE_DAYS) },
     )
     SettingCard(
+        title = "Channel numbers in the guide",
+        description = "Off gives channel names more room",
+        toggle = settings.showChannelNumbers,
+        onClick = { vm.setShowChannelNumbers(!settings.showChannelNumbers) },
+    )
+    SettingCard(
         title = "Reload automatically",
         description = "Fetch the latest channels and guide in the background",
         value = refreshLabel(settings.refreshHours).substringBefore(" ("),

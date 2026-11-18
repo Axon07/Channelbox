@@ -58,9 +58,9 @@ data class GuideMetrics(
 @Composable
 fun guideMetrics(): GuideMetrics =
     if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
-        GuideMetrics(176.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
+        GuideMetrics(196.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
     } else {
-        GuideMetrics(240.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
+        GuideMetrics(264.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
     }
 
 /**
@@ -292,12 +292,15 @@ private fun GuideRow(
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(channel.number.toString(), fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.width(34.dp))
+            if (LocalShowChannelNumbers.current) {
+                Text(channel.number.toString(), fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.width(34.dp))
+            }
             ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 44.dp, height = 26.dp))
             Spacer(Modifier.width(8.dp))
             Text(
                 (if (playing) "▶ " else "") + channel.name + (if (favorite) " ★" else ""),
-                fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // Long names wrap onto a second line instead of being cut off.
+                fontSize = 13.sp, lineHeight = 15.sp, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             if (channel.id in LocalRecordingChannels.current) {

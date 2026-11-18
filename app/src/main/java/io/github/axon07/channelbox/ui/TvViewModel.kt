@@ -1360,6 +1360,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }
     fun setStartOnWake(on: Boolean) = viewModelScope.launch { c.settings.setStartOnWake(on) }
     fun setPlayLastOnStart(on: Boolean) = viewModelScope.launch { c.settings.setPlayLastOnStart(on) }
+    fun setShowChannelNumbers(on: Boolean) = viewModelScope.launch { c.settings.setShowChannelNumbers(on) }
 
     // ---- Backup & restore -------------------------------------------------------------------
 

@@ -123,6 +123,7 @@ fun TvApp(vm: TvViewModel) {
         androidx.compose.runtime.CompositionLocalProvider(
             LocalLockedChannels provides locked,
             LocalRecordingChannels provides recording,
+            LocalShowChannelNumbers provides s.showChannelNumbers,
         ) {
             TvAppContent(vm, s)
         }
@@ -131,6 +132,9 @@ fun TvApp(vm: TvViewModel) {
 
 /** Ids of channels recording right now, for the red dot in the guide and channel list. */
 val LocalRecordingChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
+
+/** Whether the guide shows channel numbers beside the names. */
+val LocalShowChannelNumbers = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 /** Ids of locked channels (parental PIN), for the little lock in the guide and channel list. */
 val LocalLockedChannels = androidx.compose.runtime.staticCompositionLocalOf<Set<String>> { emptySet() }
