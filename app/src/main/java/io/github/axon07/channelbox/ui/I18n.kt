@@ -88,7 +88,7 @@ object I18n {
         "he" to "עברית", "hi" to "हिन्दी", "hr" to "Hrvatski", "hu" to "Magyar", "id" to "Bahasa Indonesia",
         "it" to "Italiano", "ja" to "日本語", "ko" to "한국어", "ms" to "Bahasa Melayu", "nl" to "Nederlands",
         "no" to "Norsk", "pl" to "Polski", "pt" to "Português", "ro" to "Română", "ru" to "Русский",
-        "sk" to "Slovenčina", "sr" to "Srpski", "sv" to "Svenska", "th" to "ไทย", "tl" to "Filipino",
+        "sk" to "Slovenčina", "sr" to "Srpski", "sv" to "Svenska", "th" to "ไทย", "tl" to "Filipino (Tagalog)",
         "tr" to "Türkçe", "uk" to "Українська", "ur" to "اردو", "vi" to "Tiếng Việt", "zh" to "中文",
         "pa" to "ਪੰਜਾਬੀ", "bn" to "বাংলা", "ta" to "தமிழ்", "sq" to "Shqip", "so" to "Soomaali",
     )
