@@ -73,6 +73,35 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Touch & mouse** | Tap the picture for the controls (record, pause, live, favourite, CC, multi-view, mini player, ⋯); swipe up/down to change channel; tap anything in the list or guide |
 | **Background refresh** | Playlist and guide reload every 6/12/24/48 hours, or only when you choose |
 
+## Playback settings
+
+**Settings → Playback.** Channelbox uses Google's Media3 ExoPlayer (the engine behind most Android TV apps); these
+options tune it. Buffer size, decoders and passthrough take effect the next time Channelbox starts; auto frame rate
+applies straight away.
+
+| Setting | Options | Default | When to change it |
+|---|---|---|---|
+| Buffer size | None · Small · Medium · Large · Very large | Medium | Bigger for a shaky connection, smaller for faster channel changes |
+| Video decoder | Hardware · Software | Hardware | Software if a channel shows green blocks or won't play (works the box harder; copy-protected channels always use hardware) |
+| Audio decoder | Hardware · Software | Hardware | Software if some channels play without sound |
+| Audio passthrough | On · Off | On | Off if Dolby / DTS channels are silent through the TV's speakers; on to send them untouched to a receiver or soundbar |
+| Auto frame rate (AFR) | On · Off | Off | On for smoother motion: the TV switches refresh rate to match the video (e.g. 50 Hz for European channels, 23.976 Hz for films). Waits ~1.5 s after a channel change; the screen may blank for a moment |
+| Captions on by default | On · Off | Off | On to start every channel and video with subtitles / CC |
+| Maximum quality | Best available · up to 1080p · 720p · 480p · Automatic | Best available | Lower on a slow connection, or Automatic to follow the connection speed |
+
+Buffer sizes in detail:
+
+| Size | Keeps loaded ahead | Starts playing after | Restarts after a stall |
+|---|---|---|---|
+| None | 1.5–4 s | 0.5 s | 1 s |
+| Small | 5–15 s | 1 s | 2 s |
+| Medium | 15–30 s | 2 s | 4 s |
+| Large | 30–60 s | 4 s | 8 s |
+| Very large | 60–120 s | 6 s | 12 s |
+
+On live channels the buffer can only fill up to the live point, so a bigger buffer mostly helps with dropouts and
+movies; it doesn't put you further behind live.
+
 ## Remote control
 
 | Button | Watching TV | Channel list | Guide |
@@ -154,7 +183,14 @@ Keep a backup of `channelbox-release.jks` and its password somewhere safe – if
 updated and everyone has to uninstall and reinstall.
 
 To release: **Releases → Draft a new release → new tag (e.g. `v1.0.0`) → Publish**. The workflow sets the app version from the
-tag, builds the signed APK and attaches it; installed apps will offer the update.
+tag, builds the signed APK and attaches it as `channelbox.apk`; installed apps will offer the update.
+
+The release notes get a **What's changed** list automatically: every change since the previous release, one line
+each, taken from the commit titles (housekeeping commits are left out), plus the Downloader code. Anything you type
+in the release description is kept above it. Don't use GitHub's *Generate release notes* button – it adds a second list.
+
+Version numbers: `v0.x.y` while in testing – bump the last number for fixes (`v0.6.1`) and the middle one for new
+features (`v0.7.0`). `v1.0.0` once it's been stable in daily use.
 
 ## Making it act like a cable box
 
