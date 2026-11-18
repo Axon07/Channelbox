@@ -169,6 +169,12 @@ object VodClassifier {
 
 }
 
+/**
+ * Movie / episode ids include the playlist, so the same title in two playlists (e.g. one provider
+ * added as both an M3U link and a login) is two rows – removing one playlist removes only its own.
+ */
+fun vodId(playlistId: String, url: String) = "$playlistId|$url"
+
 /** Turns M3U file entries into movies, episodes and one show row per series, one entry at a time. */
 class VodBuilder(private val playlistId: String) {
     private val shows = HashSet<String>()
@@ -181,7 +187,7 @@ class VodBuilder(private val playlistId: String) {
         if (kind == VodClassifier.Kind.MOVIE) {
             return listOf(
                 VodEntity(
-                    id = p.url, playlistId = playlistId, kind = VodKind.MOVIE, title = p.name, category = p.group,
+                    id = vodId(playlistId, p.url), playlistId = playlistId, kind = VodKind.MOVIE, title = p.name, category = p.group,
                     poster = p.logo, url = p.url, headers = headers, seriesKey = null, season = 0, episode = 0,
                     added = 0, sortIndex = -i, plot = null, rating = null, year = null,
                 )
@@ -200,7 +206,7 @@ class VodBuilder(private val playlistId: String) {
             )
         }
         out += VodEntity(
-            id = p.url, playlistId = playlistId, kind = VodKind.EPISODE,
+            id = vodId(playlistId, p.url), playlistId = playlistId, kind = VodKind.EPISODE,
             title = parsed?.rest?.takeIf { it.isNotBlank() } ?: p.name,
             category = p.group, poster = p.logo, url = p.url, headers = headers, seriesKey = key,
             season = parsed?.season ?: 0, episode = parsed?.episode ?: (i + 1), added = 0, sortIndex = -i,
@@ -251,6 +257,12 @@ class VodWriter(private val db: AppDatabase, private val playlistId: String) {
         flush()
         val sql = db.openHelper.writableDatabase
         db.runInTransaction {
+            // Watch positions saved under the old ids (before ids included the playlist) carry over.
+            sql.execSQL(
+                "UPDATE OR IGNORE vod_progress SET id = ? || '|' || id " +
+                    "WHERE (? || '|' || id) IN (SELECT id FROM vod WHERE playlistId = ?)",
+                arrayOf(playlistId, playlistId, playlistId),
+            )
             sql.execSQL(
                 "DELETE FROM vod WHERE playlistId = ? AND id NOT IN (SELECT id FROM vod_keep WHERE playlistId = ?)",
                 arrayOf(playlistId, playlistId),

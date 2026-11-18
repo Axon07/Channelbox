@@ -113,6 +113,28 @@ class TvRepository(
         }
     }
 
+    /** Removes movies & shows (and channels) left behind by playlists that no longer exist. */
+    suspend fun dropRemovedPlaylists() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val ids = settings.current().playlists.map { it.id }
+            val sql = db.openHelper.writableDatabase
+            val before = db.vod().count(VodKind.MOVIE) + db.vod().count(VodKind.SERIES)
+            db.runInTransaction {
+                if (ids.isEmpty()) {
+                    sql.execSQL("DELETE FROM vod")
+                } else {
+                    val marks = ids.joinToString(",") { "?" }
+                    sql.execSQL("DELETE FROM vod WHERE playlistId NOT IN ($marks)", ids.toTypedArray())
+                    sql.execSQL("DELETE FROM channels WHERE IFNULL(playlistId, 'main') NOT IN ($marks)", ids.toTypedArray())
+                }
+            }
+            if (db.vod().count(VodKind.MOVIE) + db.vod().count(VodKind.SERIES) != before) {
+                vodChanged()
+                compact(force = true)
+            }
+        }
+    }
+
     /**
      * Deletes every saved channel, movie & show and guide entry so the next reload starts from
      * scratch. Favourites, recordings, watch positions and your own names/numbers are kept.

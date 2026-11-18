@@ -933,6 +933,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     showToast("Allow the VPN in Settings → Network")
                 }
             }
+            // Clean up after playlists removed in an older version (or while a reload was running).
+            runCatching { repo.dropRemovedPlaylists() }
             if (!s.hasSource) return@launch
             val hasChannels = repo.allChannels().isNotEmpty()
             if (hasChannels) ensurePlaying()

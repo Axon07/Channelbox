@@ -120,7 +120,7 @@ class XtreamClient(private val http: OkHttpClient) {
                 val url = login.movieUrl(id, o["container_extension"]?.takeIf { it.isNotBlank() } ?: "mp4")
                 writer.add(
                     VodEntity(
-                        id = url, playlistId = playlistId, kind = VodKind.MOVIE,
+                        id = vodId(playlistId, url), playlistId = playlistId, kind = VodKind.MOVIE,
                         title = o["name"]?.trim().orEmpty().ifBlank { "Movie $id" },
                         category = o["category_id"]?.let { cats[it] } ?: "Uncategorized",
                         poster = o["stream_icon"]?.takeIf { it.isNotBlank() }, url = url, headers = null,
