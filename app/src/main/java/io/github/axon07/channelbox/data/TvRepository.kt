@@ -82,8 +82,21 @@ class TvRepository(
     }
 
     /** Episodes of a show: from the playlist (M3U) or fetched from the provider (Xtream). */
+    /** Signed-in Jellyfin session, reused for opening shows. */
+    @Volatile private var jellyfinSession: JellyfinClient.Session? = null
+
     suspend fun episodes(show: VodEntity): List<VodEntity> {
         val key = show.seriesKey ?: return emptyList()
+        if (show.id.startsWith("jfseries:")) {
+            val client = JellyfinClient(http, settings.current().jellyfin)
+            val session = jellyfinSession ?: client.signIn().also { jellyfinSession = it }
+            return try {
+                client.episodes(session, JellyfinClient.PLAYLIST_ID, key)
+            } catch (e: IOException) {
+                // The sign-in may have expired: once more with a fresh one.
+                client.episodes(client.signIn().also { jellyfinSession = it }, JellyfinClient.PLAYLIST_ID, key)
+            }
+        }
         if (show.id.startsWith("xseries:")) {
             val p = settings.current().playlists.firstOrNull { it.id == show.playlistId } ?: return emptyList()
             return XtreamClient(http).episodes(XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass), p.id, key)
@@ -116,15 +129,19 @@ class TvRepository(
     /** Removes movies & shows (and channels) left behind by playlists that no longer exist. */
     suspend fun dropRemovedPlaylists() = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val ids = settings.current().playlists.map { it.id }
+            val current = settings.current()
+            val ids = current.playlists.map { it.id }
+            val vodIds = ids + if (current.jellyfin.ready) listOf(JellyfinClient.PLAYLIST_ID) else emptyList()
             val sql = db.openHelper.writableDatabase
             val before = db.vod().count(VodKind.MOVIE) + db.vod().count(VodKind.SERIES)
             db.runInTransaction {
-                if (ids.isEmpty()) {
+                if (vodIds.isEmpty()) {
                     sql.execSQL("DELETE FROM vod")
-                } else {
+                }
+                if (ids.isNotEmpty()) {
                     val marks = ids.joinToString(",") { "?" }
-                    sql.execSQL("DELETE FROM vod WHERE playlistId NOT IN ($marks)", ids.toTypedArray())
+                    val vodMarks = vodIds.joinToString(",") { "?" }
+                    sql.execSQL("DELETE FROM vod WHERE playlistId NOT IN ($vodMarks)", vodIds.toTypedArray())
                     sql.execSQL("DELETE FROM channels WHERE IFNULL(playlistId, 'main') NOT IN ($marks)", ids.toTypedArray())
                 }
             }
@@ -198,6 +215,9 @@ class TvRepository(
         return try {
             val s = settings.current()
             val sources = s.playlists.filter { it.enabled }
+            val jellyfin = s.jellyfin
+            // Jellyfin set to replace the provider's movies & shows: don't load the provider's.
+            val providerVod = !jellyfin.replacesProvider
             if (sources.isEmpty()) {
                 db.channels().clear()
                 db.programs().clear()
@@ -211,7 +231,7 @@ class TvRepository(
             // show up under the remaining playlists, even if this load fails or is cut short.
             val keepIds = sources.map { it.id }
             db.channels().deleteOtherPlaylists(keepIds)
-            db.vod().deleteOtherPlaylists(keepIds)
+            db.vod().deleteOtherPlaylists(keepIds + if (jellyfin.ready) listOf(JellyfinClient.PLAYLIST_ID) else emptyList())
 
             val lineup = Lineup() // live channels, numbered as they arrive
             val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
@@ -233,7 +253,7 @@ class TvRepository(
                         playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
                         guides = playlist.epgUrls
-                        if (p.includeVod) {
+                        if (p.includeVod && providerVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
                             XtreamClient(http).loadVod(login, p.id, writer) { n ->
                                 _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
@@ -254,7 +274,7 @@ class TvRepository(
                             filesFromApi = writer.count > 0
                         }
                         // 1) The playlist link itself is an Xtream get.php link.
-                        val linkLogin = if (p.includeVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
+                        val linkLogin = if (p.includeVod && providerVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
                         if (linkLogin != null) {
                             vodFromApi(linkLogin)
                             _state.value = RefreshState.Running("Loading $label…")
@@ -269,7 +289,7 @@ class TvRepository(
                                 if (kind == VodClassifier.Kind.LIVE) {
                                     lineup.add(p.id, ch)
                                     live++
-                                } else if (p.includeVod && !filesFromApi) {
+                                } else if (p.includeVod && providerVod && !filesFromApi) {
                                     if (linkLogin == null && entryLogin == null && skippedFiles == 0 && builder.isEmpty) {
                                         entryLogin = XtreamClient.Login.fromStreamUrl(ch.url)
                                     }
@@ -330,8 +350,28 @@ class TvRepository(
             val entities = lineup.finish(kept)
             db.channels().replaceAll(entities)
 
-            // Movies & shows of playlists that were removed or turned off.
-            db.vod().deleteOtherPlaylists(sources.map { it.id })
+            // Your Jellyfin library, next to (or instead of) the provider's movies & shows.
+            if (jellyfin.ready) {
+                _state.value = RefreshState.Running("Loading movies & shows from Jellyfin…")
+                try {
+                    val client = JellyfinClient(http, jellyfin)
+                    val session = client.signIn().also { jellyfinSession = it }
+                    val writer = VodWriter(db, JellyfinClient.PLAYLIST_ID)
+                    client.load(session, JellyfinClient.PLAYLIST_ID, writer) { n ->
+                        _state.value = RefreshState.Running("Loading movies & shows from Jellyfin… $n")
+                    }
+                    writer.finish()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Keep last time's Jellyfin titles; say what went wrong in Settings.
+                    errors[JellyfinClient.PLAYLIST_ID] = e.message ?: e.javaClass.simpleName
+                    _playlistErrors.value = errors
+                }
+            }
+
+            // Movies & shows of playlists that were removed or turned off (and Jellyfin, if it's off).
+            db.vod().deleteOtherPlaylists(sources.map { it.id } + if (jellyfin.ready) listOf(JellyfinClient.PLAYLIST_ID) else emptyList())
             // Channels and movies & shows are in: usable now, even if the guide takes a while (or the
             // app is closed before it finishes – it won't redo everything on the next start).
             settings.setLastRefresh(System.currentTimeMillis())

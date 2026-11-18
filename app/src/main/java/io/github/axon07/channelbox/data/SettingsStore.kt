@@ -159,6 +159,8 @@ data class AppSettings(
     val pinForSettings: Boolean = false,
     val network: NetworkSettings = NetworkSettings(),
     val storage: StorageSettings = StorageSettings(),
+    /** Jellyfin library for Movies & TV Shows. */
+    val jellyfin: JellyfinSettings = JellyfinSettings(),
     /** Version the user chose "Skip this version" for. */
     val skippedVersion: String? = null,
     val lastChannelId: String? = null,
@@ -219,6 +221,11 @@ class SettingsStore(private val context: Context) {
         val ST_TYPE = stringPreferencesKey("st_type")
         val ST_REMOVABLE = intPreferencesKey("st_removable")
         val SMB_HOST = stringPreferencesKey("smb_host")
+        val JF_ON = booleanPreferencesKey("jellyfin_on")
+        val JF_SERVER = stringPreferencesKey("jellyfin_server")
+        val JF_USER = stringPreferencesKey("jellyfin_user")
+        val JF_PASS = stringPreferencesKey("jellyfin_pass")
+        val JF_MODE = stringPreferencesKey("jellyfin_mode")
         val SMB_SHARE = stringPreferencesKey("smb_share")
         val SMB_PATH = stringPreferencesKey("smb_path")
         val SMB_USER = stringPreferencesKey("smb_user")
@@ -300,6 +307,13 @@ class SettingsStore(private val context: Context) {
             davUser = this[Keys.DAV_USER].orEmpty(),
             davPass = this[Keys.DAV_PASS].orEmpty(),
         ),
+        jellyfin = JellyfinSettings(
+            enabled = this[Keys.JF_ON] ?: false,
+            server = this[Keys.JF_SERVER].orEmpty(),
+            user = this[Keys.JF_USER].orEmpty(),
+            password = this[Keys.JF_PASS].orEmpty(),
+            mode = this[Keys.JF_MODE] ?: "add",
+        ),
         skippedVersion = this[Keys.SKIPPED_VERSION],
         lastChannelId = this[Keys.LAST_CHANNEL],
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
@@ -375,6 +389,14 @@ class SettingsStore(private val context: Context) {
         it[Keys.VPN_CONFIG] = n.vpnConfig
         it[Keys.VPN_ALL] = n.vpnAllApps
         it[Keys.USER_AGENT] = n.userAgent.trim()
+    }
+
+    suspend fun saveJellyfin(j: JellyfinSettings) = context.dataStore.edit {
+        it[Keys.JF_ON] = j.enabled
+        it[Keys.JF_SERVER] = j.server.trim()
+        it[Keys.JF_USER] = j.user.trim()
+        it[Keys.JF_PASS] = j.password
+        it[Keys.JF_MODE] = j.mode
     }
 
     suspend fun saveStorage(st: StorageSettings) = context.dataStore.edit {

@@ -1205,6 +1205,17 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     /** The reload in progress. A newer change cancels it rather than queueing behind it. */
     private var reloadJob: kotlinx.coroutines.Job? = null
 
+    /** Saves the Jellyfin settings and reloads, so the library appears (or goes) straight away. */
+    fun saveJellyfin(j: io.github.axon07.channelbox.data.JellyfinSettings) = reload { c.settings.saveJellyfin(j) }
+
+    /** Signs in to check the details; returns an error message or null if it works. */
+    suspend fun testJellyfin(j: io.github.axon07.channelbox.data.JellyfinSettings): String? = try {
+        io.github.axon07.channelbox.data.JellyfinClient(c.http, j).signIn()
+        null
+    } catch (e: Exception) {
+        e.message ?: e.javaClass.simpleName
+    }
+
     private fun reload(change: suspend () -> Unit) {
         reloadJob?.cancel()
         reloadJob = viewModelScope.launch {

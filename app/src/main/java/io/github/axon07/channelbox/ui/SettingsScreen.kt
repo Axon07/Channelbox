@@ -1,5 +1,6 @@
 package io.github.axon07.channelbox.ui
 
+import io.github.axon07.channelbox.data.JellyfinSettings
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.os.Build
@@ -102,7 +103,7 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
 /** Sub-pages with text fields, opened from a setting card. */
 private enum class Page(val title: String) {
     VPN("WireGuard VPN"), PROXY("Proxy"), DNS("Encrypted DNS"), USER_AGENT("User agent"),
-    SMB("Network share (SMB)"), WEBDAV("WebDAV folder"),
+    SMB("Network share (SMB)"), WEBDAV("WebDAV folder"), JELLYFIN("Jellyfin"),
     // Pick-one lists
     SCALE("Picture size"), QUALITY("Maximum quality"), BUFFER("Buffer size"), REFRESH("Reload automatically"),
     BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"), GUIDE_DAYS("Days of TV guide"),
@@ -300,6 +301,18 @@ private fun SourceSettings(
             },
         )
     }
+    SettingCard(
+        title = "Jellyfin",
+        description = errors[io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID]?.let { "Last load failed: $it" }
+            ?: "Show movies & shows from your own Jellyfin server, next to or instead of your provider's",
+        highlight = errors.containsKey(io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID),
+        value = when {
+            !settings.jellyfin.ready -> "Off"
+            settings.jellyfin.mode == "replace" -> "Replaces provider"
+            else -> "Added to provider"
+        },
+        onClick = { openPage(Page.JELLYFIN) },
+    )
     SettingCard(
         title = "Days of TV guide",
         description = "Fewer days load faster and use less space with very big guides",
@@ -1040,6 +1053,47 @@ private fun SubPage(
                 },
                 "Save" to {
                     vm.saveStorage(edited())
+                    onClose()
+                },
+                "Cancel" to onClose,
+            )
+        }
+        Page.JELLYFIN -> {
+            val jf = settings.jellyfin
+            var on by remember { mutableStateOf(jf.enabled || jf.server.isBlank()) }
+            var server by remember { mutableStateOf(jf.server) }
+            var user by remember { mutableStateOf(jf.user) }
+            var pass by remember { mutableStateOf(jf.password) }
+            var replace by remember { mutableStateOf(jf.mode == "replace") }
+            fun edited() = JellyfinSettings(on, server, user, pass, if (replace) "replace" else "add")
+            PageHeader(
+                "Jellyfin",
+                "Your own movies & shows in Movies and TV Shows. Videos play straight from your server.",
+            )
+            SettingCard(
+                title = "Use Jellyfin",
+                toggle = on,
+                onClick = { on = !on },
+            )
+            SettingCard(
+                title = "Provider's movies & shows",
+                description = if (replace) "Hidden – only your Jellyfin library is shown" else "Kept – Jellyfin is added alongside, in its own categories",
+                value = if (replace) "Replace" else "Add to",
+                onClick = { replace = !replace },
+            )
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Server address (e.g. http://192.168.1.20:8096)", server, { server = it }, keyboardType = KeyboardType.Uri)
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Username", user, { user = it })
+            Spacer(Modifier.height(8.dp))
+            TvTextField("Password", pass, { pass = it }, password = true)
+            Spacer(Modifier.height(12.dp))
+            ButtonRow(
+                "Test" to {
+                    scope.launch { toast(vm.testJellyfin(edited())?.let { "Didn't work: $it" } ?: "Signed in – it works") }
+                },
+                "Save" to {
+                    vm.saveJellyfin(edited())
                     onClose()
                 },
                 "Cancel" to onClose,
