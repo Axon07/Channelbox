@@ -38,10 +38,6 @@ class TvRepository(
     private val _playlistErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     val playlistErrors: StateFlow<Map<String, String>> = _playlistErrors.asStateFlow()
 
-    /** What the last reload found out about each playlist's catch-up (shown on its settings page). */
-    private val _catchupInfo = MutableStateFlow<Map<String, String>>(emptyMap())
-    val catchupInfo: StateFlow<Map<String, String>> = _catchupInfo.asStateFlow()
-
     val channels: Flow<List<ChannelEntity>> = db.channels().observeAll()
     /** Favourite channel ids in your order. */
     val favoriteOrder: Flow<List<String>> = db.channels().observeFavorites()
@@ -273,9 +269,6 @@ class TvRepository(
                         val playlist = XtreamClient(http).load(login)
                         playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
-                        val withArchive = playlist.channels.count { it.catchupDays > 0 }
-                        _catchupInfo.value = _catchupInfo.value + (p.id to
-                            if (withArchive > 0) "$withArchive channels (from the server)" else "None – the server says no channel has catch-up")
                         guides = playlist.epgUrls
                         if (p.includeVod && providerVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
@@ -437,62 +430,33 @@ class TvRepository(
      * catch-up (and rewinding live TV) for those channels. Anything going wrong just leaves it off.
      */
     private suspend fun addXtreamArchive(p: Playlist, lineup: Lineup, start: Int) {
-        fun note(text: String) {
-            _catchupInfo.value = _catchupInfo.value + (p.id to text)
-        }
         val added = lineup.since(start)
-        val fromPlaylist = added.count { it.catchupDays > 0 && !it.catchupType.isNullOrBlank() }
-        if (fromPlaylist == added.size) {
-            note("$fromPlaylist channels (from the playlist)")
-            return
-        }
+        if (added.all { it.catchupDays > 0 && !it.catchupType.isNullOrBlank() }) return
         // The login: from the channel links themselves, and from the playlist link (get.php).
         val logins = listOfNotNull(
             added.asSequence().mapNotNull { XtreamClient.Login.fromLiveUrl(it.streamUrl)?.first }.firstOrNull(),
             XtreamClient.Login.fromM3uUrl(p.m3uUrl),
         ).distinctBy { it.base + "|" + it.user }
-        if (logins.isEmpty()) {
-            note(if (fromPlaylist > 0) "$fromPlaylist channels (from the playlist)" else "None – the playlist doesn't list any, and its links aren't Xtream links")
-            return
-        }
+        if (logins.isEmpty()) return
         _state.value = RefreshState.Running("Checking catch-up for ${p.displayName}…")
-        var archive: XtreamClient.Archive? = null
-        var why = "the server didn't answer"
+        var found: XtreamClient.Archive? = null
         for (login in logins) {
             try {
-                val a = XtreamClient(http).archive(login)
-                if (a == null) {
-                    why = "the server didn't accept the login"
-                } else if (a.days.isEmpty()) {
-                    why = "the server says no channel has catch-up"
-                    if (archive == null) archive = a
-                } else {
-                    archive = a
-                    break
-                }
+                found = XtreamClient(http).archive(login)?.takeIf { it.days.isNotEmpty() }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                why = e.message?.take(120) ?: e.javaClass.simpleName
+            } catch (_: Exception) {
+                // Try the other login, or leave catch-up off.
             }
+            if (found != null) break
         }
-        val found = archive?.takeIf { it.days.isNotEmpty() }
-        if (found == null) {
-            note("Couldn't check with the server: $why")
-            return
-        }
-        var turnedOn = 0
+        val archive = found ?: return
         lineup.update(start) { ch ->
             if (ch.catchupDays > 0 && !ch.catchupType.isNullOrBlank()) return@update ch
             val (_, id) = XtreamClient.Login.fromLiveUrl(ch.streamUrl) ?: return@update ch
-            val days = found.days[id] ?: return@update ch
-            turnedOn++
-            ch.copy(catchupDays = days, catchupType = "default", catchupSource = found.source(id))
+            val days = archive.days[id] ?: return@update ch
+            ch.copy(catchupDays = days, catchupType = "default", catchupSource = archive.source(id))
         }
-        note(
-            if (turnedOn + fromPlaylist == 0) "None of these channels – the server lists ${found.days.size} with catch-up, but under other ids"
-            else "${turnedOn + fromPlaylist} channels (checked with the server)"
-        )
     }
 
     private class Lineup {
