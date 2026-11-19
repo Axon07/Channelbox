@@ -1025,6 +1025,15 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // After a reload, the channel playing picks up its new details (catch-up, name, logo…)
+        // without having to change channel.
+        viewModelScope.launch {
+            allChannels.collect { list ->
+                val cur = _current.value ?: return@collect
+                val fresh = list.firstOrNull { it.id == cur.id } ?: return@collect
+                if (fresh != cur) _current.value = fresh
+            }
+        }
         player.storageSettings = { settings.value?.storage ?: StorageSettings() }
         player.captionsByDefault = { settings.value?.captionsByDefault ?: false }
         // Settings that apply immediately.
