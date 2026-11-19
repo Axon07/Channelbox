@@ -104,7 +104,8 @@ fun GroupsPanel(
                 .fillMaxHeight()
                 .width(290.dp)
                 .padding(horizontal = 10.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 20.dp),
+            // Extra room at the bottom so the last group isn't hidden by TV overscan.
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 20.dp, bottom = 56.dp),
         ) {
             itemsIndexed(rows) { i, row ->
                 when (row) {

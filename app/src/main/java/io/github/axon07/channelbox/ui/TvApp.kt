@@ -755,6 +755,18 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
 
     /** Repeat count of the key being handled (0 = a fresh press). */
     var keyRepeat = 0
+    var lastVerticalAt = 0L
+
+    /**
+     * True for a new ▲ / ▼ press rather than a held key. Also goes by the gap since the last press,
+     * for remotes that misreport the repeat count (a held key repeats every ~50 ms).
+     */
+    fun freshVerticalPress(): Boolean {
+        val now = android.os.SystemClock.uptimeMillis()
+        val fresh = keyRepeat == 0 || now - lastVerticalAt > 700
+        lastVerticalAt = now
+        return fresh
+    }
 
     fun onKeyDown(code: Int): Boolean {
         if (mode == Mode.PLAYER || mode == Mode.CHANNEL_LIST || mode == Mode.GUIDE) {
@@ -850,14 +862,26 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
             Mode.GROUPS -> when (code) {
                 // Groups list on the right, shortcut rail on the left (see GroupsPanel).
+                // In the groups list, a fresh ▲ on the first group jumps to the last, and ▼ on the
+                // last jumps to the first (holding the key stops at the end).
                 AndroidKeyEvent.KEYCODE_DPAD_UP -> {
                     val r = railTiles.indexOf(groupsIndex)
-                    groupsIndex = if (r >= 0) railTiles[(r - 1).coerceAtLeast(0)] else (groupsIndex - 1).coerceAtLeast(0)
+                    val fresh = freshVerticalPress() // every press, so held keys are told apart
+                    groupsIndex = when {
+                        r >= 0 -> railTiles[(r - 1).coerceAtLeast(0)]
+                        groupsIndex == 0 && rowCount > 1 && fresh -> rowCount - 1
+                        else -> (groupsIndex - 1).coerceAtLeast(0)
+                    }
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
                     val r = railTiles.indexOf(groupsIndex)
-                    groupsIndex = if (r >= 0) railTiles[(r + 1).coerceAtMost(railTiles.size - 1)]
-                    else (groupsIndex + 1).coerceAtMost((rowCount - 1).coerceAtLeast(0))
+                    val fresh = freshVerticalPress() // every press, so held keys are told apart
+                    val last = (rowCount - 1).coerceAtLeast(0)
+                    groupsIndex = when {
+                        r >= 0 -> railTiles[(r + 1).coerceAtMost(railTiles.size - 1)]
+                        groupsIndex == last && rowCount > 1 && fresh -> 0
+                        else -> (groupsIndex + 1).coerceAtMost(last)
+                    }
                 }
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP ->
                     if (groupsIndex < rowCount) groupsIndex = (groupsIndex - 8).coerceAtLeast(0)
