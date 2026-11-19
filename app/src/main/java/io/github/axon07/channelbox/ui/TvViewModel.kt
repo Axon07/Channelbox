@@ -1442,6 +1442,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val playlistErrors: StateFlow<Map<String, String>> get() = repo.playlistErrors
+    val catchupInfo: StateFlow<Map<String, String>> get() = repo.catchupInfo
 
     fun refreshNow() = reload { }
 

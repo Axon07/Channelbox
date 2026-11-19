@@ -1032,6 +1032,12 @@ private fun SubPage(
                     toggle = p.includeVod,
                     onClick = { vm.savePlaylist(p.copy(includeVod = !p.includeVod)) },
                 )
+                val catchup by vm.catchupInfo.collectAsStateWithLifecycle()
+                SettingCard(
+                    title = "Catch-up & rewind",
+                    description = catchup[p.id] ?: "Reload channels to check which channels can be rewound",
+                    onClick = {},
+                )
                 SettingCard(
                     title = "Edit details",
                     description = "Name, link or login, and TV guide",

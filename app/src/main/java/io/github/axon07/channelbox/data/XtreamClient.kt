@@ -131,7 +131,7 @@ class XtreamClient(private val http: OkHttpClient) {
     }
 
     /** Catch-up (archive) of an Xtream server's live channels. */
-    class Archive(val days: Map<String, Int>, private val login: Login, private val serverZone: String?) {
+    class Archive(val days: Map<String, Int>, val login: Login, private val serverZone: String?) {
         /** The archive link template for [streamId] (see [Catchup]). */
         fun source(streamId: String) = login.timeshiftTemplate(streamId) + (serverZone?.let { "{tz=$it}" } ?: "")
     }
