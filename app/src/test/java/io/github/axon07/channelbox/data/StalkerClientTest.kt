@@ -461,7 +461,7 @@ class StalkerClientTest {
                     val page = q["p"]!!.toInt()
                     val rows = when (page) {
                         1 -> (1..14).joinToString(",") { """{"id":"$it","name":"Movie $it","cmd":"/media/file_$it.mpg","year":"2021-05-01","added":"2023-01-02 10:00:00"}""" } +
-                            ""","{"id":"100","name":"Old Show","cmd":"/media/show_100.mpg","series":[3,1,2]}"""
+                            """,{"id":"100","name":"Old Show","cmd":"/media/show_100.mpg","series":[3,1,2]}"""
                         2 -> (15..20).joinToString(",") { """{"id":"$it","name":"Movie $it","cmd":"/media/file_$it.mpg"}""" }
                         else -> ""
                     }
