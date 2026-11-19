@@ -5,7 +5,7 @@
 **A free, open-source live TV player for Android TV – built to feel like a cable box.**
 
 Turn on the TV, and you're watching TV. Channel up/down, a real programme guide, recordings.
-Bring your own IPTV subscription (M3U or Xtream Codes).
+Bring your own IPTV subscription (M3U, Xtream Codes or a Stalker portal with a MAC address).
 
 [![Build](https://github.com/Axon07/Channelbox/actions/workflows/build.yml/badge.svg)](https://github.com/Axon07/Channelbox/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/Axon07/Channelbox?include_prereleases&label=download)](https://github.com/Axon07/Channelbox/releases)
@@ -43,8 +43,8 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 
 | | |
 |---|---|
-| **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login. **Several playlists at once**, merged into one lineup, each with its own name, guide and on/off switch. Huge provider lists (100 MB+) are read as they download |
-| **Add from your phone** | The add-playlist screen shows a QR code: scan it, type the link or login on your phone, press Send. Works only on your home network and only while that screen is open |
+| **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login, Stalker / Ministra portal (portal URL + MAC address – see [Stalker portals](#stalker-portals)). **Several playlists at once**, merged into one lineup, each with its own name, guide and on/off switch. Huge provider lists (100 MB+) are read as they download |
+| **Add from your phone** | The add-playlist screen shows a QR code: scan it, type the link, login or portal + MAC on your phone, press Send. Works only on your home network and only while that screen is open |
 | **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
 | **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. Marks programmes set to record and locked channels; adapts to small screens |
 | **Groups menu** | Back from the guide: channel groups (one section per playlist when you have several). Back again (or ◀) opens the side menu: Search, Live TV, Movies, TV Shows, Recordings and Settings |
@@ -75,6 +75,30 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Set-top box mode** | Optional start on boot and on wake from sleep, optional "use as home screen", resumes the last channel. Back goes TV → Guide → Groups → side menu → "Press Back again to exit"; the last step can also be set to never exit, or exit straight away |
 | **Touch & mouse** | Tap the picture for the controls (record, pause, live, favourite, CC, multi-view, mini player, ⋯); swipe up/down to change channel; tap anything in the list or guide |
 | **Background refresh** | Playlist and guide reload every 6/12/24/48 hours, or only when you choose |
+
+## Stalker portals
+
+Some providers give you a **portal URL and a MAC address** instead of a playlist link or a login – the setup a MAG set-top box uses
+(Stalker / Ministra middleware). Add it under **Settings → Playlist & guide → Add another playlist → Stalker portal (MAC)**
+(or from your phone, where typing the MAC is easier).
+
+| Field | What to enter |
+|---|---|
+| Portal URL | Exactly what the provider sent, e.g. `http://example.com:8080/c/` or `http://example.com/stalker_portal/c/`. Channelbox finds the portal's API behind it (`portal.php`, `server/load.php`, `stalker_portal/server/load.php`) |
+| MAC address | The one registered with the provider, e.g. `00:1A:79:12:34:56` (dashes or no separators work too) |
+| Username / password | Only if the provider gave you one – some portals ask for a login on top of the MAC |
+| More options | Serial number and device IDs – only for providers that tie the account to a particular box |
+
+What works: live TV with the portal's channel groups and logos, the portal's own TV guide (plus any XMLTV guide you add,
+which wins where both cover a channel), movies and TV shows with seasons and episodes, pause live TV, recording, multi-view
+and favourites. Channelbox presents itself as a MAG250 box, signs in again by itself if the portal drops the session, and
+fetches a fresh link from the portal each time you play something (portal links only last a few seconds).
+
+Not yet: catch-up / rewind on Stalker channels, and radio.
+
+> [!TIP]
+> Most portals allow one box per MAC address. Watching on another device with the same MAC can sign Channelbox out –
+> it signs back in by itself, but the other device may then be signed out instead.
 
 ## Playback settings
 
