@@ -240,6 +240,7 @@ fun SettingsScreen(
                                 options = languages,
                                 selected = I18n.language,
                                 onSelect = { vm.setLanguage(it) },
+                                autoFocus = false,
                             )
                             if (languages.size == 1) {
                                 Text("More languages are on the way.", fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp))
@@ -1424,11 +1425,17 @@ private fun ToggleSwitch(on: Boolean) {
 
 /** Pick-one list with a radio button – used for every multiple-choice setting. */
 @Composable
-private fun ChoiceList(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+private fun ChoiceList(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    /** Pages opened from a card take focus; a list shown beside the categories waits for ▶. */
+    autoFocus: Boolean = true,
+) {
     val first = remember { FocusRequester() }
     val touch = LocalInputModeManager.current.inputMode == InputMode.Touch
     LaunchedEffect(Unit) {
-        if (!touch) {
+        if (!touch && autoFocus) {
             delay(50)
             runCatching { first.requestFocus() }
         }

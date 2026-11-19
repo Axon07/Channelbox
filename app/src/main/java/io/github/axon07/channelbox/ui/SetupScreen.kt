@@ -1,6 +1,8 @@
 package io.github.axon07.channelbox.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -452,10 +454,52 @@ fun TvTextField(
     /** Extra modifier for the input itself (e.g. a FocusRequester). */
     fieldModifier: Modifier = Modifier,
 ) {
+    // On a TV the remote first lands on the field (no keyboard); OK starts typing. Phones and
+    // tablets type straight away when the field is tapped.
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val tv = (config.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+        android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    var editing by remember { mutableStateOf(!tv) }
     var focused by remember { mutableStateOf(false) }
+    var hovered by remember { mutableStateOf(false) }
+    val input = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(editing) {
+        if (editing && tv) {
+            runCatching { input.requestFocus() }
+            keyboard?.show()
+        }
+    }
+    fun finish() {
+        if (tv) editing = false
+        focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+    }
+    val active = focused || hovered
     Column(Modifier.fillMaxWidth()) {
-        Text(label, fontSize = 12.sp, color = if (focused) Palette.Text else Palette.TextDim)
+        Text(label, fontSize = 12.sp, color = if (active) Palette.Text else Palette.TextDim)
         Spacer(Modifier.height(6.dp))
+        Box(
+            fieldModifier
+                .fillMaxWidth()
+                .onFocusChanged { hovered = it.isFocused }
+                .then(
+                    if (tv) Modifier.clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                    ) { editing = true } else Modifier
+                )
+                .background(SetupStyle.Field, SetupStyle.Shape)
+                .border(
+                    if (active) 1.5.dp else 1.dp,
+                    when {
+                        focused -> Palette.Accent
+                        hovered -> Color(0xFF8A98A8)
+                        else -> SetupStyle.FieldEdge
+                    },
+                    SetupStyle.Shape,
+                ),
+        ) {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -472,12 +516,18 @@ fun TvTextField(
                 keyboardType = if (password) KeyboardType.Password else keyboardType,
                 imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default,
             ),
-            modifier = fieldModifier
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { finish() }, onDone = { finish() }),
+            modifier = Modifier
                 .fillMaxWidth()
-                .onFocusChanged { focused = it.isFocused }
-                .background(SetupStyle.Field, SetupStyle.Shape)
-                .border(if (focused) 1.5.dp else 1.dp, if (focused) Palette.Accent else SetupStyle.FieldEdge, SetupStyle.Shape)
+                .focusRequester(input)
+                // Not reachable with the remote until OK is pressed on the field.
+                .focusProperties { canFocus = editing }
+                .onFocusChanged {
+                    if (focused && !it.isFocused && tv) editing = false // moved away: stop typing
+                    focused = it.isFocused
+                }
                 .padding(horizontal = 14.dp, vertical = 11.dp),
         )
+        }
     }
 }
