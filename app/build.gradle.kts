@@ -125,7 +125,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.zxing.core) // QR code for "add a playlist from your phone"
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.gson) // streaming JSON for Stalker portals (huge guides without filling memory)
 
     testImplementation(libs.junit)
     testImplementation(libs.kxml2)
+    testImplementation(libs.okhttp.mockwebserver)
 }

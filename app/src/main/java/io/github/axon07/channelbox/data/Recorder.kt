@@ -103,7 +103,15 @@ class Recorder(
             dao.update(rec.copy(status = RecStatus.FAILED, error = "Missed – the box was off or asleep"))
             return@withContext
         }
-        val spec = StreamSpecs.from(rec)
+        // Portal (Stalker) channels: ask the portal for a link now.
+        val spec = try {
+            StreamResolver.resolve(StreamSpecs.from(rec))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            dao.update(rec.copy(status = RecStatus.FAILED, error = e.message ?: "Couldn't get a link from the portal"))
+            return@withContext
+        }
         if (spec.mime == StreamSpecs.MIME_SS) {
             dao.update(rec.copy(status = RecStatus.FAILED, error = "Smooth Streaming channels can't be recorded yet"))
             return@withContext

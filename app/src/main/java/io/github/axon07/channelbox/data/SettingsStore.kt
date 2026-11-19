@@ -18,9 +18,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 
-enum class SourceType { NONE, M3U, XTREAM }
+enum class SourceType { NONE, M3U, XTREAM, STALKER }
 
-/** One TV service: an M3U link or an Xtream Codes login, plus an optional guide. */
+/**
+ * One TV service: an M3U link, an Xtream Codes login or a Stalker portal (portal URL + MAC
+ * address), plus an optional guide. A Stalker portal keeps its URL in [xtServer] and the optional
+ * portal login in [xtUser] / [xtPass].
+ */
 data class Playlist(
     val id: String,
     val name: String = "",
@@ -34,25 +38,39 @@ data class Playlist(
     val enabled: Boolean = true,
     /** Load the playlist's movies & shows (off = live TV only, much faster for huge lists). */
     val includeVod: Boolean = true,
+    /** Stalker portal: the MAC address the provider registered, and optional box identity. */
+    val mac: String = "",
+    val serial: String = "",
+    val deviceId1: String = "",
+    val deviceId2: String = "",
 ) {
+    fun stalkerAccount() = StalkerAccount(
+        portalUrl = xtServer, mac = mac, login = xtUser, password = xtPass,
+        serial = serial, deviceId1 = deviceId1, deviceId2 = deviceId2,
+    )
+
     /** Name to show: the one the user gave, else the server's host name. */
     val displayName: String
         get() = name.trim().ifEmpty {
-            val url = if (type == SourceType.XTREAM) xtServer else m3uUrl
+            val url = if (type == SourceType.XTREAM || type == SourceType.STALKER) xtServer else m3uUrl
             runCatching { java.net.URI(url.trim()).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotBlank() }
                 ?: "Playlist"
         }
 
     val summary: String
-        get() = if (type == SourceType.XTREAM) "Xtream Codes · ${xtServer.trim()} · ${xtUser.trim()}"
-        else "M3U · ${redact(m3uUrl.trim())}"
+        get() = when (type) {
+            SourceType.XTREAM -> "Xtream Codes · ${xtServer.trim()} · ${xtUser.trim()}"
+            SourceType.STALKER -> "Stalker portal · ${xtServer.trim()} · ${StalkerClient.normalizeMac(mac)}"
+            else -> "M3U · ${redact(m3uUrl.trim())}"
+        }
 
     fun toJson() = JsonObject(
         mapOf(
             "id" to JsonPrimitive(id), "name" to JsonPrimitive(name), "type" to JsonPrimitive(type.name),
             "m3u" to JsonPrimitive(m3uUrl), "epg" to JsonPrimitive(epgUrl), "server" to JsonPrimitive(xtServer),
             "user" to JsonPrimitive(xtUser), "pass" to JsonPrimitive(xtPass), "enabled" to JsonPrimitive(enabled),
-            "vod" to JsonPrimitive(includeVod),
+            "vod" to JsonPrimitive(includeVod), "mac" to JsonPrimitive(mac), "sn" to JsonPrimitive(serial),
+            "dev1" to JsonPrimitive(deviceId1), "dev2" to JsonPrimitive(deviceId2),
         )
     )
 
@@ -68,6 +86,7 @@ data class Playlist(
                 m3uUrl = str("m3u"), epgUrl = str("epg"), xtServer = str("server"), xtUser = str("user"),
                 xtPass = str("pass"), enabled = (o["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
                 includeVod = (o["vod"] as? JsonPrimitive)?.booleanOrNull ?: true,
+                mac = str("mac"), serial = str("sn"), deviceId1 = str("dev1"), deviceId2 = str("dev2"),
             )
         }
     }

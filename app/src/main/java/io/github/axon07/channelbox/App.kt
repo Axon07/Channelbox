@@ -93,7 +93,10 @@ class App : Application(), ImageLoaderFactory {
 class AppContainer(context: Context, val settings: SettingsStore, val startupNetwork: NetworkSettings) {
     val database = AppDatabase.create(context)
     val http = createHttpClient(startupNetwork)
-    val repository = TvRepository(database, settings, http)
+    val repository = TvRepository(database, settings, http).also {
+        // Stalker channels, movies and episodes get a fresh portal link when they're played.
+        io.github.axon07.channelbox.data.StreamResolver.stalker = it.stalker
+    }
     val storage = RecordingStorage(context, http, settings)
     val recorder = Recorder(context, database, http, storage)
     val updater = Updater(context, http)

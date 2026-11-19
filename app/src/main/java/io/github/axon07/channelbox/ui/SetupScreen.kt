@@ -52,7 +52,7 @@ import io.github.axon07.channelbox.data.SourceType
 import kotlinx.coroutines.delay
 
 /**
- * Add or edit one playlist: M3U URL or Xtream Codes login.
+ * Add or edit one playlist: M3U URL, Xtream Codes login or Stalker portal (portal URL + MAC).
  * [initial] = null adds a new one; [firstRun] shows the welcome wording.
  */
 @Composable
@@ -67,7 +67,7 @@ fun SetupScreen(
 ) {
     val id = rememberSaveable { initial?.id ?: Playlist.newId() }
     var type by rememberSaveable {
-        mutableStateOf(if (initial?.type == SourceType.XTREAM) SourceType.XTREAM else SourceType.M3U)
+        mutableStateOf(initial?.type?.takeIf { it == SourceType.XTREAM || it == SourceType.STALKER } ?: SourceType.M3U)
     }
     var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
     var m3uUrl by rememberSaveable { mutableStateOf(initial?.m3uUrl.orEmpty()) }
@@ -75,6 +75,14 @@ fun SetupScreen(
     var user by rememberSaveable { mutableStateOf(initial?.xtUser.orEmpty()) }
     var pass by rememberSaveable { mutableStateOf(initial?.xtPass.orEmpty()) }
     var epgUrl by rememberSaveable { mutableStateOf(initial?.epgUrl.orEmpty()) }
+    // Stalker portal: the portal URL is kept in [server]; the login is optional.
+    var mac by rememberSaveable { mutableStateOf(initial?.mac.orEmpty()) }
+    var serial by rememberSaveable { mutableStateOf(initial?.serial.orEmpty()) }
+    var deviceId1 by rememberSaveable { mutableStateOf(initial?.deviceId1.orEmpty()) }
+    var deviceId2 by rememberSaveable { mutableStateOf(initial?.deviceId2.orEmpty()) }
+    var moreStalker by rememberSaveable {
+        mutableStateOf(initial?.let { it.serial.isNotBlank() || it.deviceId1.isNotBlank() || it.deviceId2.isNotBlank() } ?: false)
+    }
     var submitted by remember { mutableStateOf(false) }
     var sawRunning by remember { mutableStateOf(false) }
 
@@ -83,12 +91,23 @@ fun SetupScreen(
     var fromPhone by remember { mutableStateOf(false) }
     androidx.compose.runtime.DisposableEffect(Unit) {
         val link = io.github.axon07.channelbox.system.PhoneLink { f ->
-            type = if (f["type"] == "xtream") SourceType.XTREAM else SourceType.M3U
+            type = when (f["type"]) {
+                "xtream" -> SourceType.XTREAM
+                "stalker" -> SourceType.STALKER
+                else -> SourceType.M3U
+            }
             f["name"]?.takeIf { it.isNotBlank() }?.let { name = it.trim() }
             f["url"]?.let { m3uUrl = it.trim() }
-            f["server"]?.let { server = it.trim() }
-            f["user"]?.let { user = it.trim() }
-            f["pass"]?.let { pass = it }
+            if (type == SourceType.STALKER) {
+                f["portal"]?.let { server = it.trim() }
+                f["mac"]?.let { mac = it.trim() }
+                f["suser"]?.let { user = it.trim() }
+                f["spass"]?.let { pass = it }
+            } else {
+                f["server"]?.let { server = it.trim() }
+                f["user"]?.let { user = it.trim() }
+                f["pass"]?.let { pass = it }
+            }
             f["epg"]?.let { epgUrl = it.trim() }
             fromPhone = true
         }
@@ -137,6 +156,7 @@ fun SetupScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TypeButton("Playlist link (M3U)", type == SourceType.M3U, Modifier.focusRequester(first)) { type = SourceType.M3U }
             TypeButton("Xtream Codes login", type == SourceType.XTREAM) { type = SourceType.XTREAM }
+            TypeButton("Stalker portal (MAC)", type == SourceType.STALKER) { type = SourceType.STALKER }
         }
         Spacer(Modifier.height(16.dp))
 
@@ -144,6 +164,23 @@ fun SetupScreen(
             TvTextField("Name – optional, e.g. \"Sports\" or the provider's name", name, { name = it })
             if (type == SourceType.M3U) {
                 TvTextField("Playlist URL", m3uUrl, { m3uUrl = it }, keyboardType = KeyboardType.Uri)
+            } else if (type == SourceType.STALKER) {
+                TvTextField("Portal URL (e.g. http://example.com:8080/c/)", server, { server = it }, keyboardType = KeyboardType.Uri)
+                TvTextField("MAC address (e.g. 00:1A:79:12:34:56)", mac, { mac = it })
+                if (mac.isNotBlank() && !io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)) {
+                    Text("A MAC address is 12 letters and numbers (0–9, A–F), e.g. 00:1A:79:12:34:56", color = Palette.Error, fontSize = 13.sp)
+                }
+                TvTextField("Username – only if your provider gave you one", user, { user = it })
+                TvTextField("Password – only if your provider gave you one", pass, { pass = it }, password = true)
+                if (moreStalker) {
+                    TvTextField("Serial number – optional", serial, { serial = it })
+                    TvTextField("Device ID 1 – optional", deviceId1, { deviceId1 = it })
+                    TvTextField("Device ID 2 – optional", deviceId2, { deviceId2 = it })
+                } else {
+                    OutlinedButton(onClick = { moreStalker = true }, modifier = Modifier.tap(onClick = { moreStalker = true })) {
+                        Text("More options (serial number, device IDs)")
+                    }
+                }
             } else {
                 TvTextField("Server (e.g. http://example.com:8080)", server, { server = it }, keyboardType = KeyboardType.Uri)
                 TvTextField("Username", user, { user = it })
@@ -155,7 +192,11 @@ fun SetupScreen(
 
         // Only this screen's own save counts as busy; a background reload is cancelled by saving.
         val busy = submitted && refreshState is RefreshState.Running
-        val canSave = !busy && (if (type == SourceType.M3U) m3uUrl.isNotBlank() else server.isNotBlank() && user.isNotBlank())
+        val canSave = !busy && when (type) {
+            SourceType.M3U -> m3uUrl.isNotBlank()
+            SourceType.STALKER -> server.isNotBlank() && io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)
+            else -> server.isNotBlank() && user.isNotBlank()
+        }
         val save = {
             if (canSave) {
                 submitted = true
@@ -165,6 +206,10 @@ fun SetupScreen(
                         id = id, name = name, type = type, m3uUrl = m3uUrl, epgUrl = epgUrl,
                         xtServer = server, xtUser = user, xtPass = pass, enabled = initial?.enabled ?: true,
                         includeVod = initial?.includeVod ?: true,
+                        mac = if (type == SourceType.STALKER) io.github.axon07.channelbox.data.StalkerClient.normalizeMac(mac) else "",
+                        serial = if (type == SourceType.STALKER) serial.trim() else "",
+                        deviceId1 = if (type == SourceType.STALKER) deviceId1.trim() else "",
+                        deviceId2 = if (type == SourceType.STALKER) deviceId2.trim() else "",
                     )
                 )
             }

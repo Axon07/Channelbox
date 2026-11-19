@@ -153,8 +153,8 @@ label{display:block;font-size:13px;color:#a3afbf;margin:14px 0 6px}
 input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2e3946;background:#18202a;color:#fff;font-size:16px}
 .tabs{display:flex;gap:8px;margin:16px 0 4px}.tabs label{flex:1;margin:0;text-align:center;padding:10px;border-radius:10px;
 border:1px solid #2e3946;color:#f2f5f8;font-size:14px}input[type=radio]{display:none}
-#m3u:checked~.tabs label[for=m3u],#xt:checked~.tabs label[for=xt]{background:#3d8bfd;border-color:#3d8bfd}
-.xt{display:none}#xt:checked~.xt{display:block}#xt:checked~.m3u{display:none}
+#m3u:checked~.tabs label[for=m3u],#xt:checked~.tabs label[for=xt],#st:checked~.tabs label[for=st]{background:#3d8bfd;border-color:#3d8bfd}
+.xt,.st{display:none}#xt:checked~.xt{display:block}#xt:checked~.m3u{display:none}#st:checked~.st{display:block}#st:checked~.m3u{display:none}
 button{margin-top:22px;width:100%;padding:14px;border:0;border-radius:12px;background:#3d8bfd;color:#fff;font-size:16px;font-weight:600}
 </style>"""
 
@@ -162,13 +162,17 @@ button{margin-top:22px;width:100%;padding:14px;border:0;border-radius:12px;backg
             "Add a playlist",
             """<p>Fill this in and press Send – it goes straight to your TV. Nothing leaves your home network.</p>
 <form method="post">
-<input type="radio" name="type" id="m3u" value="m3u" checked><input type="radio" name="type" id="xt" value="xtream">
-<div class="tabs"><label for="m3u">Playlist link (M3U)</label><label for="xt">Xtream Codes</label></div>
+<input type="radio" name="type" id="m3u" value="m3u" checked><input type="radio" name="type" id="xt" value="xtream"><input type="radio" name="type" id="st" value="stalker">
+<div class="tabs"><label for="m3u">M3U link</label><label for="xt">Xtream Codes</label><label for="st">Stalker (MAC)</label></div>
 <label>Name (optional)</label><input name="name" autocomplete="off">
 <div class="m3u"><label>Playlist URL</label><input name="url" inputmode="url" autocomplete="off" autocapitalize="off"></div>
 <div class="xt"><label>Server (e.g. http://example.com:8080)</label><input name="server" inputmode="url" autocomplete="off" autocapitalize="off">
 <label>Username</label><input name="user" autocomplete="off" autocapitalize="off">
 <label>Password</label><input name="pass" type="password" autocomplete="off"></div>
+<div class="st"><label>Portal URL (e.g. http://example.com:8080/c/)</label><input name="portal" inputmode="url" autocomplete="off" autocapitalize="off">
+<label>MAC address (e.g. 00:1A:79:12:34:56)</label><input name="mac" autocomplete="off" autocapitalize="characters">
+<label>Username – only if your provider gave you one</label><input name="suser" autocomplete="off" autocapitalize="off">
+<label>Password – only if your provider gave you one</label><input name="spass" type="password" autocomplete="off"></div>
 <label>TV guide (XMLTV) URL – optional</label><input name="epg" inputmode="url" autocomplete="off" autocapitalize="off">
 <button type="submit">Send to TV</button></form>"""
         )

@@ -18,6 +18,8 @@ data class ParsedChannel(
     /** Catch-up mode (default, append, shift, flussonic, xc…) and URL template, see [Catchup]. */
     val catchupType: String? = null,
     val catchupSource: String? = null,
+    /** Stable channel id when it isn't the stream link (Stalker portals). */
+    val id: String? = null,
 )
 
 data class ParsedPlaylist(val channels: List<ParsedChannel>, val epgUrls: List<String>)

@@ -53,7 +53,7 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
 
     fun canBuffer(spec: StreamSpec) = recorder.canCapture(spec)
 
-    fun start(spec: StreamSpec, scope: CoroutineScope) {
+    fun start(portalOrStream: StreamSpec, scope: CoroutineScope) {
         stop()
         dir.mkdirs()
         dir.listFiles()?.forEach { it.deleteRecursively() }
@@ -62,6 +62,16 @@ class Timeshift(private val dir: File, private val recorder: Recorder) {
         lastError = null
         isPlaylist = false
         job = scope.launch(Dispatchers.IO) {
+            // Portal (Stalker) channels: a fresh link from the portal for the buffer's own connection.
+            val spec = try {
+                io.github.axon07.channelbox.data.StreamResolver.resolve(portalOrStream)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e.message ?: e.javaClass.simpleName
+                writing = false
+                return@launch
+            }
             // Separate audio: buffer both playlists, or the paused picture would have no sound.
             val split = runCatching { recorder.splitAudio(spec) }.getOrNull()
             if (split != null) {

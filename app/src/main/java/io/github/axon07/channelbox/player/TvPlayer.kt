@@ -237,16 +237,17 @@ class TvPlayer(
     fun play(stream: StreamSpec) = open(stream, onDemand = false)
 
     /** Catch-up programme: seekable, plays once. */
-    fun playOnDemand(stream: StreamSpec, startAt: Long = 0) {
-        open(stream, onDemand = true)
-        if (startAt > 0) exo.seekTo(startAt)
-    }
+    fun playOnDemand(stream: StreamSpec, startAt: Long = 0) = open(stream, onDemand = true, startAt = startAt)
+
+    /** Where an on-demand video starts (kept while a portal link is being fetched). */
+    private var startPosition = 0L
 
     /**
      * Pause-live-TV buffer: plays [file] from the start while [growing] (the stream is still being
      * written to it). It can't be seeked – the length isn't known yet.
      */
     fun playTimeshift(file: File, growing: () -> Boolean) {
+        startToken++
         handler.removeCallbacksAndMessages(null)
         applyCaptionDefault()
         onDemand = true
@@ -274,12 +275,14 @@ class TvPlayer(
     fun playFile(path: String) =
         open(StreamSpec(Uri.fromFile(File(path)).toString(), emptyMap(), null, null), onDemand = true)
 
-    private fun open(stream: StreamSpec, onDemand: Boolean) {
+    private fun open(stream: StreamSpec, onDemand: Boolean, startAt: Long = 0) {
+        startPosition = startAt.coerceAtLeast(0)
         handler.removeCallbacksAndMessages(null)
         applyCaptionDefault()
         this.onDemand = onDemand
         spec = stream
-        val isHttp = stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true)
+        val isHttp = stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true) ||
+            io.github.axon07.channelbox.data.StreamResolver.needsResolving(stream.url) // a portal link becomes http(s)
         candidates = when {
             stream.mime != null -> listOf(stream.mime)
             !isHttp -> listOf(null) // rtsp://, rtmp://, udp://, file:// – the player knows these
@@ -301,6 +304,7 @@ class TvPlayer(
     }
 
     fun stop() {
+        startToken++
         handler.removeCallbacksAndMessages(null)
         exo.stop()
         _status.value = PlayerStatus.Idle
@@ -311,21 +315,49 @@ class TvPlayer(
      * buffer now needs) while the paused picture stays on screen.
      */
     fun hold() {
+        startToken++
         handler.removeCallbacksAndMessages(null)
         exo.pause()
         exo.stop()
     }
 
     fun release() {
+        startToken++
+        resolver.shutdownNow()
         handler.removeCallbacksAndMessages(null)
         exo.release()
     }
 
+    /** Portal links ("stalker://") are turned into playable ones here, off the main thread. */
+    private val resolver = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile private var startToken = 0
+
     private fun start() {
         val s = spec ?: return
         val mime = candidates.getOrNull(attempt)
+        val token = ++startToken
+        if (io.github.axon07.channelbox.data.StreamResolver.needsResolving(s.url)) {
+            _status.value = PlayerStatus.Buffering
+            resolver.execute {
+                // A fresh link every time: portal links expire within seconds, so retries ask again.
+                val result = runCatching { io.github.axon07.channelbox.data.StreamResolver.resolve(s) }
+                handler.post {
+                    if (token != startToken || spec !== s) return@post
+                    result.fold(
+                        onSuccess = { real -> prepare(real, real.mime ?: mime) },
+                        onFailure = { e -> failed(e.message ?: "couldn't get a link from the portal") },
+                    )
+                }
+            }
+            return
+        }
+        prepare(s, mime)
+    }
+
+    private fun prepare(s: StreamSpec, mime: String?) {
         try {
-            exo.setMediaSource(buildSource(s, mime))
+            val source = buildSource(s, mime)
+            if (onDemand && startPosition > 0) exo.setMediaSource(source, startPosition) else exo.setMediaSource(source)
             exo.prepare()
             exo.playWhenReady = true
             _status.value = PlayerStatus.Buffering

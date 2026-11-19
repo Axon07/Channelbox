@@ -31,6 +31,9 @@ class TvRepository(
     private val http: OkHttpClient,
 ) {
     private val mutex = Mutex()
+
+    /** Signed-in Stalker portals, shared with playback (see [StreamResolver]). */
+    val stalker = StalkerSessions(http) { kotlinx.coroutines.runBlocking { settings.current().playlists } }
     private val _state = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val state: StateFlow<RefreshState> = _state.asStateFlow()
 
@@ -98,6 +101,10 @@ class TvRepository(
                 // The sign-in may have expired: once more with a fresh one.
                 client.episodes(client.signIn().also { jellyfinSession = it }, JellyfinClient.PLAYLIST_ID, key)
             }
+        }
+        if (StalkerLoader.isShow(show)) {
+            val p = settings.current().playlists.firstOrNull { it.id == show.playlistId } ?: return emptyList()
+            return withContext(Dispatchers.IO) { StalkerLoader.episodes(stalker.client(p), show) }
         }
         if (show.id.startsWith("xseries:")) {
             val p = settings.current().playlists.firstOrNull { it.id == show.playlistId } ?: return emptyList()
@@ -264,7 +271,30 @@ class TvRepository(
                     var live = 0
                     var entries = 0
                     val guides: List<String>
-                    if (p.type == SourceType.XTREAM) {
+                    if (p.type == SourceType.STALKER) {
+                        val client = stalker.client(p)
+                        _state.value = RefreshState.Running("Connecting to ${p.displayName}…")
+                        client.connect()
+                        _state.value = RefreshState.Running("Loading $label…")
+                        val list = StalkerLoader.channels(client, p.id) { n ->
+                            _state.value = RefreshState.Running("Loading $label… $n channels")
+                        }
+                        list.forEach { lineup.add(p.id, it) }
+                        live = list.size
+                        guides = listOf(StalkerLoader.guideUrl(p.id))
+                        if (p.includeVod && providerVod) {
+                            _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
+                            try {
+                                StalkerLoader.vod(client, p.id, writer::add) { n ->
+                                    _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                // Live TV still works without the portal's movies & shows.
+                            }
+                        }
+                    } else if (p.type == SourceType.XTREAM) {
                         val login = XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass)
                         val playlist = XtreamClient(http).load(login)
                         playlist.channels.forEach { lineup.add(p.id, it) }
@@ -332,7 +362,7 @@ class TvRepository(
                             }
                         }
                     }
-                    if (p.type != SourceType.XTREAM && live > 0) addXtreamArchive(p, lineup, start)
+                    if (p.type == SourceType.M3U && live > 0) addXtreamArchive(p, lineup, start)
                     writer.finish()
                     if (live == 0 && writer.count == 0) {
                         throw IOException(
@@ -475,9 +505,10 @@ class TvRepository(
         }
 
         fun add(playlistId: String, p: ParsedChannel) {
-            if (!seen.add(p.url)) return
+            val key = p.id ?: p.url
+            if (!seen.add(key)) return
             channels += ChannelEntity(
-                id = p.url,
+                id = key,
                 number = number(p.number),
                 name = p.name,
                 groupTitle = p.group,
@@ -493,7 +524,7 @@ class TvRepository(
                 catchupSource = p.catchupSource,
                 playlistId = playlistId,
             )
-            p.tvgName?.takeIf { it != p.name }?.let { tvgNames[p.url] = it }
+            p.tvgName?.takeIf { it != p.name }?.let { tvgNames[key] = it }
         }
 
         /** Channels added since [from] (one playlist's). */
@@ -547,12 +578,15 @@ class TvRepository(
             .use { if (it.moveToFirst()) it.getLong(0) else 0L }
         replaced.clear()
         var count = 0
-        urls.forEachIndexed { index, url ->
+        // The portals' own guides go last: an XMLTV guide you added for a channel takes precedence.
+        val ordered = urls.sortedBy { StalkerLoader.isGuideUrl(it) }
+        ordered.forEachIndexed { index, url ->
             _state.value = RefreshState.Running(background = true, message = 
                 if (urls.size > 1) "Loading TV guide ${index + 1} of ${urls.size}…" else "Loading TV guide…"
             )
             try {
-                count += importOne(url, matcher, filled, keepFrom, keepTo)
+                count += if (StalkerLoader.isGuideUrl(url)) importStalkerGuide(StalkerLoader.guidePlaylist(url), channels, matcher, filled, keepFrom, keepTo)
+                else importOne(url, matcher, filled, keepFrom, keepTo)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -571,6 +605,53 @@ class TvRepository(
         if (changed.isNotEmpty()) {
             db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }
         }
+        return count
+    }
+
+    /** A Stalker portal's own guide, for its channels that no XMLTV guide covered. */
+    private suspend fun importStalkerGuide(
+        playlistId: String,
+        channels: List<ChannelEntity>,
+        matcher: EpgMatcher,
+        filled: MutableSet<String>,
+        keepFrom: Long,
+        keepTo: Long,
+    ): Int {
+        val p = settings.current().playlists.firstOrNull { it.id == playlistId && it.type == SourceType.STALKER } ?: return 0
+        // Guide ids as they are after XMLTV matching; channels an XMLTV guide already filled are left alone.
+        val own = channels.filter { StalkerLoader.portalId(it.id, playlistId) != null }
+            .map { ch -> ch.copy(epgId = matcher.assigned[ch.id] ?: ch.epgId) }
+            .filter { it.epgId != null && it.epgId !in filled }
+        if (own.isEmpty()) return 0
+        val hours = (settings.current().guideDays.coerceIn(1, 7) * 24)
+        var count = 0
+        val batch = ArrayList<ProgramEntity>(BATCH)
+        val got = HashSet<String>()
+        fun flush() {
+            if (batch.isEmpty()) return
+            db.runInTransaction {
+                val sql = db.openHelper.writableDatabase
+                batch.asSequence().map { it.epgId }.distinct().filter { replaced.add(it) }.forEach { id ->
+                    sql.execSQL("DELETE FROM programs WHERE epgId = ? AND rowId <= ?", arrayOf(id, oldProgramsUpTo))
+                }
+                db.programs().insertBlocking(batch)
+            }
+            count += batch.size
+            batch.clear()
+        }
+        withContext(Dispatchers.IO) {
+            StalkerLoader.guide(stalker.client(p), playlistId, own, hours) { key, programme ->
+                if (programme.stop > keepFrom && programme.start < keepTo) {
+                    got += key
+                    synchronized(batch) {
+                        batch += programme
+                        if (batch.size >= BATCH) flush()
+                    }
+                }
+            }
+            synchronized(batch) { flush() }
+        }
+        filled += got
         return count
     }
 
