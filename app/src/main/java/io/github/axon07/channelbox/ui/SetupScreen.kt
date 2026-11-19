@@ -44,8 +44,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
-import androidx.tv.material3.Button
-import androidx.tv.material3.OutlinedButton
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Surface
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.style.TextOverflow
 import io.github.axon07.channelbox.data.Playlist
 import io.github.axon07.channelbox.data.RefreshState
 import io.github.axon07.channelbox.data.SourceType
@@ -129,123 +131,265 @@ fun SetupScreen(
         runCatching { first.requestFocus() }
     }
 
+    // The QR code panel is for TV boxes: on a phone or tablet you can type right here.
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val isTv = (config.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+        android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    val showPhone = isTv || config.screenWidthDp >= 960
+
     Row(Modifier.fillMaxSize().background(Palette.Background)) {
-    Column(
-        Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 40.dp, vertical = 24.dp)
-    ) {
-        Text(
-            when {
-                firstRun -> "Set up your TV service"
-                initial == null -> "Add a playlist"
-                else -> "Edit ${initial.displayName}"
-            },
-            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.Text,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (firstRun) "Enter the details from your IPTV provider. Channelbox doesn't come with any channels. You can add more playlists later in Settings."
-            else "Channels from all your playlists are shown together, and each playlist also gets its own entry in the groups menu.",
-            fontSize = 14.sp, color = Palette.TextDim,
-        )
-        Spacer(Modifier.height(16.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 48.dp, vertical = 32.dp)
+        ) {
+            Column(Modifier.widthIn(max = 640.dp)) {
+                Text(
+                    when {
+                        firstRun -> "Set up your TV service"
+                        initial == null -> "Add a playlist"
+                        else -> "Edit ${initial.displayName}"
+                    },
+                    fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (firstRun) "Enter the details from your IPTV provider. Channelbox doesn't come with any channels. You can add more playlists later in Settings."
+                    else "Channels from all your playlists are shown together, and each playlist also gets its own entry in the groups menu.",
+                    fontSize = 13.sp, color = Palette.TextDim, lineHeight = 19.sp,
+                )
+                Spacer(Modifier.height(24.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TypeButton("Playlist link (M3U)", type == SourceType.M3U, Modifier.focusRequester(first)) { type = SourceType.M3U }
-            TypeButton("Xtream Codes login", type == SourceType.XTREAM) { type = SourceType.XTREAM }
-            TypeButton("Stalker portal (MAC)", type == SourceType.STALKER) { type = SourceType.STALKER }
-        }
-        Spacer(Modifier.height(16.dp))
+                SourceTabs(
+                    selected = type,
+                    firstModifier = Modifier.focusRequester(first),
+                    onSelect = { type = it },
+                )
+                Spacer(Modifier.height(22.dp))
 
-        Column(Modifier.widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            TvTextField("Name – optional, e.g. \"Sports\" or the provider's name", name, { name = it })
-            if (type == SourceType.M3U) {
-                TvTextField("Playlist URL", m3uUrl, { m3uUrl = it }, keyboardType = KeyboardType.Uri)
-            } else if (type == SourceType.STALKER) {
-                TvTextField("Portal URL (e.g. http://example.com:8080/c/)", server, { server = it }, keyboardType = KeyboardType.Uri)
-                TvTextField("MAC address (e.g. 00:1A:79:12:34:56)", mac, { mac = it })
-                if (mac.isNotBlank() && !io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)) {
-                    Text("A MAC address is 12 letters and numbers (0–9, A–F), e.g. 00:1A:79:12:34:56", color = Palette.Error, fontSize = 13.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    TvTextField("Name – optional, e.g. \"Sports\" or the provider's name", name, { name = it })
+                    when (type) {
+                        SourceType.STALKER -> {
+                            TvTextField("Portal URL (e.g. http://example.com:8080/c/)", server, { server = it }, keyboardType = KeyboardType.Uri)
+                            TvTextField("MAC address (e.g. 00:1A:79:12:34:56)", mac, { mac = it })
+                            if (mac.isNotBlank() && !io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)) {
+                                Text("A MAC address is 12 letters and numbers (0–9, A–F), e.g. 00:1A:79:12:34:56", color = Palette.Error, fontSize = 12.sp)
+                            }
+                            TvTextField("Username – only if your provider gave you one", user, { user = it })
+                            TvTextField("Password – only if your provider gave you one", pass, { pass = it }, password = true)
+                            if (moreStalker) {
+                                TvTextField("Serial number – optional", serial, { serial = it })
+                                TvTextField("Device ID 1 – optional", deviceId1, { deviceId1 = it })
+                                TvTextField("Device ID 2 – optional", deviceId2, { deviceId2 = it })
+                            } else {
+                                QuietButton("More options (serial number, device IDs)") { moreStalker = true }
+                            }
+                        }
+                        SourceType.XTREAM -> {
+                            TvTextField("Server (e.g. http://example.com:8080)", server, { server = it }, keyboardType = KeyboardType.Uri)
+                            TvTextField("Username", user, { user = it })
+                            TvTextField("Password", pass, { pass = it }, password = true)
+                        }
+                        else -> TvTextField("Playlist URL", m3uUrl, { m3uUrl = it }, keyboardType = KeyboardType.Uri)
+                    }
+                    TvTextField("TV guide (XMLTV) URL – optional, leave empty to use the provider's", epgUrl, { epgUrl = it }, keyboardType = KeyboardType.Uri)
                 }
-                TvTextField("Username – only if your provider gave you one", user, { user = it })
-                TvTextField("Password – only if your provider gave you one", pass, { pass = it }, password = true)
-                if (moreStalker) {
-                    TvTextField("Serial number – optional", serial, { serial = it })
-                    TvTextField("Device ID 1 – optional", deviceId1, { deviceId1 = it })
-                    TvTextField("Device ID 2 – optional", deviceId2, { deviceId2 = it })
-                } else {
-                    OutlinedButton(onClick = { moreStalker = true }, modifier = Modifier.tap(onClick = { moreStalker = true })) {
-                        Text("More options (serial number, device IDs)")
+                Spacer(Modifier.height(24.dp))
+
+                // Only this screen's own save counts as busy; a background reload is cancelled by saving.
+                val busy = submitted && refreshState is RefreshState.Running
+                val canSave = !busy && when (type) {
+                    SourceType.M3U -> m3uUrl.isNotBlank()
+                    SourceType.STALKER -> server.isNotBlank() && io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)
+                    else -> server.isNotBlank() && user.isNotBlank()
+                }
+                val save = {
+                    if (canSave) {
+                        submitted = true
+                        sawRunning = false
+                        vm.savePlaylist(
+                            Playlist(
+                                id = id, name = name, type = type, m3uUrl = m3uUrl, epgUrl = epgUrl,
+                                xtServer = server, xtUser = user, xtPass = pass, enabled = initial?.enabled ?: true,
+                                includeVod = initial?.includeVod ?: true,
+                                mac = if (type == SourceType.STALKER) io.github.axon07.channelbox.data.StalkerClient.normalizeMac(mac) else "",
+                                serial = if (type == SourceType.STALKER) serial.trim() else "",
+                                deviceId1 = if (type == SourceType.STALKER) deviceId1.trim() else "",
+                                deviceId2 = if (type == SourceType.STALKER) deviceId2.trim() else "",
+                            )
+                        )
                     }
                 }
-            } else {
-                TvTextField("Server (e.g. http://example.com:8080)", server, { server = it }, keyboardType = KeyboardType.Uri)
-                TvTextField("Username", user, { user = it })
-                TvTextField("Password", pass, { pass = it }, password = true)
-            }
-            TvTextField("TV guide (XMLTV) URL – optional, leave empty to use the provider's", epgUrl, { epgUrl = it }, keyboardType = KeyboardType.Uri)
-        }
-        Spacer(Modifier.height(18.dp))
-
-        // Only this screen's own save counts as busy; a background reload is cancelled by saving.
-        val busy = submitted && refreshState is RefreshState.Running
-        val canSave = !busy && when (type) {
-            SourceType.M3U -> m3uUrl.isNotBlank()
-            SourceType.STALKER -> server.isNotBlank() && io.github.axon07.channelbox.data.StalkerClient.isValidMac(mac)
-            else -> server.isNotBlank() && user.isNotBlank()
-        }
-        val save = {
-            if (canSave) {
-                submitted = true
-                sawRunning = false
-                vm.savePlaylist(
-                    Playlist(
-                        id = id, name = name, type = type, m3uUrl = m3uUrl, epgUrl = epgUrl,
-                        xtServer = server, xtUser = user, xtPass = pass, enabled = initial?.enabled ?: true,
-                        includeVod = initial?.includeVod ?: true,
-                        mac = if (type == SourceType.STALKER) io.github.axon07.channelbox.data.StalkerClient.normalizeMac(mac) else "",
-                        serial = if (type == SourceType.STALKER) serial.trim() else "",
-                        deviceId1 = if (type == SourceType.STALKER) deviceId1.trim() else "",
-                        deviceId2 = if (type == SourceType.STALKER) deviceId2.trim() else "",
+                // Sent from the phone: save straight away.
+                LaunchedEffect(fromPhone) {
+                    if (fromPhone) {
+                        fromPhone = false
+                        save()
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton(
+                        if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload",
+                        enabled = canSave,
+                        onClick = { if (canSave) save() },
                     )
-                )
+                    Spacer(Modifier.width(16.dp))
+                    when (refreshState) {
+                        is RefreshState.Running -> Text(
+                            refreshState.message, color = Palette.TextDim, fontSize = 13.sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                        is RefreshState.Failed -> if (submitted) Text(
+                            refreshState.message, color = Palette.Error, fontSize = 13.sp,
+                            maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                        else -> Unit
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(SetupStyle.Line))
+                Spacer(Modifier.height(16.dp))
+                val failed = submitted && refreshState is RefreshState.Failed
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (failed) "Works in other apps or on other networks? Your internet provider may be blocking it – try another DNS, a proxy or a VPN, then save again."
+                        else "Internet provider blocking IPTV? Set up DNS, a proxy, a VPN or the user agent first.",
+                        fontSize = 12.sp, lineHeight = 17.sp, color = if (failed) Palette.Text else Palette.TextDim,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    QuietButton("Network & VPN settings", onClick = onNetwork)
+                }
             }
         }
-        // Sent from the phone: save straight away.
-        LaunchedEffect(fromPhone) {
-            if (fromPhone) {
-                fromPhone = false
-                save()
+        if (showPhone) PhonePanel(phoneUrl)
+    }
+}
+
+/** Flat colours for this screen, in the same family as the settings and pop-ups. */
+private object SetupStyle {
+    val Track = Color(0x0DFFFFFF)
+    val Line = Color(0x14FFFFFF)
+    val Selected = Color(0xFF243140)
+    val Focus = Color(0xFFECF1F6)
+    val OnFocus = Color(0xFF0E141B)
+    val Field = Color(0xFF111820)
+    val FieldEdge = Color(0xFF242F3B)
+    val Panel = Color(0xFF0F141B)
+    val Shape = RoundedCornerShape(8.dp)
+}
+
+/** The three kinds of playlist as one slim segmented switch. */
+@Composable
+private fun SourceTabs(selected: SourceType, firstModifier: Modifier, onSelect: (SourceType) -> Unit) {
+    val tabs = listOf(
+        SourceType.M3U to "M3U link",
+        SourceType.XTREAM to "Xtream Codes",
+        SourceType.STALKER to "Stalker (MAC)",
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(SetupStyle.Track, RoundedCornerShape(10.dp))
+            .border(1.dp, SetupStyle.Line, RoundedCornerShape(10.dp))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        tabs.forEachIndexed { i, (kind, label) ->
+            var focused by remember { mutableStateOf(false) }
+            val isSelected = kind == selected
+            Surface(
+                onClick = { onSelect(kind) },
+                modifier = (if (i == 0) firstModifier else Modifier)
+                    .weight(1f)
+                    .height(38.dp)
+                    .onFocusChanged { focused = it.isFocused }
+                    .tap(onClick = { onSelect(kind) }),
+                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(7.dp)),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = if (isSelected) SetupStyle.Selected else Color.Transparent,
+                    contentColor = Palette.Text,
+                    focusedContainerColor = SetupStyle.Focus,
+                    focusedContentColor = SetupStyle.OnFocus,
+                ),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        label,
+                        fontSize = 14.sp,
+                        fontWeight = if (isSelected || focused) FontWeight.SemiBold else FontWeight.Normal,
+                        color = when {
+                            focused -> SetupStyle.OnFocus
+                            isSelected -> Color.White
+                            else -> Palette.TextDim
+                        },
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
             }
-        }
-        PillButton(
-            if (busy) "Loading…" else if (initial == null) "Add and load channels" else "Save and reload",
-            primary = canSave,
-            onClick = { if (canSave) save() },
-        )
-        Spacer(Modifier.height(12.dp))
-        val failed = submitted && refreshState is RefreshState.Failed
-        when (refreshState) {
-            is RefreshState.Running -> Text(refreshState.message, color = Palette.TextDim, fontSize = 14.sp)
-            is RefreshState.Failed -> if (submitted) Text(refreshState.message, color = Palette.Error, fontSize = 14.sp)
-            else -> Unit
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            if (failed) "Works in other apps or on other networks? Your internet provider may be blocking it – try another DNS, a proxy or a VPN, then save again."
-            else "Internet provider blocking IPTV? Set up DNS, a proxy, a VPN or the user agent first.",
-            fontSize = 13.sp, color = if (failed) Palette.Text else Palette.TextDim,
-            modifier = Modifier.widthIn(max = 620.dp),
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onNetwork, modifier = Modifier.tap(onClick = onNetwork)) {
-            Text("Network & VPN settings")
         }
     }
-    PhonePanel(phoneUrl)
+}
+
+/** The main action: accent fill, light when focused, dim when it can't be used yet. */
+@Composable
+private fun PrimaryButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.onFocusChanged { focused = it.isFocused }.tap(onClick = onClick),
+        shape = ClickableSurfaceDefaults.shape(SetupStyle.Shape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (enabled) Palette.Accent else SetupStyle.Track,
+            contentColor = Palette.Text,
+            focusedContainerColor = SetupStyle.Focus,
+            focusedContentColor = SetupStyle.OnFocus,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Text(
+            label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            color = when {
+                focused -> SetupStyle.OnFocus
+                enabled -> Color.White
+                else -> Palette.TextDim
+            },
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 11.dp),
+        )
+    }
+}
+
+/** A secondary action: hairline outline, light when focused. */
+@Composable
+private fun QuietButton(label: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .border(1.dp, if (focused) Color.Transparent else SetupStyle.Line, SetupStyle.Shape)
+            .tap(onClick = onClick),
+        shape = ClickableSurfaceDefaults.shape(SetupStyle.Shape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = Palette.Text,
+            focusedContainerColor = SetupStyle.Focus,
+            focusedContentColor = SetupStyle.OnFocus,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Text(
+            label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            color = if (focused) SetupStyle.OnFocus else Palette.Text,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+        )
     }
 }
 
@@ -254,48 +398,47 @@ fun SetupScreen(
 private fun PhonePanel(url: String?) {
     Column(
         Modifier
-            .width(320.dp)
+            .width(300.dp)
             .fillMaxHeight()
-            .background(Color(0xFF111821))
-            .padding(24.dp),
+            .background(SetupStyle.Panel)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        AppIcon(AppIcons.Phone, tint = Palette.Text, size = 28.dp)
-        Spacer(Modifier.height(8.dp))
-        Text("Use your phone", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+        AppIcon(AppIcons.Phone, tint = Palette.TextDim, size = 22.dp)
+        Spacer(Modifier.height(10.dp))
+        Text("Use your phone", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
         Spacer(Modifier.height(6.dp))
         if (url == null) {
             Text(
                 "Connect this box to your home Wi-Fi or network to type the playlist on your phone instead.",
-                fontSize = 13.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+                fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
             )
             return@Column
         }
         Text(
             "Scan with your phone's camera and type the link there – much easier than with the remote.",
-            fontSize = 13.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+            fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
         val qr = remember(url) { io.github.axon07.channelbox.system.PhoneLink.qrCode(url).asImageBitmap() }
-        androidx.compose.foundation.Image(
-            bitmap = qr, contentDescription = "QR code",
-            filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
-            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(6.dp)),
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("or open", fontSize = 12.sp, color = Palette.TextDim)
-        Text(url, fontSize = 13.sp, color = Palette.Text, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(12.dp))
+        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color.White).padding(8.dp)) {
+            androidx.compose.foundation.Image(
+                bitmap = qr, contentDescription = "QR code",
+                filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+                modifier = Modifier.size(172.dp),
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("or open", fontSize = 11.sp, color = Palette.TextDim)
+        Text(url, fontSize = 12.sp, color = Palette.Text, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(14.dp))
         Text(
             "Your phone must be on the same Wi-Fi. The page only works while this screen is open.",
-            fontSize = 12.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
+            fontSize = 11.sp, lineHeight = 16.sp, color = Palette.TextDim, textAlign = TextAlign.Center,
         )
     }
-}
-
-@Composable
-private fun TypeButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    PillButton(label, modifier = modifier, primary = selected, onClick = onClick)
 }
 
 @Composable
@@ -311,16 +454,16 @@ fun TvTextField(
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
-        Text(label, fontSize = 13.sp, color = Palette.TextDim)
-        Spacer(Modifier.height(4.dp))
+        Text(label, fontSize = 12.sp, color = if (focused) Palette.Text else Palette.TextDim)
+        Spacer(Modifier.height(6.dp))
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = lines == 1,
             minLines = lines,
             maxLines = if (lines == 1) 1 else lines,
-            textStyle = TextStyle(color = Color.White, fontSize = if (lines == 1) 16.sp else 12.sp),
-            cursorBrush = SolidColor(Color.White),
+            textStyle = TextStyle(color = Color.White, fontSize = if (lines == 1) 15.sp else 12.sp),
+            cursorBrush = SolidColor(Palette.Accent),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             // No auto-capitals or autocorrect: addresses, usernames and passwords must stay as typed.
             keyboardOptions = KeyboardOptions(
@@ -332,9 +475,9 @@ fun TvTextField(
             modifier = fieldModifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
-                .border(2.dp, if (focused) Palette.Accent else Color(0xFF2E3946), RoundedCornerShape(6.dp))
-                .background(Palette.Surface, RoundedCornerShape(6.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .background(SetupStyle.Field, SetupStyle.Shape)
+                .border(if (focused) 1.5.dp else 1.dp, if (focused) Palette.Accent else SetupStyle.FieldEdge, SetupStyle.Shape)
+                .padding(horizontal = 14.dp, vertical = 11.dp),
         )
     }
 }

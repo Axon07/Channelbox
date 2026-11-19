@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Η σύνδεση απέτυχε – ελέγξτε διακομιστή, όνομα χρήστη και κωδικό",
  "Look up server names privately – gets around ISP DNS blocking": "Ιδιωτική αναζήτηση ονομάτων διακομιστών – παρακάμπτει το μπλοκάρισμα DNS",
  "Lower it on a slow connection to avoid buffering": "Χαμηλώστε τη σε αργή σύνδεση για να αποφύγετε διακοπές",
+ "M3U link": "Σύνδεσμος M3U",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "Σύνδεσμος M3U ή σύνδεση Xtream Codes. Τα κανάλια όλων των λιστών εμφανίζονται μαζί.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "Διεύθυνση MAC (π.χ. 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Να λειτουργεί σαν αποκωδικοποιητής",

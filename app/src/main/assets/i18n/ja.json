@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "ログインに失敗しました – サーバー、ユーザー名、パスワードを確認してください",
  "Look up server names privately – gets around ISP DNS blocking": "サーバー名を非公開で解決 – プロバイダーの DNS ブロックを回避",
  "Lower it on a slow connection to avoid buffering": "回線が遅い場合は下げるとバッファリングを防げます",
+ "M3U link": "M3Uリンク",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U リンクまたは Xtream Codes ログイン。すべてのプレイリストのチャンネルがまとめて表示されます。",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MACアドレス（例：00:1A:79:12:34:56）",
  "Make it behave like a cable box": "ケーブルテレビのチューナーのように動作",

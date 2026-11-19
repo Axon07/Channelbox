@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Sikertelen bejelentkezés – ellenőrizze a szervert, a felhasználónevet és a jelszót",
  "Look up server names privately – gets around ISP DNS blocking": "Szervernevek privát feloldása – megkerüli a szolgáltató DNS-blokkolását",
  "Lower it on a slow connection to avoid buffering": "Lassú kapcsolatnál csökkentse a pufferelés elkerülésére",
+ "M3U link": "M3U-link",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U-hivatkozás vagy Xtream Codes-bejelentkezés. Az összes lista csatornái együtt jelennek meg.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC-cím (pl. 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Működjön kábeles set-top boxként",

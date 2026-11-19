@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Đăng nhập thất bại – kiểm tra máy chủ, tên và mật khẩu",
  "Look up server names privately – gets around ISP DNS blocking": "Tra tên máy chủ riêng tư – vượt chặn DNS của nhà mạng",
  "Lower it on a slow connection to avoid buffering": "Giảm xuống khi mạng chậm để tránh giật",
+ "M3U link": "Liên kết M3U",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "Liên kết M3U hoặc đăng nhập Xtream Codes. Kênh từ mọi danh sách hiển thị chung.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "Địa chỉ MAC (ví dụ 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Hoạt động như đầu thu cáp",

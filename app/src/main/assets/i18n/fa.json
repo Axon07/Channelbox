@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "ورود ناموفق – سرور، نام کاربری و گذرواژه را بررسی کنید",
  "Look up server names privately – gets around ISP DNS blocking": "جستجوی خصوصی نام سرورها – دور زدن مسدودسازی DNS",
  "Lower it on a slow connection to avoid buffering": "در اتصال کند برای جلوگیری از بافر شدن کاهش دهید",
+ "M3U link": "پیوند M3U",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "پیوند M3U یا ورود Xtream Codes. کانال‌های همهٔ فهرست‌ها با هم نمایش داده می‌شوند.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "نشانی MAC (مثلاً 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "مانند گیرندهٔ کابلی عمل کند",

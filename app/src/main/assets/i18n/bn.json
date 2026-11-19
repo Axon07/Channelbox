@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "লগইন ব্যর্থ – সার্ভার, ইউজারনেম ও পাসওয়ার্ড দেখুন",
  "Look up server names privately – gets around ISP DNS blocking": "সার্ভারের নাম গোপনে খুঁজুন – ISP-র DNS ব্লক এড়ায়",
  "Lower it on a slow connection to avoid buffering": "ধীর সংযোগে বাফারিং এড়াতে কমান",
+ "M3U link": "M3U লিংক",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U লিংক বা Xtream Codes লগইন। সব প্লেলিস্টের চ্যানেল একসাথে দেখায়।",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC ঠিকানা (যেমন 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "কেবল বক্সের মতো চালান",

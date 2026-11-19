@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "로그인 실패 – 서버, 사용자 이름, 비밀번호를 확인하세요",
  "Look up server names privately – gets around ISP DNS blocking": "서버 이름을 비공개로 조회 – 통신사 DNS 차단 우회",
  "Lower it on a slow connection to avoid buffering": "연결이 느리면 버퍼링을 줄이도록 낮추세요",
+ "M3U link": "M3U 링크",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U 링크 또는 Xtream Codes 로그인. 모든 재생목록의 채널이 함께 표시됩니다.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC 주소 (예: 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "케이블 셋톱박스처럼 동작",

@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Giriş başarısız – sunucu, kullanıcı adı ve şifreyi kontrol edin",
  "Look up server names privately – gets around ISP DNS blocking": "Sunucu adlarını gizlice çözer – ISS DNS engelini aşar",
  "Lower it on a slow connection to avoid buffering": "Yavaş bağlantıda donmayı önlemek için düşürün",
+ "M3U link": "M3U bağlantısı",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U bağlantısı veya Xtream Codes girişi. Tüm listelerdeki kanallar birlikte gösterilir.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC adresi (ör. 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Kablo TV kutusu gibi çalışsın",

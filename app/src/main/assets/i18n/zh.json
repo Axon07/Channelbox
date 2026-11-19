@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "登录失败 – 请检查服务器、用户名和密码",
  "Look up server names privately – gets around ISP DNS blocking": "私密解析服务器名称 – 绕过运营商 DNS 屏蔽",
  "Lower it on a slow connection to avoid buffering": "网速慢时调低以减少缓冲",
+ "M3U link": "M3U 链接",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U 链接或 Xtream Codes 登录。所有播放列表的频道会一起显示。",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC 地址（例如 00:1A:79:12:34:56）",
  "Make it behave like a cable box": "让它像有线电视机顶盒一样工作",

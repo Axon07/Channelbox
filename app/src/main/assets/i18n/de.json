@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Anmeldung fehlgeschlagen – Server, Benutzername und Passwort prüfen",
  "Look up server names privately – gets around ISP DNS blocking": "Servernamen privat auflösen – umgeht DNS-Sperren des Anbieters",
  "Lower it on a slow connection to avoid buffering": "Bei langsamer Verbindung senken, um Puffern zu vermeiden",
+ "M3U link": "M3U-Link",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "M3U-Link oder Xtream-Codes-Login. Sender aller Playlists werden zusammen angezeigt.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC-Adresse (z. B. 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Wie eine Kabelbox verhalten",

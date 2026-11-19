@@ -137,6 +137,7 @@
  "Login failed – check the server, username and password": "Не вдалося увійти – перевірте сервер, ім'я користувача й пароль",
  "Look up server names privately – gets around ISP DNS blocking": "Приватний пошук імен серверів – обходить DNS-блокування провайдера",
  "Lower it on a slow connection to avoid buffering": "Знизьте за повільного з'єднання, щоб уникнути буферизації",
+ "M3U link": "Посилання M3U",
  "M3U link or Xtream Codes login. Channels from every playlist are shown together.": "Посилання M3U або вхід Xtream Codes. Канали з усіх плейлистів показано разом.",
  "MAC address (e.g. 00:1A:79:12:34:56)": "MAC-адреса (наприклад, 00:1A:79:12:34:56)",
  "Make it behave like a cable box": "Як кабельна приставка",
