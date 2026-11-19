@@ -70,6 +70,9 @@ fun guideMetrics(): GuideMetrics =
  */
 class GuideState {
     var row by mutableIntStateOf(0)
+
+    /** When ▲ / ▼ was last pressed, to tell a new press from a held key (some remotes misreport). */
+    private var lastVerticalAt = 0L
     var focusTime by mutableLongStateOf(System.currentTimeMillis())
     val listState = LazyListState()
 
@@ -89,6 +92,12 @@ class GuideState {
      */
     fun moveVertical(delta: Int, channelCount: Int, wrap: Boolean = false) {
         if (channelCount == 0) return
+        val now = android.os.SystemClock.uptimeMillis()
+        // A held key repeats every ~50 ms (the first repeat after ~0.5 s); a longer gap means the
+        // key was let go and pressed again, even on remotes that misreport the repeat count.
+        @Suppress("NAME_SHADOWING")
+        val wrap = wrap || now - lastVerticalAt > 700
+        lastVerticalAt = now
         val last = channelCount - 1
         row = when {
             wrap && delta < 0 && row == 0 -> last
@@ -240,6 +249,9 @@ fun GuideScreen(
                         change.consume()
                     }
                 },
+            // Room under the last channel: many TVs crop the screen edges (overscan), which hid
+            // the last row – ▼ seemed to do nothing there and the jump back to the top was missed.
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = m.rowHeight + 24.dp),
         ) {
             itemsIndexed(channels, key = { _, ch -> ch.id }) { index, ch ->
                 GuideRow(
