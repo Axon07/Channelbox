@@ -46,9 +46,9 @@ You can also use **Settings → Check for updates**. The first time, Android ask
 | **Sources** | M3U / M3U8 playlist URL (incl. `.gz`), Xtream Codes login, Stalker / Ministra portal (portal URL + MAC address – see [Stalker portals](#stalker-portals)). **Several playlists at once**, merged into one lineup, each with its own name, guide and on/off switch. Huge provider lists (100 MB+) are read as they download |
 | **Add from your phone** | The add-playlist screen shows a QR code: scan it, type the link, login or portal + MAC on your phone, press Send. Works only on your home network and only while that screen is open |
 | **TV guide** | XMLTV (incl. `.xml.gz`) from every guide the playlist lists (`url-tvg`), from Xtream, plus your own URLs. Channels are matched by `tvg-id`, then a loose id match, then by name (ignoring "US:", "HD", "(1080p)" and similar) |
-| **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. Marks programmes set to record and locked channels; adapts to small screens |
+| **Guide screen** | Cable-style grid (channels × time) with a live video preview in the corner, programme details and a "now" line. Hold Back to go straight back to the channel full screen. Marks programmes set to record and locked channels; adapts to small screens |
 | **Groups menu** | Back from the guide: channel groups (one section per playlist when you have several). Back again (or ◀) opens the side menu: Search, Live TV, Movies, TV Shows, Recordings and Settings |
-| **Movies & TV Shows** | From the playlist or the provider's Xtream API: poster grid by category, search, "Continue watching", seasons and episodes, resume where you stopped. Xtream-style M3U links get real posters and details from the API automatically |
+| **Movies & TV Shows** | From the playlist or the provider's Xtream API: poster grid by category, search, "Continue watching", seasons and episodes, resume where you stopped. Hide categories you don't want (Settings → Playlist & guide → Movie / TV show categories, or hold OK on a category) Xtream-style M3U links get real posters and details from the API automatically |
 | **Pause live TV** | Play/Pause while watching: the channel is buffered on the box from that moment (up to 2 hours); resume behind live, ⏩ to jump back to live |
 | **Guide search** | Search programme titles across the whole guide; watch what's on, catch up on what aired, record what's coming |
 | **Your lineup** | Rename, renumber, hide or lock channels; rename, reorder, hide or lock groups (hold OK). Survives playlist reloads; undo from Settings |
@@ -143,7 +143,8 @@ movies; it doesn't put you further behind live.
 | ਪੰਜਾਬੀ (Punjabi) | 中文 (Chinese, Simplified) | 日本語 (Japanese) | Tiếng Việt (Vietnamese) |
 | Filipino (Tagalog) | বাংলা (Bengali) | اردو (Urdu, right-to-left) | Bahasa Indonesia (Indonesian) |
 | فارسی (Persian, right-to-left) | 한국어 (Korean) | Shqip (Albanian) | Srpski (Serbian) |
-| Hrvatski (Croatian) | Soomaali (Somali) | ไทย (Thai) | |
+| Hrvatski (Croatian) | Soomaali (Somali) | ไทย (Thai) | Čeština (Czech) |
+| Slovenčina (Slovak) | | | |
 
 Translations live in `app/src/main/assets/i18n/<code>.json` (English text → translation). Anything not
 translated shows in English. To add or fix a language, run `python3 tools/i18n_keys.py` for the full list
