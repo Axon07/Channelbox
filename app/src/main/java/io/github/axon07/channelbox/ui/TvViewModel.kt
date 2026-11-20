@@ -930,7 +930,23 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val showCount: StateFlow<Int> = library { repo.vod.count(VodKind.SERIES) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
-    fun vodCategories(kind: String): Flow<List<VodCategory>> = library { repo.vod.categories(kind) }
+    /** Categories shown in Movies / TV Shows (hidden ones left out). */
+    fun vodCategories(kind: String): Flow<List<VodCategory>> =
+        combine(library { repo.vod.categories(kind) }, overrides) { list, ov ->
+            list.filter { ov[vodKey(kind, it.name)]?.hidden != true }
+        }
+
+    /** Every category, for choosing which ones show (Settings). */
+    fun allVodCategories(kind: String): Flow<List<VodCategory>> = library { repo.vod.categories(kind) }
+
+    fun isVodCategoryHidden(kind: String, category: String) = overrides.value[vodKey(kind, category)]?.hidden == true
+
+    fun setVodCategoriesHidden(kind: String, categories: Collection<String>, hidden: Boolean) = viewModelScope.launch {
+        if (categories.isEmpty()) return@launch
+        repo.putOverrides(categories.map { c ->
+            (overrides.value[vodKey(kind, c)] ?: OverrideEntity(vodKey(kind, c))).copy(hidden = hidden)
+        })
+    }
     fun vodContinueCount(kind: String): Flow<Int> = library { repo.vod.continueCount(kind) }
 
     /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
@@ -938,8 +954,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         .map { list ->
             // Titles from locked categories stay out of "All" and search until the PIN is entered.
             val browsingOneCategory = query.isBlank() && category != null && category != VOD_CONTINUE
-            if (unlocked || browsingOneCategory) list
-            else list.filter { overrides.value[vodKey(kind, it.category)]?.locked != true }
+            // Titles from hidden categories stay out of "All", search and "Continue watching".
+            val shown = if (browsingOneCategory) list else list.filter { overrides.value[vodKey(kind, it.category)]?.hidden != true }
+            if (unlocked || browsingOneCategory) shown
+            else shown.filter { overrides.value[vodKey(kind, it.category)]?.locked != true }
         }
 
     private fun libraryRaw(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {

@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -108,7 +109,52 @@ class VodBrowser {
 fun VodScreen(b: VodBrowser, vm: TvViewModel, onPlay: (item: VodEntity, show: VodEntity?) -> Unit) {
     val progress by vm.vodProgress.collectAsStateWithLifecycle()
     val show = b.show
-    if (show != null) ShowScreen(b, show, progress, vm, onPlay) else LibraryScreen(b, progress, vm, onPlay)
+    // Hold OK on a category: lock or hide it.
+    var categoryMenu by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+        if (show != null) ShowScreen(b, show, progress, vm, onPlay)
+        else LibraryScreen(b, progress, vm, onPlay, onCategoryMenu = { cat, locked -> categoryMenu = cat to locked })
+        categoryMenu?.let { (cat, locked) -> CategoryMenu(b, vm, cat, locked) { categoryMenu = null } }
+    }
+}
+
+@Composable
+private fun CategoryMenu(b: VodBrowser, vm: TvViewModel, category: String, locked: Boolean, onClose: () -> Unit) {
+    androidx.activity.compose.BackHandler { onClose() }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(50)
+        runCatching { first.requestFocus() }
+    }
+    // The hold that opened this menu is still going: its repeats and release mustn't pick a row.
+    var armed by remember { mutableStateOf(false) }
+    DialogCard(
+        modifier = Modifier.onPreviewKeyEvent { e ->
+            val n = e.nativeKeyEvent
+            val ok = n.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || n.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                n.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER || n.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_A
+            when {
+                !ok || armed -> false
+                n.action == android.view.KeyEvent.ACTION_DOWN && n.repeatCount == 0 -> { armed = true; false } // a new press
+                n.action == android.view.KeyEvent.ACTION_UP -> { armed = true; true }
+                else -> true
+            }
+        },
+    ) {
+        DialogTitle(category)
+        Spacer(Modifier.height(12.dp))
+        DialogRow(if (locked) "Unlock" else "Lock (needs the PIN)", Modifier.focusRequester(first)) {
+            vm.setVodCategoryLocked(b.kind, category, !locked)
+            onClose()
+        }
+        DialogRow("Hide this category") {
+            vm.setVodCategoriesHidden(b.kind, listOf(category), true)
+            vm.showToast("$category hidden – show it again in Settings → Playlist & guide")
+            if (b.category == category) b.category = null
+            onClose()
+        }
+        DialogRow("Cancel", dim = true) { onClose() }
+    }
 }
 
 // ---- Poster grid with categories -----------------------------------------------------------------
@@ -119,6 +165,7 @@ private fun LibraryScreen(
     progress: Map<String, VodProgressEntity>,
     vm: TvViewModel,
     onPlay: (VodEntity, VodEntity?) -> Unit,
+    onCategoryMenu: (String, Boolean) -> Unit,
 ) {
     val movies = b.kind == VodKind.MOVIE
     val total by (if (movies) vm.movieCount else vm.showCount).collectAsStateWithLifecycle()
@@ -195,7 +242,7 @@ private fun LibraryScreen(
                             }
                             if (locked) vm.requirePin("Enter your PIN to open $label", action = open) else open()
                         },
-                        onLongClick = if (real) ({ vm.setVodCategoryLocked(b.kind, id!!, !locked) }) else null,
+                        onLongClick = if (real) ({ onCategoryMenu(id!!, locked) }) else null,
                     )
                 }
             }

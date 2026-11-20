@@ -156,6 +156,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val expandedSections by vm.expanded.collectAsStateWithLifecycle()
     val menuRows = remember(menuSections, expandedSections) { vm.menuRows(menuSections, expandedSections) }
     val current by vm.current.collectAsStateWithLifecycle()
+    /** A long Back press already went to full screen (swallow the rest of that press). */
+    var backLongFired by remember { mutableStateOf(false) }
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val guideStart by vm.guideStart.collectAsStateWithLifecycle()
@@ -1187,6 +1189,23 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val native = it.nativeKeyEvent
                 // After a long OK opened a menu, the rest of that press (repeats and the release)
                 // must not reach the menu, or it picks the first item and closes straight away.
+                // Holding Back in the guide or groups menu (with a channel playing behind it) goes
+                // straight back to the channel full screen, like a cable box.
+                if (native.keyCode == AndroidKeyEvent.KEYCODE_BACK) {
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount == 0) backLongFired = false
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN && !backLongFired &&
+                        (native.isLongPress || native.repeatCount >= 4) &&
+                        (mode == Mode.GUIDE || mode == Mode.GROUPS) && current != null
+                    ) {
+                        backLongFired = true
+                        mode = Mode.PLAYER
+                    }
+                    // The rest of a long press (repeats and the release) mustn't also act as Back.
+                    if (backLongFired) {
+                        if (native.action == AndroidKeyEvent.ACTION_UP) backLongFired = false
+                        return@onPreviewKeyEvent true
+                    }
+                }
                 if (ok.longFired && native.keyCode in OK_KEYS) {
                     if (native.action == AndroidKeyEvent.ACTION_UP) {
                         ok.armed = false

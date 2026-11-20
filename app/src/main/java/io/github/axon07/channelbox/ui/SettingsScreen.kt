@@ -109,6 +109,7 @@ private enum class Page(val title: String) {
     SCALE("Picture size"), QUALITY("Maximum quality"), BUFFER("Buffer size"), REFRESH("Reload automatically"),
     BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"), GUIDE_DAYS("Days of TV guide"),
     PLAYLIST("Playlist"),
+    MOVIE_CATEGORIES("Movie categories"), SHOW_CATEGORIES("TV show categories"),
 }
 
 /**
@@ -345,6 +346,16 @@ private fun SourceSettings(
         title = "Organise channels & groups",
         description = "Hide many groups at once, put them in your order, add lots of channels to Favourites and sort them",
         onClick = onOrganise,
+    )
+    SettingCard(
+        title = "Movie categories",
+        description = "Choose which movie categories show – turn off the ones you don't want",
+        onClick = { openPage(Page.MOVIE_CATEGORIES) },
+    )
+    SettingCard(
+        title = "TV show categories",
+        description = "Choose which TV show categories show – turn off the ones you don't want",
+        onClick = { openPage(Page.SHOW_CATEGORIES) },
     )
     SettingCard(
         title = "Jellyfin",
@@ -974,6 +985,46 @@ private fun SubPage(
                 selected = settings.videoScale.toString(),
                 onSelect = { vm.setVideoScale(it.toInt()); onClose() },
             )
+        }
+        Page.MOVIE_CATEGORIES, Page.SHOW_CATEGORIES -> {
+            val kind = if (page == Page.MOVIE_CATEGORIES) io.github.axon07.channelbox.data.VodKind.MOVIE
+            else io.github.axon07.channelbox.data.VodKind.SERIES
+            val categories by remember(kind) { vm.allVodCategories(kind) }.collectAsStateWithLifecycle(initialValue = null)
+            // Re-read on every change so the switches follow.
+            val overridesVersion by vm.overrides.collectAsStateWithLifecycle()
+            PageHeader(
+                page.title,
+                "On = shown in ${if (page == Page.MOVIE_CATEGORIES) "Movies" else "TV Shows"}. Off = hidden there and from search. Stays this way after reloads.",
+            )
+            val list = categories
+            when {
+                list == null -> Text("Loading…", fontSize = 13.sp, color = Palette.TextDim)
+                list.isEmpty() -> Text("No categories yet – they appear after your playlists' movies & shows load.", fontSize = 13.sp, color = Palette.TextDim)
+                else -> {
+                    val names = list.map { it.name }
+                    val hiddenCount = names.count { overridesVersion[TvViewModel.vodKey(kind, it)]?.hidden == true }
+                    SettingCard(
+                        title = "Show all",
+                        description = "${names.size - hiddenCount} of ${names.size} shown",
+                        onClick = { vm.setVodCategoriesHidden(kind, names, false) },
+                    )
+                    SettingCard(
+                        title = "Hide all",
+                        description = "Then turn on just the ones you want",
+                        onClick = { vm.setVodCategoriesHidden(kind, names, true) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    list.forEach { c ->
+                        val hidden = overridesVersion[TvViewModel.vodKey(kind, c.name)]?.hidden == true
+                        SettingCard(
+                            title = c.name,
+                            description = "${c.count}",
+                            toggle = !hidden,
+                            onClick = { vm.setVodCategoriesHidden(kind, listOf(c.name), !hidden) },
+                        )
+                    }
+                }
+            }
         }
         Page.GUIDE_DAYS -> {
             PageHeader("Days of TV guide", "How far ahead the guide goes. Applies at the next reload.")
