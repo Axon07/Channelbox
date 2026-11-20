@@ -156,6 +156,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val expandedSections by vm.expanded.collectAsStateWithLifecycle()
     val menuRows = remember(menuSections, expandedSections) { vm.menuRows(menuSections, expandedSections) }
     val current by vm.current.collectAsStateWithLifecycle()
+    val channelsLoaded by vm.channelsLoaded.collectAsStateWithLifecycle()
     /** A long Back press already went to full screen (swallow the rest of that press). */
     var backLongFired by remember { mutableStateOf(false) }
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
@@ -1619,10 +1620,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 ),
             )
             Mode.PLAYER, Mode.CHANNEL_LIST -> {
+                // With channels saved from last time, a reload runs quietly behind them (and a
+                // failed one keeps them – the reason is in Settings), so nothing covers the picture.
                 val fallback = when (val r = refreshState) {
-                    is RefreshState.Running -> if (r.background && allChannels.isNotEmpty()) null else r.message
-                    is RefreshState.Failed -> "Couldn't load channels: ${r.message}\nPress OK for settings"
-                    else -> if (allChannels.isEmpty()) "No channels yet – press OK for settings" else null
+                    is RefreshState.Running -> if (allChannels.isNotEmpty()) null else r.message
+                    is RefreshState.Failed -> if (allChannels.isNotEmpty()) null else "Couldn't load channels: ${r.message}\nPress OK for settings"
+                    else -> if (allChannels.isEmpty() && channelsLoaded) "No channels yet – press OK for settings" else null
                 }
                 StatusMessage(playerStatus, current, fallback)
                 val cur = current

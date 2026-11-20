@@ -200,6 +200,7 @@ class TvPlayer(
                     when (playbackState) {
                         Player.STATE_READY -> {
                             retries = 0
+                            refusals = 0
                             confirmed = true
                             _status.value = PlayerStatus.Playing
                         }
@@ -278,6 +279,9 @@ class TvPlayer(
     private fun open(stream: StreamSpec, onDemand: Boolean, startAt: Long = 0) {
         startPosition = startAt.coerceAtLeast(0)
         handler.removeCallbacksAndMessages(null)
+        // Let go of the previous stream first: on one-connection accounts the provider refuses the
+        // new channel (HTTP 401/403) while the old connection is still open.
+        exo.stop()
         applyCaptionDefault()
         this.onDemand = onDemand
         spec = stream
@@ -293,8 +297,18 @@ class TvPlayer(
         attempt = 0
         confirmed = false
         retries = 0
+        refusals = 0
         widevineL3 = false
         start()
+    }
+
+    /** Times in a row the provider refused this stream (connection limit), retried quietly. */
+    private var refusals = 0
+
+    private fun httpCode(error: PlaybackException): Int? {
+        var cause: Throwable? = error
+        while (cause != null && cause !is HttpDataSource.InvalidResponseCodeException) cause = cause.cause
+        return (cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
     }
 
     /** Called when the app comes back to the foreground. */
@@ -439,6 +453,18 @@ class TvPlayer(
             }
             return
         }
+        // Refused (401/403) or "too many connections": usually the previous channel's connection is
+        // still being closed on a one-connection account. Not a format problem, so don't try other
+        // formats (more connections) – wait a moment and ask again, without alarming messages.
+        val code = httpCode(error)
+        if (code != null && code in REFUSED && refusals < 4) {
+            refusals++
+            val current = spec
+            _status.value = PlayerStatus.Buffering
+            handler.removeCallbacksAndMessages(null)
+            handler.postDelayed({ if (spec === current && current != null) start() }, 1_200L * refusals)
+            return
+        }
         if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
             exo.seekToDefaultPosition()
             exo.prepare()
@@ -454,8 +480,8 @@ class TvPlayer(
         val code = (cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
             ?: return error.errorCodeName
         val hint = when (code) {
-            401, 403 -> "the provider refused it – the account may have expired, be in use on too many " +
-                "devices, or block this app's user agent (Settings → Network → User agent)"
+            401, 403 -> "the provider refused it – usually the account is already playing on another device; " +
+                "otherwise the account has ended or the provider blocks this app's user agent (Settings → Network)"
             404, 410 -> "the link no longer works – reload the playlist"
             429, 456, 458, 509 -> "too many connections on this account – stop it on other devices"
             in 500..599 -> "the provider's server has a problem"
@@ -646,6 +672,8 @@ class TvPlayer(
     }
 
     companion object {
+        /** HTTP codes providers use for "refused" / "too many connections". */
+        private val REFUSED = setOf(401, 403, 429, 456, 458, 509)
         const val DEFAULT_USER_AGENT = UserAgent.DEFAULT
     }
 }

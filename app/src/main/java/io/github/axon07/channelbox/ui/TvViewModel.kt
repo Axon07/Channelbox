@@ -129,6 +129,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     val refreshState: StateFlow<RefreshState> = repo.state
 
+    /** False until the saved channels have been read at start-up (so "no channels" isn't flashed). */
+    val channelsLoaded: StateFlow<Boolean> = combine(repo.channels, c.settings.flow) { _, _ -> true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     // ---- Your changes: names, numbers, order, hidden, locked ----------------------------------
 
     val overrides: StateFlow<Map<String, OverrideEntity>> = repo.overrides
@@ -1043,6 +1047,17 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // A reload that fails while last time's channels are there: a short note, not a full-screen error.
+        viewModelScope.launch {
+            var wasRunning = false
+            repo.state.collect { st ->
+                if (st is RefreshState.Running) wasRunning = true
+                if (st is RefreshState.Failed && wasRunning && allChannels.value.isNotEmpty()) {
+                    showToast("Couldn't reload the playlist – showing the channels from last time (details in Settings → Playlist & guide)")
+                }
+                if (st !is RefreshState.Running) wasRunning = false
+            }
+        }
         // After a reload, the channel playing picks up its new details (catch-up, name, logo…)
         // without having to change channel.
         viewModelScope.launch {

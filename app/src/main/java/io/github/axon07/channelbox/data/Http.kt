@@ -165,7 +165,7 @@ suspend fun <T> OkHttpClient.download(url: String, timeoutSeconds: Long = 0, blo
     }
 
 private fun httpHint(code: Int): String = when (code) {
-    401, 403 -> " – the server refused the login (check the username/password, or the account may be in use or expired)"
+    401, 403 -> " – the server refused it (often because the account is busy, e.g. a channel is playing on a one-connection account; otherwise check the login)"
     404 -> " – the link wasn't found"
     in 500..599 -> " – the provider's server has a problem"
     else -> ""
