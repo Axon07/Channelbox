@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.transformLatest
@@ -96,6 +97,8 @@ const val VOD_PAGE = 3_000
 const val VOD_FIRST = 120
 /** Posters fetched ahead in the background after start-up, per kind. */
 const val WARM_POSTERS = 40
+/** Results per kind (channels, movies, shows) in the global search. */
+const val SEARCH_EACH = 30
 /** Categories (per kind) and posters per category saved ahead in the background. */
 const val WARM_CATEGORIES = 60
 const val WARM_PER_CATEGORY = 12
@@ -1363,6 +1366,35 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Guide search ----------------------------------------------------------------------
 
     data class GuideHit(val channel: ChannelEntity, val program: ProgramEntity)
+
+    /** Everything that matches a search: channels, movies, TV shows and guide programmes. */
+    data class SearchResults(
+        val channels: List<ChannelEntity>,
+        val movies: List<VodEntity>,
+        val shows: List<VodEntity>,
+        val programmes: List<GuideHit>,
+    ) {
+        val isEmpty get() = channels.isEmpty() && movies.isEmpty() && shows.isEmpty() && programmes.isEmpty()
+        val size get() = channels.size + movies.size + shows.size + programmes.size
+    }
+
+    /** Search across live channels, Movies, TV Shows and the TV guide at once. */
+    suspend fun searchEverything(query: String): SearchResults = kotlinx.coroutines.coroutineScope {
+        val q = query.trim()
+        val channels = async(Dispatchers.Default) {
+            // Names starting with the words first ("CBC" before "Hockey Night on CBC").
+            allChannels.value.filter { it.name.contains(q, ignoreCase = true) }
+                .sortedBy { if (it.name.startsWith(q, ignoreCase = true)) 0 else 1 }
+                .take(SEARCH_EACH)
+        }
+        fun vod(kind: String) = async(Dispatchers.IO) {
+            filterVod(kind, null, q, repo.vod.search(kind, q, SEARCH_EACH * 2)).take(SEARCH_EACH)
+        }
+        val movies = vod(VodKind.MOVIE)
+        val shows = vod(VodKind.SERIES)
+        val programmes = async { searchGuide(q).take(SEARCH_EACH * 2) }
+        SearchResults(channels.await(), movies.await(), shows.await(), programmes.await())
+    }
 
     /** Programmes whose title contains [query], on your channels (hidden ones left out). */
     suspend fun searchGuide(query: String): List<GuideHit> {

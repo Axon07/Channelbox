@@ -51,19 +51,36 @@ data class GuideMetrics(
     val channelColumn: Dp,
     val rowHeight: Dp,
     val compact: Boolean,
+    /** Room for channel numbers (0 when they're off): sized to the longest number in the list. */
+    val numberWidth: Dp = 0.dp,
 ) {
     val topHeight: Dp get() = previewHeight + previewPadding * 2
 }
 
 @Composable
 fun guideMetrics(): GuideMetrics {
-    // Channel numbers get their own room: the column grows instead of squeezing the names.
-    val numbers = LocalShowChannelNumbers.current
+    LocalGuideMetrics.current?.let { return it }
     return if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
-        GuideMetrics(if (numbers) 236.dp else 196.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
+        GuideMetrics(196.dp, 99.dp, 8.dp, 168.dp, 36.dp, compact = true)
     } else {
-        GuideMetrics(if (numbers) 316.dp else 264.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
+        GuideMetrics(264.dp, 135.dp, 14.dp, 220.dp, 40.dp, compact = false)
     }
+}
+
+/** The guide's sizes for this channel list (set by the guide, so every row uses the same ones). */
+val LocalGuideMetrics = androidx.compose.runtime.staticCompositionLocalOf<GuideMetrics?> { null }
+
+/**
+ * Channel numbers get their own room, as wide as the longest number (1–5 digits): the column grows
+ * instead of squeezing the names.
+ */
+@Composable
+private fun guideMetricsFor(channels: List<ChannelEntity>): GuideMetrics {
+    val base = guideMetrics()
+    if (!LocalShowChannelNumbers.current) return base
+    val digits = remember(channels) { channels.maxOfOrNull { it.number.toString().length } ?: 3 }
+    val numberWidth = ((if (base.compact) 8 else 9) * digits.coerceAtLeast(2) + 10).dp
+    return base.copy(channelColumn = base.channelColumn + numberWidth, numberWidth = numberWidth)
 }
 
 /**
@@ -127,6 +144,33 @@ class GuideState {
 
 @Composable
 fun GuideScreen(
+    state: GuideState,
+    channels: List<ChannelEntity>,
+    programs: Map<String, List<ProgramEntity>>,
+    filterLabel: String,
+    guideStart: Long,
+    now: Long,
+    playingId: String?,
+    favorites: Set<String>,
+    recordingKeys: Set<String>,
+    canCatchUp: (ChannelEntity, ProgramEntity) -> Boolean,
+    timeFormat: (Long) -> String,
+    onTune: (ChannelEntity) -> Unit,
+    onProgram: (ChannelEntity, ProgramEntity) -> Unit,
+    onMenu: (ChannelEntity, ProgramEntity?) -> Unit,
+    onGroups: () -> Unit,
+    onShift: (Long) -> Unit,
+    onNow: () -> Unit,
+    onClose: () -> Unit,
+) {
+    // Every row of this list uses the same column sizes (channel numbers as wide as the longest).
+    androidx.compose.runtime.CompositionLocalProvider(LocalGuideMetrics provides guideMetricsFor(channels)) {
+        GuideScreenContent(state = state, channels = channels, programs = programs, filterLabel = filterLabel, guideStart = guideStart, now = now, playingId = playingId, favorites = favorites, recordingKeys = recordingKeys, canCatchUp = canCatchUp, timeFormat = timeFormat, onTune = onTune, onProgram = onProgram, onMenu = onMenu, onGroups = onGroups, onShift = onShift, onNow = onNow, onClose = onClose)
+    }
+}
+
+@Composable
+private fun GuideScreenContent(
     state: GuideState,
     channels: List<ChannelEntity>,
     programs: Map<String, List<ProgramEntity>>,
@@ -313,19 +357,23 @@ private fun GuideRow(
                     .clip(RoundedCornerShape(2.dp))
                     .background(if (rowSelected) Palette.Accent else Color.Transparent)
             )
-            if (LocalShowChannelNumbers.current) {
+            if (m.numberWidth > 0.dp) {
                 Text(
-                    channel.number.toString(), fontSize = 14.sp, maxLines = 1,
+                    channel.number.toString(), fontSize = if (m.compact) 12.sp else 14.sp, maxLines = 1, softWrap = false,
                     color = if (rowSelected) Palette.Text else Palette.TextDim,
-                    modifier = Modifier.width(44.dp),
+                    modifier = Modifier.width(m.numberWidth),
                 )
             }
-            ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 48.dp, height = 28.dp))
-            Spacer(Modifier.width(12.dp))
+            ChannelLogo(
+                channel.logoUrl, channel.name,
+                if (m.compact) Modifier.size(width = 40.dp, height = 24.dp) else Modifier.size(width = 48.dp, height = 28.dp),
+            )
+            Spacer(Modifier.width(if (m.compact) 8.dp else 12.dp))
             Text(
                 channel.name,
                 // Long names wrap onto a second line instead of being cut off.
-                fontSize = 15.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontSize = if (m.compact) 13.sp else 15.sp, lineHeight = if (m.compact) 15.sp else 17.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
                 fontWeight = if (rowSelected) FontWeight.SemiBold else FontWeight.Normal,
                 color = when {
                     playing -> Palette.Accent

@@ -1505,6 +1505,16 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         else -> programPressed(hit.channel, p)
                     }
                 },
+                onChannel = { ch -> tuneAndWatch(ch) },
+                // Movies play from the library (Back returns there); shows open on their episodes.
+                onMovie = { item ->
+                    openVod(VodKind.MOVIE)
+                    playVod(item, null)
+                },
+                onShow = { item ->
+                    openVod(VodKind.SERIES)
+                    vodBrowser.openShow(item)
+                },
             )
             Mode.VOD -> {
                 VodScreen(vodBrowser, vm, onPlay = { item, show -> playVod(item, show) })
