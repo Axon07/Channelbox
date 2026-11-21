@@ -56,12 +56,15 @@ data class GuideMetrics(
 }
 
 @Composable
-fun guideMetrics(): GuideMetrics =
-    if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
-        GuideMetrics(196.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
+fun guideMetrics(): GuideMetrics {
+    // Channel numbers get their own room: the column grows instead of squeezing the names.
+    val numbers = LocalShowChannelNumbers.current
+    return if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
+        GuideMetrics(if (numbers) 236.dp else 196.dp, 99.dp, 8.dp, 150.dp, 36.dp, compact = true)
     } else {
-        GuideMetrics(264.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
+        GuideMetrics(if (numbers) 316.dp else 264.dp, 135.dp, 14.dp, 190.dp, 40.dp, compact = false)
     }
+}
 
 /**
  * Selection state for the grid. The guide doesn't use Compose focus traversal: a
@@ -314,7 +317,7 @@ private fun GuideRow(
                 Text(
                     channel.number.toString(), fontSize = 14.sp, maxLines = 1,
                     color = if (rowSelected) Palette.Text else Palette.TextDim,
-                    modifier = Modifier.width(36.dp),
+                    modifier = Modifier.width(44.dp),
                 )
             }
             ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 48.dp, height = 28.dp))
