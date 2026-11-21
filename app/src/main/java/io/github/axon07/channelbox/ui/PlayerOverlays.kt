@@ -4,6 +4,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -138,10 +139,21 @@ fun BoxScope.NumberEntry(digits: String, match: ChannelEntity?) {
 
 @Composable
 fun BoxScope.StatusMessage(status: PlayerStatus, channel: ChannelEntity?, fallback: String?) {
+    // Like a cable box: a channel that starts quickly shows no "Loading…" at all; it only appears
+    // when the stream takes a while (or stalls).
+    val buffering = channel != null && status is PlayerStatus.Buffering
+    var slowBuffering by remember { mutableStateOf(false) }
+    LaunchedEffect(buffering, channel?.id) {
+        slowBuffering = false
+        if (buffering) {
+            kotlinx.coroutines.delay(1_500)
+            slowBuffering = true
+        }
+    }
     val text = when {
         channel == null -> fallback
         status is PlayerStatus.Error -> status.message
-        status is PlayerStatus.Buffering -> "Loading…"
+        status is PlayerStatus.Buffering -> if (slowBuffering) "Loading…" else null
         else -> null
     } ?: return
     val isError = status is PlayerStatus.Error

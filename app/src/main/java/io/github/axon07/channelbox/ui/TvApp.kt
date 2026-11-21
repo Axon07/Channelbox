@@ -157,6 +157,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val menuRows = remember(menuSections, expandedSections) { vm.menuRows(menuSections, expandedSections) }
     val current by vm.current.collectAsStateWithLifecycle()
     val channelsLoaded by vm.channelsLoaded.collectAsStateWithLifecycle()
+    val savedChannels by vm.savedChannels.collectAsStateWithLifecycle()
     /** A long Back press already went to full screen (swallow the rest of that press). */
     var backLongFired by remember { mutableStateOf(false) }
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
@@ -1656,11 +1657,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             Mode.PLAYER, Mode.CHANNEL_LIST -> {
                 // With channels saved from last time, a reload runs quietly behind them (and a
                 // failed one keeps them – the reason is in Settings), so nothing covers the picture.
+                // Only when there really are no channels saved: while a big list is still being read at
+                // start-up (or a scheduled reload is already running), nothing covers the screen.
+                val noChannels = allChannels.isEmpty() && savedChannels == false
                 val fallback = when (val r = refreshState) {
                     // The guide downloading behind the channels never covers the screen.
-                    is RefreshState.Running -> if (allChannels.isNotEmpty() || r.background) null else r.message
-                    is RefreshState.Failed -> if (allChannels.isNotEmpty()) null else "Couldn't load channels: ${r.message}\nPress OK for settings"
-                    else -> if (allChannels.isEmpty() && channelsLoaded) "No channels yet – press OK for settings" else null
+                    is RefreshState.Running -> if (!noChannels || r.background) null else r.message
+                    is RefreshState.Failed -> if (!noChannels) null else "Couldn't load channels: ${r.message}\nPress OK for settings"
+                    else -> if (noChannels && channelsLoaded) "No channels yet – press OK for settings" else null
                 }
                 StatusMessage(playerStatus, current, fallback)
                 val cur = current

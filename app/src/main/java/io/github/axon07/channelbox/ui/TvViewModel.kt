@@ -131,6 +131,14 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     val refreshState: StateFlow<RefreshState> = repo.state
 
+    /**
+     * Whether any channels are saved: null until checked at start-up (a quick query, long before a big
+     * channel list has been read), checked again after each reload. Loading or "no channels" messages
+     * only cover the player when this is false, so a reload running behind the scenes never flashes up.
+     */
+    private val _savedChannels = MutableStateFlow<Boolean?>(null)
+    val savedChannels: StateFlow<Boolean?> = _savedChannels
+
     /** False until the saved channels have been read at start-up (so "no channels" isn't flashed). */
     val channelsLoaded: StateFlow<Boolean> = combine(repo.channels, c.settings.flow) { _, _ -> true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -1114,6 +1122,14 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // Are channels saved? Checked at start-up and after every reload (or failed reload).
+        viewModelScope.launch {
+            repo.state.collect { st ->
+                if (st !is RefreshState.Running || _savedChannels.value == null) {
+                    _savedChannels.value = runCatching { repo.hasChannels() }.getOrDefault(true)
+                }
+            }
+        }
         // Series recordings: pick up new showings at start-up and whenever the guide is reloaded.
         viewModelScope.launch {
             repo.state.collect { st ->
