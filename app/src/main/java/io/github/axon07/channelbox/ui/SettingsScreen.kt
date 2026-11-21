@@ -401,6 +401,13 @@ private fun GuideSettings(settings: AppSettings, vm: TvViewModel, onOrganise: ()
         toggle = settings.showChannelNumbers,
         onClick = { vm.setShowChannelNumbers(!settings.showChannelNumbers) },
     )
+    if (settings.playlists.size > 1) SettingCard(
+        title = "Collapse playlists in the groups menu",
+        description = if (settings.collapsePlaylists) "Each playlist shows only its name until you open it"
+        else "Every playlist's groups are shown",
+        toggle = settings.collapsePlaylists,
+        onClick = { vm.setCollapsePlaylists(!settings.collapsePlaylists) },
+    )
 }
 
 private fun guideDaysLabel(days: Int) = if (days == 1) "1 day" else "$days days"

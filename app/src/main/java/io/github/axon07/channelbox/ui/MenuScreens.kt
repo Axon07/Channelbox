@@ -65,6 +65,8 @@ fun GroupsPanel(
     movieCount: Int,
     showCount: Int,
     showRail: Boolean = true,
+    /** The groups next to the rail; hidden while the rail is on Movies, Recordings, Settings… */
+    showGroups: Boolean = true,
     onSelect: (Int) -> Unit,
 ) {
     LaunchedEffect(selected) {
@@ -98,7 +100,7 @@ fun GroupsPanel(
             RailItem("Settings", AppIcons.Settings, selected == n + 2) { onSelect(n + 2) }
         }
         // Groups.
-        LazyColumn(
+        if (showGroups) LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxHeight()

@@ -191,6 +191,8 @@ data class AppSettings(
     val playLastOnStart: Boolean = true,
     /** Show channel numbers beside the names in the TV guide. */
     val showChannelNumbers: Boolean = false,
+    /** Groups menu: each playlist's groups start folded under its name (off = all shown). */
+    val collapsePlaylists: Boolean = false,
     /** "Record series": every upcoming showing of these titles on these channels gets recorded. */
     val seriesRules: List<SeriesRule> = emptyList(),
     val lastRefresh: Long = 0L,
@@ -225,6 +227,7 @@ class SettingsStore(private val context: Context) {
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
         val PLAY_LAST = booleanPreferencesKey("play_last_on_start")
         val SHOW_NUMBERS = booleanPreferencesKey("guide_show_numbers")
+        val COLLAPSE_PLAYLISTS = booleanPreferencesKey("menu_collapse_playlists")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val LAST_VOD_REFRESH = longPreferencesKey("last_vod_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
@@ -359,6 +362,7 @@ class SettingsStore(private val context: Context) {
         lastChannelId = this[Keys.LAST_CHANNEL],
         playLastOnStart = this[Keys.PLAY_LAST] ?: true,
         showChannelNumbers = this[Keys.SHOW_NUMBERS] ?: false,
+        collapsePlaylists = this[Keys.COLLAPSE_PLAYLISTS] ?: false,
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
         lastVodRefresh = this[Keys.LAST_VOD_REFRESH] ?: 0L,
     )
@@ -464,6 +468,7 @@ class SettingsStore(private val context: Context) {
     }
     suspend fun setPlayLastOnStart(on: Boolean) = context.dataStore.edit { it[Keys.PLAY_LAST] = on }
     suspend fun setShowChannelNumbers(on: Boolean) = context.dataStore.edit { it[Keys.SHOW_NUMBERS] = on }
+    suspend fun setCollapsePlaylists(on: Boolean) = context.dataStore.edit { it[Keys.COLLAPSE_PLAYLISTS] = on }
 
     /** Every setting as JSON values (for a backup file). */
     suspend fun exportAll(): kotlinx.serialization.json.JsonObject {

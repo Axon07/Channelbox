@@ -154,7 +154,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     val filter by vm.filter.collectAsStateWithLifecycle()
     val menuSections by vm.menuSections.collectAsStateWithLifecycle()
     val expandedSections by vm.expanded.collectAsStateWithLifecycle()
-    val menuRows = remember(menuSections, expandedSections) { vm.menuRows(menuSections, expandedSections) }
+    val menuRows = remember(menuSections, expandedSections, settings.collapsePlaylists) { vm.menuRows(menuSections, expandedSections) }
     val current by vm.current.collectAsStateWithLifecycle()
     val channelsLoaded by vm.channelsLoaded.collectAsStateWithLifecycle()
     val savedChannels by vm.savedChannels.collectAsStateWithLifecycle()
@@ -908,8 +908,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     // On a closed playlist heading: open it.
                     (menuRows.getOrNull(groupsIndex) as? MenuRow.Header)?.let { it.collapsible && !it.open } == true ->
                         vm.setSectionOpen((menuRows[groupsIndex] as MenuRow.Header).key, true)
-                    // From the rail back into the groups.
-                    groupsIndex >= rowCount -> groupsIndex = groupsLastRow.coerceIn(0, (rowCount - 1).coerceAtLeast(0))
+                    // From Live TV in the rail into the groups (other rail items show no groups).
+                    groupsIndex == tileLive -> groupsIndex = groupsLastRow.coerceIn(0, (rowCount - 1).coerceAtLeast(0))
+                    groupsIndex >= rowCount -> Unit
                     else -> mode = Mode.GUIDE
                 }
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> when {
@@ -924,10 +925,10 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         }
                         head >= 0
                     } -> Unit
-                    // From the groups out to the rail.
+                    // From the groups out to the rail, onto Live TV (the groups stay beside it).
                     groupsIndex < rowCount -> {
                         groupsLastRow = groupsIndex
-                        groupsIndex = railTiles.first()
+                        groupsIndex = if (tileLive in railTiles) tileLive else railTiles.first()
                     }
                     else -> Unit
                 }
@@ -1350,6 +1351,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         showRail = groupsIndex >= rowCount ||
                             androidx.compose.ui.platform.LocalInputModeManager.current.inputMode ==
                             androidx.compose.ui.input.InputMode.Touch,
+                        // Only the icons while you're on Movies, Recordings, Settings… in the rail: the
+                        // playlist groups come up on Live TV (or when you go into them).
+                        showGroups = groupsIndex < rowCount || groupsIndex == tileLive,
                         onSelect = { selectGroupItem(it) },
                     )
                 }

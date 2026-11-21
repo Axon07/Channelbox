@@ -96,6 +96,9 @@ const val VOD_PAGE = 3_000
 const val VOD_FIRST = 120
 /** Posters fetched ahead in the background after start-up, per kind. */
 const val WARM_POSTERS = 40
+/** Categories (per kind) and posters per category saved ahead in the background. */
+const val WARM_CATEGORIES = 60
+const val WARM_PER_CATEGORY = 12
 const val VOD_SEARCH_LIMIT = 300
 
 /** Pseudo-category: movies / shows you've started. */
@@ -503,16 +506,24 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         .map { sections -> sections.flatMap { it.filters }.ifEmpty { listOf(ChannelFilter.All, ChannelFilter.Favorites) } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, listOf(ChannelFilter.All, ChannelFilter.Favorites))
 
-    /** Playlist sections opened in the groups menu ("All playlists" is always open). */
+    /**
+     * Playlist sections opened or closed by hand in the groups menu ("All playlists" is always open):
+     * the ones that differ from the default (Settings → collapse playlists).
+     */
     private val _expanded = MutableStateFlow<Set<String>>(emptySet())
     val expanded: StateFlow<Set<String>> = _expanded.asStateFlow()
+
+    private val collapsedByDefault: Boolean get() = settings.value?.collapsePlaylists == true
+
+    private fun isSectionOpen(key: String, toggled: Set<String> = _expanded.value): Boolean =
+        key == SECTION_ALL || (key in toggled) != !collapsedByDefault
 
     fun toggleSection(key: String) {
         _expanded.value = if (key in _expanded.value) _expanded.value - key else _expanded.value + key
     }
 
     fun setSectionOpen(key: String, open: Boolean) {
-        _expanded.value = if (open) _expanded.value + key else _expanded.value - key
+        if (isSectionOpen(key) != open) toggleSection(key)
     }
 
     /** Rows of the groups menu as shown right now (closed sections show only their heading). */
@@ -524,7 +535,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             if (s.label.isEmpty()) {
                 s.filters.forEach { add(MenuRow.Item(it, s.key, indented = false)) }
             } else {
-                val isOpen = s.key == SECTION_ALL || s.key in open
+                val isOpen = isSectionOpen(s.key, open)
                 add(MenuRow.Header(s.key, s.label, isOpen, collapsible = s.key != SECTION_ALL))
                 if (isOpen) s.filters.forEach { add(MenuRow.Item(it, s.key, indented = true)) }
             }
@@ -1082,15 +1093,39 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private fun warmUpLibraryNow(context: android.content.Context) = viewModelScope.launch {
         delay(6_000)
         val loader = coil.Coil.imageLoader(context)
+        // Lists: read into memory every start (quick, local).
         for (kind in listOf(VodKind.MOVIE, VodKind.SERIES)) {
             if ((if (kind == VodKind.MOVIE) movieCount else showCount).value == 0) continue
             vodCategories(kind).first { it != null }
             vodContinueCount(kind).first { it != null }
             val items = vodItems(kind, null, "").first { it != null }.orEmpty()
+            // The first posters of "All" straight into memory, ready to show.
             items.asSequence().mapNotNull { it.poster?.takeIf { p -> p.isNotBlank() } }.take(WARM_POSTERS).forEach { url ->
                 loader.enqueue(coil.request.ImageRequest.Builder(context).data(url).size(300, 450).build())
             }
         }
+        // Posters: the first row or two of every category saved on the device, once per library
+        // download (they stay in the image cache across restarts, so later starts skip this).
+        val prefs = context.getSharedPreferences("library", android.content.Context.MODE_PRIVATE)
+        val version = c.settings.current().lastVodRefresh
+        if (version == 0L || prefs.getLong("posters_saved_for", -1L) == version) return@launch
+        for (kind in listOf(VodKind.MOVIE, VodKind.SERIES)) {
+            val categories = rawCategories(kind).first { it != null }.orEmpty()
+            for (cat in categories.take(WARM_CATEGORIES)) {
+                val first = kotlinx.coroutines.withContext(Dispatchers.IO) { repo.vod.categoryItems(kind, cat.name, WARM_PER_CATEGORY) }
+                first.forEach { item ->
+                    val url = item.poster?.takeIf { it.isNotBlank() } ?: return@forEach
+                    loader.enqueue(
+                        coil.request.ImageRequest.Builder(context).data(url).size(300, 450)
+                            // Saved to disk only: doesn't fill memory with pictures nobody is looking at.
+                            .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+                            .build()
+                    )
+                }
+                delay(150) // a little at a time, so it never competes with what's on screen
+            }
+        }
+        prefs.edit().putLong("posters_saved_for", version).apply()
     }
 
     fun isVodCategoryHidden(kind: String, category: String) = overrides.value[vodKey(kind, category)]?.hidden == true
@@ -1764,6 +1799,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setStartOnWake(on: Boolean) = viewModelScope.launch { c.settings.setStartOnWake(on) }
     fun setPlayLastOnStart(on: Boolean) = viewModelScope.launch { c.settings.setPlayLastOnStart(on) }
     fun setShowChannelNumbers(on: Boolean) = viewModelScope.launch { c.settings.setShowChannelNumbers(on) }
+    fun setCollapsePlaylists(on: Boolean) = viewModelScope.launch {
+        _expanded.value = emptySet() // start again from the new default
+        c.settings.setCollapsePlaylists(on)
+    }
 
     // ---- Backup & restore -------------------------------------------------------------------
 

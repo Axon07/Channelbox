@@ -181,7 +181,9 @@ private fun LibraryScreen(
         if (key != b.listKey) {
             if (b.listKey.isNotEmpty()) b.items = null
             b.listKey = key
-            runCatching { b.grid.scrollToItem(0) }
+            // Not scrollToItem: it waits for the grid to be drawn, and while "Loading…" shows there is
+            // no grid – the list then never loaded. This one just applies at the next layout.
+            b.grid.requestScrollToItem(0)
         }
         if (b.query.isNotBlank()) delay(300) // wait for typing to pause
         // Search needs 2+ letters; Room re-runs the query as new titles are saved during a reload.
@@ -289,7 +291,15 @@ private fun LibraryScreen(
                     }
             }
             when {
-                items == null -> Text("Loading…", color = Palette.TextDim, fontSize = 14.sp)
+                // Lists are local and normally appear at once; "Loading…" only if one takes a moment.
+                items == null -> {
+                    var slow by remember(b.listKey) { mutableStateOf(false) }
+                    LaunchedEffect(b.listKey) {
+                        delay(500)
+                        slow = true
+                    }
+                    if (slow) Text("Loading…", color = Palette.TextDim, fontSize = 14.sp)
+                }
                 b.query.isNotBlank() && b.query.trim().length < 2 -> Text("Type at least 2 letters", color = Palette.TextDim, fontSize = 14.sp)
                 items.isEmpty() -> Text(
                     if (b.query.isNotBlank()) "Nothing matches your search" else "Nothing here yet",
