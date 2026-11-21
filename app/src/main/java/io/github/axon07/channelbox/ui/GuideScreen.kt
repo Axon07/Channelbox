@@ -78,7 +78,7 @@ val LocalGuideMetrics = androidx.compose.runtime.staticCompositionLocalOf<GuideM
 private fun guideMetricsFor(channels: List<ChannelEntity>): GuideMetrics {
     val base = guideMetrics()
     if (!LocalShowChannelNumbers.current) return base
-    val digits = remember(channels) { channels.maxOfOrNull { it.number.toString().length } ?: 3 }
+    val digits = androidx.compose.runtime.remember(channels) { channels.maxOfOrNull { it.number.toString().length } ?: 3 }
     val numberWidth = ((if (base.compact) 8 else 9) * digits.coerceAtLeast(2) + 10).dp
     return base.copy(channelColumn = base.channelColumn + numberWidth, numberWidth = numberWidth)
 }
