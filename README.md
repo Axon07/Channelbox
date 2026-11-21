@@ -156,7 +156,8 @@ of texts, edit the file and open a pull request – corrections from native spea
 |---|---|---|---|
 | ▲ / ▼, CH+ / CH− | Change channel | Move (wraps top ↔ bottom) | Move, wraps top ↔ bottom (CH± = page) |
 | ◀ | Open channel list | Previous group | Earlier |
-| ▶ / Info | Show/hide info banner | Next group | Later |
+| ▶ | Back to the channel you watched before (again to swap back), like TiviMate | Next group | Later |
+| Info | Show/hide info banner | – | – |
 | OK | Control bar (OK again = pause; ◀ ▶ record, live, CC, multi-view, ⋯; ▲ hide) | Watch | On now: watch · finished: catch-up · future: record menu |
 | Hold OK | ⋯ menu: audio, subtitles, quality, picture size | ★ favourite | Programme menu (watch / from start / record / favourite) |
 | ● Record / red | Record what's on (again = stop) | – | Record / cancel the selected show |

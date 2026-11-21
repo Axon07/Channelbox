@@ -1402,8 +1402,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun previousChannel() {
-        val p = previous ?: return
-        allChannels.value.firstOrNull { it.id == p.id }?.let { tune(it) }
+        val p = previous?.let { prev -> allChannels.value.firstOrNull { it.id == prev.id } }
+        if (p == null) {
+            showToast("No previous channel yet")
+            return
+        }
+        tune(p)
     }
 
     suspend fun ensurePlaying() {
