@@ -84,14 +84,18 @@ class TvRepository(
     val vodVersion: StateFlow<Int> = _vodVersion.asStateFlow()
     fun vodChanged() = _vodVersion.update { it + 1 }
 
+    /** Goes up when a watch position is saved: only "Continue watching" needs re-reading then. */
+    private val _progressVersion = MutableStateFlow(0)
+    val progressVersion: StateFlow<Int> = _progressVersion.asStateFlow()
+
     suspend fun saveProgress(p: VodProgressEntity) {
         db.vod().saveProgress(p)
-        vodChanged()
+        _progressVersion.update { it + 1 }
     }
 
     suspend fun clearProgress(id: String) {
         db.vod().clearProgress(id)
-        vodChanged()
+        _progressVersion.update { it + 1 }
     }
 
     /** Episodes of a show: from the playlist (M3U) or fetched from the provider (Xtream). */
@@ -231,21 +235,29 @@ class TvRepository(
      * Reloads every playlist, then the guide. [onChannels] runs as soon as the channels (and movies &
      * shows) are saved, so the app can go to the guide while the TV guide keeps loading behind it.
      */
-    suspend fun refresh(onChannels: suspend () -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
+    suspend fun refresh(onChannels: suspend () -> Unit = {}, forceVod: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
+            vodWritten = false
             try {
-                refreshLocked(onChannels)
+                refreshLocked(onChannels, forceVod)
             } finally {
-                vodChanged()
+                // Movies & shows lists re-read only when they were actually reloaded.
+                if (vodWritten) vodChanged()
             }
         }
     }
 
+    /** Set while a reload rewrites movies & shows. */
+    @Volatile private var vodWritten = false
+
     // Runs on an IO thread: Room's blocking calls (movies & shows are written while streaming) aren't
     // allowed on the main thread.
-    private suspend fun refreshLocked(onChannels: suspend () -> Unit): Boolean {
+    private suspend fun refreshLocked(onChannels: suspend () -> Unit, forceVod: Boolean): Boolean {
         return try {
             val s = settings.current()
+            // Movies & shows are huge and change slowly: background reloads fetch them once a day.
+            // A reload you start (or a new/changed playlist) always fetches them.
+            val vodDue = forceVod || System.currentTimeMillis() - s.lastVodRefresh > VOD_REFRESH_MS
             val sources = s.playlists.filter { it.enabled }
             val jellyfin = s.jellyfin
             // Jellyfin set to replace the provider's movies & shows: don't load the provider's.
@@ -274,6 +286,9 @@ class TvRepository(
                 val label = if (sources.size > 1) "${p.displayName} (${index + 1} of ${sources.size})" else "channels"
                 _state.value = RefreshState.Running("Loading $label…")
                 val start = lineup.size
+                // Wanted but not due: last time's movies & shows stay as they are (none saved yet: load them).
+                val wantVod = p.includeVod && providerVod
+                val loadVod = wantVod && (vodDue || !db.vod().hasPlaylist(p.id))
                 try {
                     val writer = VodWriter(db, p.id)
                     var live = 0
@@ -290,7 +305,7 @@ class TvRepository(
                         list.forEach { lineup.add(p.id, it) }
                         live = list.size
                         guides = listOf(StalkerLoader.guideUrl(p.id))
-                        if (p.includeVod && providerVod) {
+                        if (loadVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
                             try {
                                 StalkerLoader.vod(client, p.id, writer::add) { n ->
@@ -308,7 +323,7 @@ class TvRepository(
                         playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
                         guides = playlist.epgUrls
-                        if (p.includeVod && providerVod) {
+                        if (loadVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
                             XtreamClient(http).loadVod(login, p.id, writer) { n ->
                                 _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}… $n")
@@ -329,7 +344,7 @@ class TvRepository(
                             filesFromApi = writer.count > 0
                         }
                         // 1) The playlist link itself is an Xtream get.php link.
-                        val linkLogin = if (p.includeVod && providerVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
+                        val linkLogin = if (loadVod) XtreamClient.Login.fromM3uUrl(p.m3uUrl) else null
                         if (linkLogin != null) {
                             vodFromApi(linkLogin)
                             _state.value = RefreshState.Running("Loading $label…")
@@ -344,7 +359,7 @@ class TvRepository(
                                 if (kind == VodClassifier.Kind.LIVE) {
                                     lineup.add(p.id, ch)
                                     live++
-                                } else if (p.includeVod && providerVod && !filesFromApi) {
+                                } else if (loadVod && !filesFromApi) {
                                     if (linkLogin == null && entryLogin == null && skippedFiles == 0 && builder.isEmpty) {
                                         entryLogin = XtreamClient.Login.fromStreamUrl(ch.url)
                                     }
@@ -371,8 +386,12 @@ class TvRepository(
                         }
                     }
                     if (p.type == SourceType.M3U && live > 0) addXtreamArchive(p, lineup, start)
-                    writer.finish()
-                    if (live == 0 && writer.count == 0) {
+                    // Skipped this time: keep the saved list (finish() would drop what wasn't re-sent).
+                    if (loadVod || !wantVod) {
+                        writer.finish()
+                        vodWritten = true
+                    }
+                    if (live == 0 && writer.count == 0 && !(wantVod && !loadVod && db.vod().hasPlaylist(p.id))) {
                         throw IOException(
                             if (entries > 0 && !p.includeVod) "only movies & shows – turn on \"Include movies & shows\""
                             else "no channels in the playlist"
@@ -407,7 +426,8 @@ class TvRepository(
             db.channels().replaceAll(entities)
 
             // Your Jellyfin library, next to (or instead of) the provider's movies & shows.
-            if (jellyfin.ready) {
+            if (jellyfin.ready && (vodDue || !db.vod().hasPlaylist(JellyfinClient.PLAYLIST_ID))) {
+                vodWritten = true
                 _state.value = RefreshState.Running("Loading movies & shows from Jellyfin…")
                 try {
                     val client = JellyfinClient(http, jellyfin)
@@ -431,7 +451,8 @@ class TvRepository(
             // Channels and movies & shows are in: usable now, even if the guide takes a while (or the
             // app is closed before it finishes – it won't redo everything on the next start).
             settings.setLastRefresh(System.currentTimeMillis())
-            vodChanged()
+            if (vodDue) settings.setLastVodRefresh(System.currentTimeMillis())
+            if (vodWritten) vodChanged()
             runCatching { onChannels() }
 
             var programmes = 0
@@ -717,3 +738,6 @@ class TvRepository(
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
     }
 }
+
+/** How often background reloads fetch movies & shows again. */
+private const val VOD_REFRESH_MS = 24 * 60 * 60 * 1000L

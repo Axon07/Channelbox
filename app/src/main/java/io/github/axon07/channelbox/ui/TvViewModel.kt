@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -91,6 +92,10 @@ sealed interface ChannelFilter {
 
 /** Most titles listed at once in a category (search finds the rest). */
 const val VOD_PAGE = 3_000
+/** Titles read first when a list opens (a few screens' worth). */
+const val VOD_FIRST = 120
+/** Posters fetched ahead in the background after start-up, per kind. */
+const val WARM_POSTERS = 40
 const val VOD_SEARCH_LIMIT = 300
 
 /** Pseudo-category: movies / shows you've started. */
@@ -1030,14 +1035,63 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val showCount: StateFlow<Int> = library { repo.vod.count(VodKind.SERIES) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
+    /** Like [library], also re-read when a watch position changes ("Continue watching"). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <T> libraryWithProgress(read: suspend () -> T): Flow<T> =
+        combine(repo.vodVersion, repo.progressVersion) { a, b -> a to b }.mapLatest { read() }
+
+    // Movies & TV Shows open from memory: each list is read once, kept here and updated only when the
+    // library changes, so going back in is instant (and warmed up in the background after start-up).
+    private class CacheEntry(val flow: StateFlow<*>, val job: Job)
+    private val vodCache = LinkedHashMap<String, CacheEntry>(32, 0.75f, true)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> cached(key: String, flow: () -> Flow<T>): StateFlow<T?> = synchronized(vodCache) {
+        vodCache.getOrPut(key) {
+            val job = kotlinx.coroutines.SupervisorJob(viewModelScope.coroutineContext[Job])
+            val scope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + job)
+            CacheEntry(flow().flowOn(Dispatchers.IO).stateIn(scope, SharingStarted.Lazily, null), job)
+        }.flow as StateFlow<T?>
+    }
+
+    private fun rawCategories(kind: String): StateFlow<List<VodCategory>?> =
+        cached("cat|$kind") { library { repo.vod.categories(kind) } }
+
     /** Categories shown in Movies / TV Shows (hidden ones left out). */
-    fun vodCategories(kind: String): Flow<List<VodCategory>> =
-        combine(library { repo.vod.categories(kind) }, overrides) { list, ov ->
-            list.filter { ov[vodKey(kind, it.name)]?.hidden != true }
+    fun vodCategories(kind: String): StateFlow<List<VodCategory>?> = cached("shown|$kind") {
+        combine(rawCategories(kind), overrides) { list, ov ->
+            list?.filter { ov[vodKey(kind, it.name)]?.hidden != true }
         }
+    }
 
     /** Every category, for choosing which ones show (Settings). */
-    fun allVodCategories(kind: String): Flow<List<VodCategory>> = library { repo.vod.categories(kind) }
+    fun allVodCategories(kind: String): StateFlow<List<VodCategory>?> = rawCategories(kind)
+
+    /**
+     * Movies & shows in the background a few seconds after start-up: the lists, and the posters at
+     * the top of each, so the first visit opens instantly with pictures already there.
+     */
+    private var warmedUp = false
+
+    fun warmUpLibrary(context: android.content.Context) {
+        if (warmedUp) return
+        warmedUp = true
+        warmUpLibraryNow(context.applicationContext)
+    }
+
+    private fun warmUpLibraryNow(context: android.content.Context) = viewModelScope.launch {
+        delay(6_000)
+        val loader = coil.Coil.imageLoader(context)
+        for (kind in listOf(VodKind.MOVIE, VodKind.SERIES)) {
+            if ((if (kind == VodKind.MOVIE) movieCount else showCount).value == 0) continue
+            vodCategories(kind).first { it != null }
+            vodContinueCount(kind).first { it != null }
+            val items = vodItems(kind, null, "").first { it != null }.orEmpty()
+            items.asSequence().mapNotNull { it.poster?.takeIf { p -> p.isNotBlank() } }.take(WARM_POSTERS).forEach { url ->
+                loader.enqueue(coil.request.ImageRequest.Builder(context).data(url).size(300, 450).build())
+            }
+        }
+    }
 
     fun isVodCategoryHidden(kind: String, category: String) = overrides.value[vodKey(kind, category)]?.hidden == true
 
@@ -1047,11 +1101,31 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             (overrides.value[vodKey(kind, c)] ?: OverrideEntity(vodKey(kind, c))).copy(hidden = hidden)
         })
     }
-    fun vodContinueCount(kind: String): Flow<Int> = library { repo.vod.continueCount(kind) }
+    fun vodContinueCount(kind: String): StateFlow<Int?> =
+        cached("cont|$kind") { libraryWithProgress { repo.vod.continueCount(kind) } }
 
-    /** [category]: null = all, [VOD_CONTINUE] = started but not finished. */
-    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>> = libraryRaw(kind, category, query)
-        .map { list ->
+    /**
+     * [category]: null = all, [VOD_CONTINUE] = started but not finished. Lists (not searches) are
+     * cached; the newest titles come first, the rest of a big category follows right after.
+     */
+    fun vodItems(kind: String, category: String?, query: String): Flow<List<VodEntity>?> {
+        val raw: Flow<List<VodEntity>?> = if (query.isNotBlank()) {
+            libraryRaw(kind, category, query).flowOn(Dispatchers.IO)
+        } else {
+            synchronized(vodCache) {
+                // Only the last few categories stay in memory.
+                val keys = vodCache.keys.filter { it.startsWith("items|") }
+                if (keys.size > 16) keys.take(keys.size - 16).forEach { k -> vodCache.remove(k)?.job?.cancel() }
+            }
+            cached("items|$kind|$category") { libraryRaw(kind, category, query) }
+        }
+        // Hidden / locked categories are applied on top, so changing them shows at once.
+        return combine(raw, overrides) { list, _ -> list?.let { filterVod(kind, category, query, it) } }
+            .flowOn(Dispatchers.Default)
+    }
+
+    private fun filterVod(kind: String, category: String?, query: String, list: List<VodEntity>): List<VodEntity> = list
+        .let { list ->
             // Titles from locked categories stay out of "All" and search until the PIN is entered.
             val browsingOneCategory = query.isBlank() && category != null && category != VOD_CONTINUE
             // Titles from hidden categories stay out of "All", search and "Continue watching".
@@ -1060,13 +1134,20 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             else shown.filter { overrides.value[vodKey(kind, it.category)]?.locked != true }
         }
 
-    private fun libraryRaw(kind: String, category: String?, query: String): Flow<List<VodEntity>> = library {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun libraryRaw(kind: String, category: String?, query: String): Flow<List<VodEntity>> {
         val q = query.trim()
-        when {
-            q.isNotEmpty() -> repo.vod.search(kind, q, VOD_SEARCH_LIMIT)
-            category == VOD_CONTINUE -> repo.vod.continueWatching(kind)
-            category == null -> repo.vod.allItems(kind, VOD_PAGE)
-            else -> repo.vod.categoryItems(kind, category, VOD_PAGE)
+        return when {
+            q.isNotEmpty() -> library { repo.vod.search(kind, q, VOD_SEARCH_LIMIT) }
+            category == VOD_CONTINUE -> libraryWithProgress { repo.vod.continueWatching(kind) }
+            // A screenful first (shows in a blink), then the rest.
+            else -> repo.vodVersion.transformLatest {
+                val first = if (category == null) repo.vod.allItems(kind, VOD_FIRST) else repo.vod.categoryItems(kind, category, VOD_FIRST)
+                emit(first)
+                if (first.size == VOD_FIRST) {
+                    emit(if (category == null) repo.vod.allItems(kind, VOD_PAGE) else repo.vod.categoryItems(kind, category, VOD_PAGE))
+                }
+            }
         }
     }
 
@@ -1143,6 +1224,14 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // The group being watched was hidden, renamed or removed: go back to All channels instead of
+        // leaving the guide on an empty group ("No channels in this group").
+        viewModelScope.launch {
+            filters.collect { fs ->
+                val f = _filter.value
+                if (f != ChannelFilter.All && f !in fs && allChannels.value.isNotEmpty()) _filter.value = ChannelFilter.All
+            }
+        }
         // Are channels saved? Checked at start-up and after every reload (or failed reload).
         viewModelScope.launch {
             repo.state.collect { st ->
@@ -1668,7 +1757,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 ensurePlaying()
             }
         }
-        if (repo.refresh(channelsReady)) ensurePlaying()
+        if (repo.refresh(channelsReady, forceVod = true)) ensurePlaying()
     }
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }

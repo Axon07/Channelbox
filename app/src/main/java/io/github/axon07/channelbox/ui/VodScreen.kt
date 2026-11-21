@@ -169,8 +169,10 @@ private fun LibraryScreen(
 ) {
     val movies = b.kind == VodKind.MOVIE
     val total by (if (movies) vm.movieCount else vm.showCount).collectAsStateWithLifecycle()
-    val categories by remember(b.kind) { vm.vodCategories(b.kind) }.collectAsState(initial = emptyList())
-    val continueCount by remember(b.kind) { vm.vodContinueCount(b.kind) }.collectAsState(initial = 0)
+    // Kept in memory by the view model: reopening shows them straight away.
+    val categoryState = remember(b.kind) { vm.vodCategories(b.kind) }.collectAsState()
+    val categories = categoryState.value.orEmpty()
+    val continueCount = remember(b.kind) { vm.vodContinueCount(b.kind) }.collectAsState().value ?: 0
     val overrides by vm.overrides.collectAsStateWithLifecycle()
 
     // Load the items for the chosen category / search (kept in [b] so returning is instant).
@@ -186,7 +188,7 @@ private fun LibraryScreen(
         val q = b.query.trim().takeIf { it.length >= 2 }.orEmpty()
         vm.vodItems(b.kind, b.category, q)
             .conflate()
-            .collect { b.items = it }
+            .collect { if (it != null) b.items = it }
     }
 
     val touch = LocalInputModeManager.current.inputMode == InputMode.Touch

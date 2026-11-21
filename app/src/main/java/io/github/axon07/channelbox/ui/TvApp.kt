@@ -205,6 +205,9 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     /** When Back was pressed on the side menu: a second Back soon after exits. */
     var exitArmedAt by remember { mutableLongStateOf(0L) }
     val vodBrowser = remember { VodBrowser() }
+    // Movies & TV Shows: lists and first posters loaded in the background, so they open instantly.
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { vm.warmUpLibrary(appContext) }
     val movieCount by vm.movieCount.collectAsStateWithLifecycle()
     val showCount by vm.showCount.collectAsStateWithLifecycle()
     /** Movie/episode waiting for "Resume or start over?", with where you stopped. */

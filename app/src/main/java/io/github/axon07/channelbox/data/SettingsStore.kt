@@ -194,6 +194,8 @@ data class AppSettings(
     /** "Record series": every upcoming showing of these titles on these channels gets recorded. */
     val seriesRules: List<SeriesRule> = emptyList(),
     val lastRefresh: Long = 0L,
+    /** When movies & shows were last downloaded (they're reloaded less often than channels). */
+    val lastVodRefresh: Long = 0L,
 ) {
     /** False until at least one playlist has been added (first-run setup). */
     val hasSource: Boolean get() = playlists.isNotEmpty()
@@ -224,6 +226,7 @@ class SettingsStore(private val context: Context) {
         val PLAY_LAST = booleanPreferencesKey("play_last_on_start")
         val SHOW_NUMBERS = booleanPreferencesKey("guide_show_numbers")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
+        val LAST_VOD_REFRESH = longPreferencesKey("last_vod_refresh")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val BACK_ACTION = stringPreferencesKey("back_action")
         val AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
@@ -357,6 +360,7 @@ class SettingsStore(private val context: Context) {
         playLastOnStart = this[Keys.PLAY_LAST] ?: true,
         showChannelNumbers = this[Keys.SHOW_NUMBERS] ?: false,
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
+        lastVodRefresh = this[Keys.LAST_VOD_REFRESH] ?: 0L,
     )
 
     private fun Preferences.seriesRules(): List<SeriesRule> = runCatching {
@@ -566,6 +570,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setAutoUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.AUTO_UPDATE] = on }
     suspend fun setSkippedVersion(version: String) = context.dataStore.edit { it[Keys.SKIPPED_VERSION] = version }
     suspend fun setLastRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_REFRESH] = time }
+    suspend fun setLastVodRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_VOD_REFRESH] = time }
 }
 
 /** "Record series": record every showing of [title] on one channel, as the guide lists them. */

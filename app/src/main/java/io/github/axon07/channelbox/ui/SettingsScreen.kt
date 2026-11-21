@@ -78,7 +78,8 @@ import java.text.DateFormat
 import java.util.Date
 
 private enum class SettingsCategory(val title: String, val blurb: String) {
-    SOURCE("Playlist & guide", "Your TV service and programme guide"),
+    PLAYLISTS("Playlists", "Your TV services: add, edit and reload"),
+    SOURCE("TV guide & channels", "Programme guide, channel list and categories"),
     PLAYBACK("Playback", "Picture, sound, quality and the remote"),
     NETWORK("Network & VPN", "VPN, proxy and private DNS"),
     RECORDINGS("Recordings", "Where recordings are saved"),
@@ -90,7 +91,8 @@ private enum class SettingsCategory(val title: String, val blurb: String) {
 }
 
 private fun SettingsCategory.icon(): ImageVector = when (this) {
-    SettingsCategory.SOURCE -> AppIcons.List
+    SettingsCategory.PLAYLISTS -> AppIcons.List
+    SettingsCategory.SOURCE -> AppIcons.Guide
     SettingsCategory.PLAYBACK -> AppIcons.Play
     SettingsCategory.NETWORK -> AppIcons.Shield
     SettingsCategory.RECORDINGS -> AppIcons.Record
@@ -130,7 +132,7 @@ fun SettingsScreen(
     /** Open on Network & VPN (from first-time setup, when the ISP blocks the playlist). */
     openNetwork: Boolean = false,
 ) {
-    var category by rememberSaveable { mutableStateOf(if (openNetwork) SettingsCategory.NETWORK else SettingsCategory.SOURCE) }
+    var category by rememberSaveable { mutableStateOf(if (openNetwork) SettingsCategory.NETWORK else SettingsCategory.PLAYLISTS) }
     var page by remember { mutableStateOf<Page?>(null) }
     /** Playlist shown on the PLAYLIST page. */
     var playlistId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -164,6 +166,12 @@ fun SettingsScreen(
     fun closePage() { page = null }
     // Back on a sub-page returns to the category instead of leaving Settings.
     BackHandler(enabled = page != null) { closePage() }
+    // Back while moving through a section's settings goes back to the list of sections (like ◀),
+    // and only Back from that list leaves Settings.
+    var inContent by remember { mutableStateOf(false) }
+    BackHandler(enabled = page == null && inContent) {
+        runCatching { categoryFocus.getValue(category).requestFocus() }
+    }
 
     Row(Modifier.fillMaxSize().background(Palette.Background)) {
         // ---- Categories ----
@@ -203,6 +211,7 @@ fun SettingsScreen(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
+                .onFocusChanged { inContent = it.hasFocus }
                 .verticalScroll(rememberScrollState())
                 .padding(top = 30.dp, start = 40.dp, end = 40.dp, bottom = 28.dp)
                 .widthIn(max = 780.dp)
@@ -222,14 +231,14 @@ fun SettingsScreen(
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     when (category) {
-                        SettingsCategory.SOURCE -> SourceSettings(
+                        SettingsCategory.PLAYLISTS -> PlaylistSettings(
                             settings, refreshState, channelCount, vm, onEditSource,
                             onPlaylist = { id ->
                                 playlistId = id
                                 openPage(Page.PLAYLIST)
                             },
-                            onOrganise = onOrganise,
                         ) { openPage(it) }
+                        SettingsCategory.SOURCE -> GuideSettings(settings, vm, onOrganise) { openPage(it) }
                         SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { openPage(it) }
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
                         SettingsCategory.RECORDINGS -> RecordingSettings(settings, vm, onOpenRecordings) { openPage(it) }
@@ -259,15 +268,15 @@ fun SettingsScreen(
 
 // ---- Categories ------------------------------------------------------------------------------------
 
+/** Playlists: the list, adding one, reloading, and the playlist data on this device. */
 @Composable
-private fun SourceSettings(
+private fun PlaylistSettings(
     settings: AppSettings,
     refreshState: RefreshState,
     channelCount: Int,
     vm: TvViewModel,
     onEditSource: (String?) -> Unit,
     onPlaylist: (String) -> Unit,
-    onOrganise: () -> Unit,
     openPage: (Page) -> Unit,
 ) {
     val counts by vm.playlistCounts.collectAsStateWithLifecycle()
@@ -292,6 +301,18 @@ private fun SourceSettings(
         value = "Add",
         onClick = { onEditSource(null) },
     )
+    SettingCard(
+        title = "Jellyfin",
+        description = errors[io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID]?.let { "Last load failed: $it" }
+            ?: "Show movies & shows from your own Jellyfin server, next to or instead of your provider's",
+        highlight = errors.containsKey(io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID),
+        value = when {
+            !settings.jellyfin.ready -> "Off"
+            settings.jellyfin.mode == "replace" -> "Replaces provider"
+            else -> "Added to provider"
+        },
+        onClick = { openPage(Page.JELLYFIN) },
+    )
     val last = settings.lastRefresh.takeIf { it > 0 }
         ?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
     SettingCard(
@@ -304,6 +325,12 @@ private fun SourceSettings(
         },
         value = if (refreshState is RefreshState.Running) "Loading…" else "Reload",
         onClick = { vm.refreshNow() },
+    )
+    SettingCard(
+        title = "Reload automatically",
+        description = "Fetch the latest channels and guide in the background",
+        value = refreshLabel(settings.refreshHours).substringBefore(" ("),
+        onClick = { openPage(Page.REFRESH) },
     )
     if (settings.playlists.isNotEmpty()) {
         var confirmClear by remember { mutableStateOf(false) }
@@ -342,6 +369,11 @@ private fun SourceSettings(
             catch (e: android.content.ActivityNotFoundException) { vm.restoreLatest() }
         },
     )
+}
+
+/** The guide and the channel list: organising, categories, numbers, guide length. */
+@Composable
+private fun GuideSettings(settings: AppSettings, vm: TvViewModel, onOrganise: () -> Unit, openPage: (Page) -> Unit) {
     SettingCard(
         title = "Organise channels & groups",
         description = "Hide many groups at once, put them in your order, add lots of channels to Favourites and sort them",
@@ -358,18 +390,6 @@ private fun SourceSettings(
         onClick = { openPage(Page.SHOW_CATEGORIES) },
     )
     SettingCard(
-        title = "Jellyfin",
-        description = errors[io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID]?.let { "Last load failed: $it" }
-            ?: "Show movies & shows from your own Jellyfin server, next to or instead of your provider's",
-        highlight = errors.containsKey(io.github.axon07.channelbox.data.JellyfinClient.PLAYLIST_ID),
-        value = when {
-            !settings.jellyfin.ready -> "Off"
-            settings.jellyfin.mode == "replace" -> "Replaces provider"
-            else -> "Added to provider"
-        },
-        onClick = { openPage(Page.JELLYFIN) },
-    )
-    SettingCard(
         title = "Days of TV guide",
         description = "Fewer days load faster and use less space with very big guides",
         value = guideDaysLabel(settings.guideDays),
@@ -380,12 +400,6 @@ private fun SourceSettings(
         description = "Off gives channel names more room",
         toggle = settings.showChannelNumbers,
         onClick = { vm.setShowChannelNumbers(!settings.showChannelNumbers) },
-    )
-    SettingCard(
-        title = "Reload automatically",
-        description = "Fetch the latest channels and guide in the background",
-        value = refreshLabel(settings.refreshHours).substringBefore(" ("),
-        onClick = { openPage(Page.REFRESH) },
     )
 }
 

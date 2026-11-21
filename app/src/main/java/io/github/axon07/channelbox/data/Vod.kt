@@ -76,6 +76,9 @@ interface VodDao {
     @Query("SELECT COUNT(*) FROM vod WHERE kind = :kind")
     suspend fun count(kind: String): Int
 
+    @Query("SELECT EXISTS(SELECT 1 FROM vod WHERE playlistId = :playlistId)")
+    suspend fun hasPlaylist(playlistId: String): Boolean
+
     // Each list walks an index newest-first and stops at the limit, instead of sorting the whole table.
     @Query("SELECT * FROM vod WHERE kind = :kind ORDER BY added DESC, sortIndex DESC LIMIT :limit")
     suspend fun allItems(kind: String, limit: Int): List<VodEntity>
