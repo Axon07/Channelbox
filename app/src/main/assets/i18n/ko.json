@@ -35,6 +35,7 @@
  "Can't play this ({})": "재생할 수 없습니다 ({})",
  "Cancel": "취소",
  "Cancel recording": "녹화 취소",
+ "Cancel series recording": "시리즈 녹화 취소",
  "Captions": "자막",
  "Captions off": "자막 끄기",
  "Captions on": "자막 켜기",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Dolby 및 DTS 음성을 그대로 리시버나 사운드바로 보냅니다. TV에서 소리가 나지 않으면 끄세요. 재시작 후 적용",
  "Send all apps through the VPN": "모든 앱을 VPN으로 보내기",
  "Serial number – optional": "일련번호 – 선택 사항",
+ "Series": "시리즈",
+ "Series recording cancelled: {}": "시리즈 녹화 취소됨: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "시리즈 녹화 켜짐: {} – 편성표가 업데이트되면 새 방송이 추가됩니다",
+ "Series recording on: {} – {} showings scheduled": "시리즈 녹화 켜짐: {} – {}회 방송 예약됨",
  "Server": "서버",
  "Server (e.g. http://example.com:8080)": "서버 (예: http://example.com:8080)",
  "Set a PIN": "PIN 설정",
@@ -362,5 +367,6 @@
  "{} min": "{}분",
  "{} of {} shown": "{}/{}개 표시",
  "{} removed from Favourites": "{}개를 즐겨찾기에서 제거",
- "{} shown again": "{}개 다시 표시"
+ "{} shown again": "{}개 다시 표시",
+ "●● Record series": "●● 시리즈 녹화"
 }

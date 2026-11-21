@@ -35,6 +35,7 @@
  "Can't play this ({})": "无法播放 ({})",
  "Cancel": "取消",
  "Cancel recording": "取消录制",
+ "Cancel series recording": "取消系列录制",
  "Captions": "字幕",
  "Captions off": "字幕已关闭",
  "Captions on": "字幕已开启",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "将 Dolby 和 DTS 音频原样发送到功放或回音壁。如果电视没有声音请关闭。重启后生效",
  "Send all apps through the VPN": "所有应用都走 VPN",
  "Serial number – optional": "序列号——可选",
+ "Series": "系列",
+ "Series recording cancelled: {}": "已取消系列录制：{}",
+ "Series recording on: {} – new showings are added as the guide updates": "系列录制已开启：{} – 节目指南更新时会加入新的播出",
+ "Series recording on: {} – {} showings scheduled": "系列录制已开启：{} – 已安排 {} 次播出",
  "Server": "服务器",
  "Server (e.g. http://example.com:8080)": "服务器（例如 http://example.com:8080）",
  "Set a PIN": "设置 PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} 分钟",
  "{} of {} shown": "显示 {} / {}",
  "{} removed from Favourites": "已从收藏中移除 {} 个",
- "{} shown again": "已重新显示 {} 个"
+ "{} shown again": "已重新显示 {} 个",
+ "●● Record series": "●● 录制整个系列"
 }

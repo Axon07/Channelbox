@@ -23,6 +23,7 @@
  "Buffer size": "Madhësia e buferit",
  "Cancel": "Anulo",
  "Cancel recording": "Anulo regjistrimin",
+ "Cancel series recording": "Anulo regjistrimin e serialit",
  "Captions": "Titra",
  "Captions off": "Titrat joaktive",
  "Captions on": "Titrat aktive",
@@ -148,6 +149,10 @@
  "Select channels…": "Zgjidh kanale…",
  "Select several…": "Zgjidh disa…",
  "Serial number – optional": "Numri serial – opsional",
+ "Series": "Serial",
+ "Series recording cancelled: {}": "Regjistrimi i serialit u anulua: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Regjistrimi i serialit aktiv: {} – transmetimet e reja shtohen kur përditësohet udhëzuesi",
+ "Series recording on: {} – {} showings scheduled": "Regjistrimi i serialit aktiv: {} – {} transmetime të planifikuara",
  "Server": "Serveri",
  "Set a PIN": "Vendos një PIN",
  "Set up your TV service": "Konfiguro shërbimin tënd TV",
@@ -194,5 +199,6 @@
  "Zoom (fill screen)": "Zmadho (mbush ekranin)",
  "{} added to Favourites": "{} u shtuan te të preferuarat",
  "{} channels": "{} kanale",
- "{} of {} shown": "{} nga {} të shfaqura"
+ "{} of {} shown": "{} nga {} të shfaqura",
+ "●● Record series": "●● Regjistro serialin"
 }

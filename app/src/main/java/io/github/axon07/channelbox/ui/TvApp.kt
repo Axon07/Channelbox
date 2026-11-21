@@ -1357,6 +1357,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                             vm.toggleRecordProgram(ch, p)
                             mode = Mode.GUIDE
                         }
+                        val series = vm.seriesRule(ch.id, p.title)
+                        actions += if (series != null) DialogAction("Cancel series recording") {
+                            vm.cancelSeries(series)
+                            mode = Mode.GUIDE
+                        } else DialogAction("●● Record series") {
+                            vm.recordSeries(ch, p)
+                            mode = Mode.GUIDE
+                        }
                     }
                     actions += DialogAction(if (ch.id in favorites) "★ Remove favourite" else "☆ Add favourite") {
                         vm.toggleFavorite(ch)
@@ -1380,6 +1388,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     selected = recIndex.coerceAtMost((recordings.size - 1).coerceAtLeast(0)),
                     listState = recListState,
                     onPlay = { openRecording(it) },
+                    isSeries = { r -> vm.seriesRule(r.channelId, r.title) != null },
                     onMenu = {
                         menuRecording = it
                         mode = Mode.RECORDING_MENU
@@ -1400,6 +1409,12 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                     actions += DialogAction("Delete") {
                         vm.deleteRecording(r)
                         mode = Mode.RECORDINGS
+                    }
+                    vm.seriesRule(r.channelId, r.title)?.let { series ->
+                        actions += DialogAction("Cancel series recording") {
+                            vm.cancelSeries(series)
+                            mode = Mode.RECORDINGS
+                        }
                     }
                     actions += DialogAction("Close") { mode = Mode.RECORDINGS }
                     ActionDialog(title = r.title, subtitle = r.channelName, actions = actions)
@@ -1452,6 +1467,15 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                                 listOf(
                                     DialogAction(if (scheduled) "Cancel recording" else "● Record") {
                                         vm.toggleRecordProgram(hit.channel, p)
+                                        popup = null
+                                    },
+                                    vm.seriesRule(hit.channel.id, p.title)?.let { series ->
+                                        DialogAction("Cancel series recording") {
+                                            vm.cancelSeries(series)
+                                            popup = null
+                                        }
+                                    } ?: DialogAction("●● Record series") {
+                                        vm.recordSeries(hit.channel, p)
                                         popup = null
                                     },
                                     DialogAction("Watch ${hit.channel.name} now") {

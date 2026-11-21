@@ -39,7 +39,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import io.github.axon07.channelbox.data.NetworkSettings
@@ -764,6 +766,71 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Series recording (like TiviMate's "Record series") ------------------------------------
+
+    /** The series rule this programme falls under, if any. */
+    fun seriesRule(channelId: String, title: String): io.github.axon07.channelbox.data.SeriesRule? =
+        settings.value?.seriesRules?.firstOrNull { it.matches(channelId, title) }
+
+    /** Records every upcoming showing of [program]'s title on [channel], now and as the guide adds more. */
+    fun recordSeries(channel: ChannelEntity, program: ProgramEntity) {
+        if (!canRecord(channel)) return
+        val rule = io.github.axon07.channelbox.data.SeriesRule(channel.id, channel.name, program.title.trim())
+        viewModelScope.launch {
+            c.settings.addSeriesRule(rule)
+            val n = scheduleSeries(listOf(rule))
+            showToast(
+                if (n > 0) "Series recording on: ${rule.title} – $n showings scheduled"
+                else "Series recording on: ${rule.title} – new showings are added as the guide updates"
+            )
+        }
+    }
+
+    /** Stops a series: no new showings, and the scheduled ones that haven't started are cancelled. */
+    fun cancelSeries(rule: io.github.axon07.channelbox.data.SeriesRule) {
+        viewModelScope.launch {
+            c.settings.removeSeriesRule(rule)
+            recordings.value.filter { it.status == RecStatus.SCHEDULED && rule.matches(it.channelId, it.title) }
+                .forEach { recorder.stop(it) }
+            showToast("Series recording cancelled: ${rule.title}")
+        }
+    }
+
+    /**
+     * Schedules the showings in the guide that the series rules cover and that aren't scheduled or
+     * recorded yet. Runs when a rule is added, at start-up and after every guide reload.
+     */
+    private val seriesLock = kotlinx.coroutines.sync.Mutex()
+    /** Showings scheduled by series rules this session (the recordings list can lag a moment). */
+    private val seriesScheduled = HashSet<String>()
+
+    private suspend fun scheduleSeries(rules: List<io.github.axon07.channelbox.data.SeriesRule>): Int = seriesLock.withLock {
+        if (rules.isEmpty()) return@withLock 0
+        val now = System.currentTimeMillis()
+        val have = recordings.value.mapTo(HashSet()) { recordingKey(it.channelId, it.programStart ?: it.start) }
+        have += seriesScheduled
+        var count = 0
+        for (rule in rules) {
+            val channel = allChannels.value.firstOrNull { it.id == rule.channelId } ?: continue
+            val epgId = channel.epgId ?: continue
+            var lastStop = 0L
+            for (p in repo.showings(epgId, rule.title, now)) {
+                // Duplicate guide rows for the same slot: record once.
+                if (p.start < lastStop || !have.add(recordingKey(channel.id, p.start))) continue
+                lastStop = p.stop
+                seriesScheduled += recordingKey(channel.id, p.start)
+                recorder.schedule(
+                    channel, p.title,
+                    start = maxOf(now, p.start - 60_000L),
+                    stop = p.stop + 2 * 60_000L,
+                    programStart = p.start,
+                )
+                count++
+            }
+        }
+        count
+    }
+
     fun stopRecording(recording: RecordingEntity) {
         viewModelScope.launch {
             recorder.stop(recording)
@@ -1047,6 +1114,18 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        // Series recordings: pick up new showings at start-up and whenever the guide is reloaded.
+        viewModelScope.launch {
+            repo.state.collect { st ->
+                if (st is RefreshState.Done || st is RefreshState.Idle) {
+                    val rules = c.settings.current().seriesRules
+                    if (rules.isNotEmpty()) {
+                        channelsLoaded.first { it }
+                        scheduleSeries(rules)
+                    }
+                }
+            }
+        }
         // A reload that fails while last time's channels are there: a short note, not a full-screen error.
         viewModelScope.launch {
             var wasRunning = false

@@ -35,6 +35,7 @@
  "Can't play this ({})": "Không phát được ({})",
  "Cancel": "Hủy",
  "Cancel recording": "Hủy ghi",
+ "Cancel series recording": "Hủy ghi loạt phim",
  "Captions": "Phụ đề",
  "Captions off": "Đã tắt phụ đề",
  "Captions on": "Đã bật phụ đề",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Gửi nguyên âm thanh Dolby và DTS tới bộ thu hoặc loa thanh. Tắt nếu TV không có tiếng. Áp dụng sau khi khởi động lại",
  "Send all apps through the VPN": "Cho mọi ứng dụng đi qua VPN",
  "Serial number – optional": "Số sê-ri – không bắt buộc",
+ "Series": "Loạt phim",
+ "Series recording cancelled: {}": "Đã hủy ghi loạt phim: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Đã bật ghi loạt phim: {} – lần phát mới sẽ được thêm khi lịch phát sóng cập nhật",
+ "Series recording on: {} – {} showings scheduled": "Đã bật ghi loạt phim: {} – đã lên lịch {} lần phát",
  "Server": "Máy chủ",
  "Server (e.g. http://example.com:8080)": "Máy chủ (vd: http://example.com:8080)",
  "Set a PIN": "Đặt mã PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} phút",
  "{} of {} shown": "Hiển thị {} / {}",
  "{} removed from Favourites": "Đã xóa {} khỏi Yêu thích",
- "{} shown again": "Đã hiện lại {}"
+ "{} shown again": "Đã hiện lại {}",
+ "●● Record series": "●● Ghi cả loạt phim"
 }

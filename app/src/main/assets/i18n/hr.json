@@ -23,6 +23,7 @@
  "Buffer size": "Veličina međuspremnika",
  "Cancel": "Odustani",
  "Cancel recording": "Otkaži snimanje",
+ "Cancel series recording": "Otkaži snimanje serije",
  "Captions": "Titlovi",
  "Captions off": "Titlovi isključeni",
  "Captions on": "Titlovi uključeni",
@@ -148,6 +149,10 @@
  "Select channels…": "Odaberi programe…",
  "Select several…": "Odaberi više…",
  "Serial number – optional": "Serijski broj – neobavezno",
+ "Series": "Serija",
+ "Series recording cancelled: {}": "Snimanje serije otkazano: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Snimanje serije uključeno: {} – nova emitiranja dodaju se kad se vodič ažurira",
+ "Series recording on: {} – {} showings scheduled": "Snimanje serije uključeno: {} – zakazano emitiranja: {}",
  "Server": "Poslužitelj",
  "Set a PIN": "Postavi PIN",
  "Set up your TV service": "Postavi svoju TV uslugu",
@@ -194,5 +199,6 @@
  "Zoom (fill screen)": "Povećaj (ispuni zaslon)",
  "{} added to Favourites": "{} dodano u omiljene",
  "{} channels": "{} programa",
- "{} of {} shown": "Prikazano {} od {}"
+ "{} of {} shown": "Prikazano {} od {}",
+ "●● Record series": "●● Snimaj seriju"
 }

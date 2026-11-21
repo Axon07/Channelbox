@@ -35,6 +35,7 @@
  "Can't play this ({})": "Не удаётся воспроизвести ({})",
  "Cancel": "Отмена",
  "Cancel recording": "Отменить запись",
+ "Cancel series recording": "Отменить запись сериала",
  "Captions": "Субтитры",
  "Captions off": "Субтитры выкл.",
  "Captions on": "Субтитры вкл.",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Передавать звук Dolby и DTS без изменений на ресивер или саундбар. Выключите, если в телевизоре нет звука. После перезапуска",
  "Send all apps through the VPN": "Пускать все приложения через VPN",
  "Serial number – optional": "Серийный номер – необязательно",
+ "Series": "Сериал",
+ "Series recording cancelled: {}": "Запись сериала отменена: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Запись сериала включена: {} – новые показы добавляются при обновлении телегида",
+ "Series recording on: {} – {} showings scheduled": "Запись сериала включена: {} – запланировано показов: {}",
  "Server": "Сервер",
  "Server (e.g. http://example.com:8080)": "Сервер (напр. http://example.com:8080)",
  "Set a PIN": "Установить PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} мин",
  "{} of {} shown": "Показано {} из {}",
  "{} removed from Favourites": "Удалено из избранного: {}",
- "{} shown again": "Снова показано: {}"
+ "{} shown again": "Снова показано: {}",
+ "●● Record series": "●● Записывать сериал"
 }

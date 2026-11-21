@@ -35,6 +35,7 @@
  "Can't play this ({})": "इसे चलाया नहीं जा सकता ({})",
  "Cancel": "रद्द करें",
  "Cancel recording": "रिकॉर्डिंग रद्द करें",
+ "Cancel series recording": "सीरीज़ रिकॉर्डिंग रद्द करें",
  "Captions": "कैप्शन",
  "Captions off": "कैप्शन बंद",
  "Captions on": "कैप्शन चालू",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Dolby और DTS आवाज़ बिना बदले रिसीवर या साउंडबार को भेजें। टीवी में आवाज़ न आए तो बंद करें। रीस्टार्ट के बाद लागू",
  "Send all apps through the VPN": "सभी ऐप VPN से भेजें",
  "Serial number – optional": "सीरियल नंबर – वैकल्पिक",
+ "Series": "सीरीज़",
+ "Series recording cancelled: {}": "सीरीज़ रिकॉर्डिंग रद्द: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "सीरीज़ रिकॉर्डिंग चालू: {} – गाइड अपडेट होने पर नए प्रसारण जुड़ते हैं",
+ "Series recording on: {} – {} showings scheduled": "सीरीज़ रिकॉर्डिंग चालू: {} – {} प्रसारण निर्धारित",
  "Server": "सर्वर",
  "Server (e.g. http://example.com:8080)": "सर्वर (जैसे http://example.com:8080)",
  "Set a PIN": "PIN सेट करें",
@@ -362,5 +367,6 @@
  "{} min": "{} मिनट",
  "{} of {} shown": "{} दिख रही हैं, कुल {}",
  "{} removed from Favourites": "{} पसंदीदा से हटाए",
- "{} shown again": "{} फिर दिखाए"
+ "{} shown again": "{} फिर दिखाए",
+ "●● Record series": "●● सीरीज़ रिकॉर्ड करें"
 }

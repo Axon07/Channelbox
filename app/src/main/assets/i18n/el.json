@@ -35,6 +35,7 @@
  "Can't play this ({})": "Δεν είναι δυνατή η αναπαραγωγή ({})",
  "Cancel": "Άκυρο",
  "Cancel recording": "Ακύρωση εγγραφής",
+ "Cancel series recording": "Ακύρωση εγγραφής σειράς",
  "Captions": "Υπότιτλοι",
  "Captions off": "Υπότιτλοι ανενεργοί",
  "Captions on": "Υπότιτλοι ενεργοί",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Αποστολή ήχου Dolby και DTS αυτούσιου σε δέκτη ή soundbar. Απενεργοποιήστε αν η TV δεν έχει ήχο. Μετά την επανεκκίνηση",
  "Send all apps through the VPN": "Όλες οι εφαρμογές μέσω VPN",
  "Serial number – optional": "Σειριακός αριθμός – προαιρετικό",
+ "Series": "Σειρά",
+ "Series recording cancelled: {}": "Ακυρώθηκε η εγγραφή σειράς: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Εγγραφή σειράς ενεργή: {} – νέες μεταδόσεις προστίθενται όταν ενημερώνεται ο οδηγός",
+ "Series recording on: {} – {} showings scheduled": "Εγγραφή σειράς ενεργή: {} – προγραμματίστηκαν {} μεταδόσεις",
  "Server": "Διακομιστής",
  "Server (e.g. http://example.com:8080)": "Διακομιστής (π.χ. http://example.com:8080)",
  "Set a PIN": "Ορισμός PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} λεπ.",
  "{} of {} shown": "{} από {} εμφανίζονται",
  "{} removed from Favourites": "{} αφαιρέθηκαν από τα αγαπημένα",
- "{} shown again": "{} εμφανίζονται ξανά"
+ "{} shown again": "{} εμφανίζονται ξανά",
+ "●● Record series": "●● Εγγραφή σειράς"
 }

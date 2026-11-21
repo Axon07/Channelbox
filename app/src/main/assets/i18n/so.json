@@ -23,6 +23,7 @@
  "Buffer size": "Cabbirka kaydka",
  "Cancel": "Jooji",
  "Cancel recording": "Jooji duubista",
+ "Cancel series recording": "Jooji duubista taxanaha",
  "Captions": "Qoraal",
  "Captions off": "Qoraalka waa dansan yahay",
  "Captions on": "Qoraalka waa shidan yahay",
@@ -148,6 +149,10 @@
  "Select channels…": "Dooro kanaalo…",
  "Select several…": "Dooro dhowr…",
  "Serial number – optional": "Lambarka taxanaha – ikhtiyaari",
+ "Series": "Taxane",
+ "Series recording cancelled: {}": "Duubista taxanaha waa la joojiyay: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Duubista taxanaha waa shidan: {} – bandhigyo cusub ayaa lagu darayaa marka hagaha la cusbooneysiiyo",
+ "Series recording on: {} – {} showings scheduled": "Duubista taxanaha waa shidan: {} – {} bandhig ayaa la qorsheeyay",
  "Server": "Server",
  "Set a PIN": "Deji PIN",
  "Set up your TV service": "Deji adeegaaga TV",
@@ -194,5 +199,6 @@
  "Zoom (fill screen)": "Weynee (buuxi shaashadda)",
  "{} added to Favourites": "{} ayaa lagu daray kuwa la jecel yahay",
  "{} channels": "{} kanaal",
- "{} of {} shown": "{} ka mid ah {} ayaa muuqda"
+ "{} of {} shown": "{} ka mid ah {} ayaa muuqda",
+ "●● Record series": "●● Duub taxanaha oo dhan"
 }

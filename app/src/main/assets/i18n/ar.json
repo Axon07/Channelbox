@@ -35,6 +35,7 @@
  "Can't play this ({})": "لا يمكن تشغيل هذا ({})",
  "Cancel": "إلغاء",
  "Cancel recording": "إلغاء التسجيل",
+ "Cancel series recording": "إلغاء تسجيل المسلسل",
  "Captions": "الترجمة",
  "Captions off": "الترجمة متوقفة",
  "Captions on": "الترجمة مفعلة",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "إرسال صوت Dolby وDTS كما هو إلى المستقبل أو مكبر الصوت. أوقفه إذا لم يصدر صوت من التلفاز. بعد إعادة التشغيل",
  "Send all apps through the VPN": "تمرير كل التطبيقات عبر VPN",
  "Serial number – optional": "الرقم التسلسلي – اختياري",
+ "Series": "مسلسل",
+ "Series recording cancelled: {}": "أُلغي تسجيل المسلسل: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "تسجيل المسلسل مفعّل: {} – تُضاف العروض الجديدة عند تحديث الدليل",
+ "Series recording on: {} – {} showings scheduled": "تسجيل المسلسل مفعّل: {} – تمت جدولة {} عرض",
  "Server": "الخادم",
  "Server (e.g. http://example.com:8080)": "الخادم (مثل http://example.com:8080)",
  "Set a PIN": "تعيين رمز",
@@ -362,5 +367,6 @@
  "{} min": "{} دقيقة",
  "{} of {} shown": "{} من {} ظاهرة",
  "{} removed from Favourites": "تمت إزالة {} من المفضلة",
- "{} shown again": "تم إظهار {} مجددًا"
+ "{} shown again": "تم إظهار {} مجددًا",
+ "●● Record series": "●● تسجيل المسلسل"
 }

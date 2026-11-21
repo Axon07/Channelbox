@@ -23,6 +23,7 @@
  "Buffer size": "ขนาดบัฟเฟอร์",
  "Cancel": "ยกเลิก",
  "Cancel recording": "ยกเลิกการบันทึก",
+ "Cancel series recording": "ยกเลิกการบันทึกซีรีส์",
  "Captions": "คำบรรยาย",
  "Captions off": "ปิดคำบรรยาย",
  "Captions on": "เปิดคำบรรยาย",
@@ -148,6 +149,10 @@
  "Select channels…": "เลือกช่อง…",
  "Select several…": "เลือกหลายรายการ…",
  "Serial number – optional": "หมายเลขซีเรียล – ไม่บังคับ",
+ "Series": "ซีรีส์",
+ "Series recording cancelled: {}": "ยกเลิกการบันทึกซีรีส์แล้ว: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "เปิดการบันทึกซีรีส์: {} – รอบใหม่จะถูกเพิ่มเมื่อผังรายการอัปเดต",
+ "Series recording on: {} – {} showings scheduled": "เปิดการบันทึกซีรีส์: {} – ตั้งเวลาไว้ {} รอบ",
  "Server": "เซิร์ฟเวอร์",
  "Set a PIN": "ตั้ง PIN",
  "Set up your TV service": "ตั้งค่าบริการทีวี",
@@ -194,5 +199,6 @@
  "Zoom (fill screen)": "ซูม (เต็มจอ)",
  "{} added to Favourites": "เพิ่ม {} รายการในรายการโปรดแล้ว",
  "{} channels": "{} ช่อง",
- "{} of {} shown": "แสดง {} จาก {}"
+ "{} of {} shown": "แสดง {} จาก {}",
+ "●● Record series": "●● บันทึกทั้งซีรีส์"
 }

@@ -35,6 +35,7 @@
  "Can't play this ({})": "Oynatılamıyor ({})",
  "Cancel": "İptal",
  "Cancel recording": "Kaydı iptal et",
+ "Cancel series recording": "Dizi kaydını iptal et",
  "Captions": "Altyazı",
  "Captions off": "Altyazı kapalı",
  "Captions on": "Altyazı açık",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Dolby ve DTS sesini olduğu gibi alıcıya veya ses çubuğuna gönderir. TV'de ses yoksa kapatın. Yeniden başlatınca",
  "Send all apps through the VPN": "Tüm uygulamaları VPN üzerinden gönder",
  "Serial number – optional": "Seri numarası – isteğe bağlı",
+ "Series": "Dizi",
+ "Series recording cancelled: {}": "Dizi kaydı iptal edildi: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Dizi kaydı açık: {} – rehber güncellendikçe yeni yayınlar eklenir",
+ "Series recording on: {} – {} showings scheduled": "Dizi kaydı açık: {} – {} yayın planlandı",
  "Server": "Sunucu",
  "Server (e.g. http://example.com:8080)": "Sunucu (ör. http://example.com:8080)",
  "Set a PIN": "PIN belirle",
@@ -362,5 +367,6 @@
  "{} min": "{} dk",
  "{} of {} shown": "{} / {} gösteriliyor",
  "{} removed from Favourites": "{} favorilerden çıkarıldı",
- "{} shown again": "{} yeniden gösteriliyor"
+ "{} shown again": "{} yeniden gösteriliyor",
+ "●● Record series": "●● Diziyi kaydet"
 }

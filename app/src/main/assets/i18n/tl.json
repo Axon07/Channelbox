@@ -35,6 +35,7 @@
  "Can't play this ({})": "Hindi ma-play ito ({})",
  "Cancel": "Kanselahin",
  "Cancel recording": "Kanselahin ang recording",
+ "Cancel series recording": "Kanselahin ang pag-record ng serye",
  "Captions": "Caption",
  "Captions off": "Naka-off ang caption",
  "Captions on": "Naka-on ang caption",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Ipadala nang buo ang Dolby at DTS sa receiver o soundbar. I-off kung walang tunog sa TV. Magkakabisa pagkatapos mag-restart",
  "Send all apps through the VPN": "Ipadaan ang lahat ng app sa VPN",
  "Serial number – optional": "Serial number – opsyonal",
+ "Series": "Serye",
+ "Series recording cancelled: {}": "Kinansela ang pag-record ng serye: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Naka-on ang pag-record ng serye: {} – idinadagdag ang mga bagong palabas kapag nag-update ang gabay",
+ "Series recording on: {} – {} showings scheduled": "Naka-on ang pag-record ng serye: {} – {} palabas ang naka-iskedyul",
  "Server": "Server",
  "Server (e.g. http://example.com:8080)": "Server (hal. http://example.com:8080)",
  "Set a PIN": "Magtakda ng PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} min",
  "{} of {} shown": "{} sa {} ang ipinapakita",
  "{} removed from Favourites": "{} ang inalis sa Paborito",
- "{} shown again": "{} ang muling ipinakita"
+ "{} shown again": "{} ang muling ipinakita",
+ "●● Record series": "●● I-record ang serye"
 }

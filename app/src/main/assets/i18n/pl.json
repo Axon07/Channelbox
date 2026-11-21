@@ -35,6 +35,7 @@
  "Can't play this ({})": "Nie można odtworzyć ({})",
  "Cancel": "Anuluj",
  "Cancel recording": "Anuluj nagrywanie",
+ "Cancel series recording": "Anuluj nagrywanie serialu",
  "Captions": "Napisy",
  "Captions off": "Napisy wyłączone",
  "Captions on": "Napisy włączone",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Wysyłaj dźwięk Dolby i DTS bez zmian do amplitunera lub soundbara. Wyłącz, jeśli telewizor nie ma dźwięku. Po ponownym uruchomieniu",
  "Send all apps through the VPN": "Kieruj wszystkie aplikacje przez VPN",
  "Serial number – optional": "Numer seryjny – opcjonalnie",
+ "Series": "Serial",
+ "Series recording cancelled: {}": "Anulowano nagrywanie serialu: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Nagrywanie serialu włączone: {} – nowe emisje dodadzą się po aktualizacji przewodnika",
+ "Series recording on: {} – {} showings scheduled": "Nagrywanie serialu włączone: {} – zaplanowano emisji: {}",
  "Server": "Serwer",
  "Server (e.g. http://example.com:8080)": "Serwer (np. http://example.com:8080)",
  "Set a PIN": "Ustaw PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} min",
  "{} of {} shown": "Widoczne {} z {}",
  "{} removed from Favourites": "Usunięto z ulubionych: {}",
- "{} shown again": "Ponownie widoczne: {}"
+ "{} shown again": "Ponownie widoczne: {}",
+ "●● Record series": "●● Nagrywaj serial"
 }

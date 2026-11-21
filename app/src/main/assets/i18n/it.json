@@ -35,6 +35,7 @@
  "Can't play this ({})": "Impossibile riprodurre ({})",
  "Cancel": "Annulla",
  "Cancel recording": "Annulla registrazione",
+ "Cancel series recording": "Annulla registrazione serie",
  "Captions": "Sottotitoli",
  "Captions off": "Sottotitoli disattivati",
  "Captions on": "Sottotitoli attivati",
@@ -264,6 +265,10 @@
  "Send Dolby and DTS sound untouched to a receiver or soundbar. Turn off if there's no sound through the TV. Applies after restarting": "Invia l'audio Dolby e DTS inalterato a un ricevitore o soundbar. Disattiva se la TV non ha audio. Dopo il riavvio",
  "Send all apps through the VPN": "Instrada tutte le app nella VPN",
  "Serial number – optional": "Numero di serie – facoltativo",
+ "Series": "Serie",
+ "Series recording cancelled: {}": "Registrazione serie annullata: {}",
+ "Series recording on: {} – new showings are added as the guide updates": "Registrazione serie attiva: {} – le nuove messe in onda si aggiungono quando la guida si aggiorna",
+ "Series recording on: {} – {} showings scheduled": "Registrazione serie attiva: {} – {} messe in onda programmate",
  "Server": "Server",
  "Server (e.g. http://example.com:8080)": "Server (es. http://example.com:8080)",
  "Set a PIN": "Imposta un PIN",
@@ -362,5 +367,6 @@
  "{} min": "{} min",
  "{} of {} shown": "{} di {} visibili",
  "{} removed from Favourites": "{} rimossi dai preferiti",
- "{} shown again": "{} di nuovo visibili"
+ "{} shown again": "{} di nuovo visibili",
+ "●● Record series": "●● Registra serie"
 }

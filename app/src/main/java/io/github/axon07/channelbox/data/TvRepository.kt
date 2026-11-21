@@ -52,6 +52,8 @@ class TvRepository(
 
     suspend fun searchPrograms(query: String, from: Long): List<ProgramEntity> = db.programs().search(query, from)
 
+    suspend fun showings(epgId: String, title: String, from: Long): List<ProgramEntity> = db.programs().showings(epgId, title, from)
+
     // ---- Your changes to channels, groups and categories ----------------------------------------
 
     val overrides: Flow<List<OverrideEntity>> = db.overrides().observeAll()

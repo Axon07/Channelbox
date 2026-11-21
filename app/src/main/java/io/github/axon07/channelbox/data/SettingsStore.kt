@@ -191,6 +191,8 @@ data class AppSettings(
     val playLastOnStart: Boolean = true,
     /** Show channel numbers beside the names in the TV guide. */
     val showChannelNumbers: Boolean = false,
+    /** "Record series": every upcoming showing of these titles on these channels gets recorded. */
+    val seriesRules: List<SeriesRule> = emptyList(),
     val lastRefresh: Long = 0L,
 ) {
     /** False until at least one playlist has been added (first-run setup). */
@@ -267,6 +269,7 @@ class SettingsStore(private val context: Context) {
         val DAV_PASS = stringPreferencesKey("dav_pass")
         val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val PLAYLISTS = stringPreferencesKey("playlists")
+        val SERIES_RULES = stringPreferencesKey("series_rules")
     }
 
     val flow: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -292,6 +295,7 @@ class SettingsStore(private val context: Context) {
 
     private fun Preferences.toSettings() = AppSettings(
         playlists = playlists(),
+        seriesRules = seriesRules(),
         startOnBoot = this[Keys.START_ON_BOOT] ?: false,
         startOnWake = this[Keys.START_ON_WAKE] ?: false,
         invertChannelKeys = this[Keys.INVERT_KEYS] ?: false,
@@ -353,6 +357,29 @@ class SettingsStore(private val context: Context) {
         showChannelNumbers = this[Keys.SHOW_NUMBERS] ?: false,
         lastRefresh = this[Keys.LAST_REFRESH] ?: 0L,
     )
+
+    private fun Preferences.seriesRules(): List<SeriesRule> = runCatching {
+        (Json.parseToJsonElement(this[Keys.SERIES_RULES] ?: return emptyList()) as JsonArray).mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
+            SeriesRule(channelId = s("channel"), channelName = s("name"), title = s("title")).takeIf { it.channelId.isNotEmpty() && it.title.isNotEmpty() }
+        }
+    }.getOrDefault(emptyList())
+
+    /** Adds a "record series" rule (or does nothing if it's there already). */
+    suspend fun addSeriesRule(rule: SeriesRule) = editSeriesRules { list -> if (list.none { it.matches(rule) }) list += rule }
+
+    suspend fun removeSeriesRule(rule: SeriesRule) = editSeriesRules { list -> list.removeAll { it.matches(rule) } }
+
+    private suspend fun editSeriesRules(change: (MutableList<SeriesRule>) -> Unit) {
+        context.dataStore.edit { prefs ->
+            val list = prefs.seriesRules().toMutableList()
+            change(list)
+            prefs[Keys.SERIES_RULES] = JsonArray(list.map { r ->
+                JsonObject(mapOf("channel" to JsonPrimitive(r.channelId), "name" to JsonPrimitive(r.channelName), "title" to JsonPrimitive(r.title)))
+            }).toString()
+        }
+    }
 
     private suspend fun editPlaylists(change: (MutableList<Playlist>) -> Unit) {
         context.dataStore.edit { prefs ->
@@ -501,4 +528,10 @@ class SettingsStore(private val context: Context) {
     suspend fun setAutoUpdateCheck(on: Boolean) = context.dataStore.edit { it[Keys.AUTO_UPDATE] = on }
     suspend fun setSkippedVersion(version: String) = context.dataStore.edit { it[Keys.SKIPPED_VERSION] = version }
     suspend fun setLastRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_REFRESH] = time }
+}
+
+/** "Record series": record every showing of [title] on one channel, as the guide lists them. */
+data class SeriesRule(val channelId: String, val channelName: String, val title: String) {
+    fun matches(other: SeriesRule) = channelId == other.channelId && title.equals(other.title, ignoreCase = true)
+    fun matches(channelId: String, title: String) = this.channelId == channelId && this.title.equals(title.trim(), ignoreCase = true)
 }

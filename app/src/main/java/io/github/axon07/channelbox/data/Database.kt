@@ -185,6 +185,10 @@ interface ProgramDao {
     @Query("SELECT * FROM programs WHERE title LIKE '%' || :query || '%' AND stop > :from ORDER BY start LIMIT 300")
     suspend fun search(query: String, from: Long): List<ProgramEntity>
 
+    /** Upcoming showings of one title on one guide channel (series recording). */
+    @Query("SELECT * FROM programs WHERE epgId = :epgId AND title = :title COLLATE NOCASE AND stop > :from ORDER BY start LIMIT 100")
+    suspend fun showings(epgId: String, title: String, from: Long): List<ProgramEntity>
+
     /** Blocking on purpose: called from the streaming XMLTV parser on an IO thread. */
     @Insert
     fun insertBlocking(programs: List<ProgramEntity>)

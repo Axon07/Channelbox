@@ -253,6 +253,8 @@ fun RecordingsScreen(
     listState: LazyListState,
     onPlay: (RecordingEntity) -> Unit,
     onMenu: (RecordingEntity) -> Unit,
+    /** True for recordings that belong to a "Record series" rule. */
+    isSeries: (RecordingEntity) -> Boolean = { false },
 ) {
     LaunchedEffect(selected) {
         if (recordings.isNotEmpty()) listState.scrollToItem((selected - 3).coerceAtLeast(0))
@@ -307,6 +309,7 @@ fun RecordingsScreen(
                         Text(
                             if (failed) (r.error ?: "Didn't record") + "  ·  " + r.channelName
                             else listOfNotNull(
+                                "Series".takeIf { isSeries(r) },
                                 r.channelName,
                                 dateFormat.format(Date(r.start)),
                                 formatDuration(r.stop - r.start).takeIf { r.status == RecStatus.SCHEDULED },
