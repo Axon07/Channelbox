@@ -187,6 +187,14 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
             }
         )
     }
+    // Safety net for "Turn on last channel on app start": whenever channels are there and nothing
+    // is playing on the player screen, play the last channel (whatever started the app or a reload).
+    LaunchedEffect(current == null, allChannels.isNotEmpty(), settings.playLastOnStart) {
+        if (current == null && allChannels.isNotEmpty() && settings.playLastOnStart) {
+            kotlinx.coroutines.delay(1_500)
+            if (vm.current.value == null && mode == Mode.PLAYER) vm.ensurePlaying()
+        }
+    }
     /** Playlist being edited on the setup screen; null = adding a new one. */
     var setupPlaylistId by remember { mutableStateOf<String?>(null) }
     /** Settings opened from first-time setup for network options. */
@@ -1649,7 +1657,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 // With channels saved from last time, a reload runs quietly behind them (and a
                 // failed one keeps them – the reason is in Settings), so nothing covers the picture.
                 val fallback = when (val r = refreshState) {
-                    is RefreshState.Running -> if (allChannels.isNotEmpty()) null else r.message
+                    // The guide downloading behind the channels never covers the screen.
+                    is RefreshState.Running -> if (allChannels.isNotEmpty() || r.background) null else r.message
                     is RefreshState.Failed -> if (allChannels.isNotEmpty()) null else "Couldn't load channels: ${r.message}\nPress OK for settings"
                     else -> if (allChannels.isEmpty() && channelsLoaded) "No channels yet – press OK for settings" else null
                 }
