@@ -34,6 +34,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -139,8 +142,25 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private val _savedChannels = MutableStateFlow<Boolean?>(null)
     val savedChannels: StateFlow<Boolean?> = _savedChannels
 
+    /**
+     * The saved channels, read from the database once and shared: every list below is built from this
+     * one query (each collector of the Room flow would otherwise read the whole table again).
+     */
+    private val savedRows = repo.channels.shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
+
+    /**
+     * Ids of the playlists that are on. Only changes when playlists do – settings are saved on every
+     * channel change (last channel), and that must not rebuild every channel list.
+     */
+    private val enabledPlaylistIds = c.settings.flow
+        .map { s -> s.playlists.filter { it.enabled }.mapTo(HashSet()) { it.id } }
+        .distinctUntilChanged()
+
+    /** The playlists (names and order) for the groups menu, also only when they change. */
+    private val playlistList = c.settings.flow.map { it.playlists }.distinctUntilChanged()
+
     /** False until the saved channels have been read at start-up (so "no channels" isn't flashed). */
-    val channelsLoaded: StateFlow<Boolean> = combine(repo.channels, c.settings.flow) { _, _ -> true }
+    val channelsLoaded: StateFlow<Boolean> = savedRows.map { true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // ---- Your changes: names, numbers, order, hidden, locked ----------------------------------
@@ -155,11 +175,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun originalGroup(shown: String): String = groupOriginals[shown] ?: shown
 
     /** The playlist's channels with your names, numbers and hidden items applied. */
-    val allChannels: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides, c.settings.flow) { saved, ov, s ->
+    val allChannels: StateFlow<List<ChannelEntity>> = combine(savedRows, overrides, enabledPlaylistIds) { saved, ov, live ->
         // Only channels of playlists that exist and are on: a removed playlist disappears at once,
         // without waiting for the reload that deletes its rows.
-        val live = s.playlists.filter { it.enabled }.mapTo(HashSet()) { it.id }
-        val list = saved.filter { playlistOf(it) in live }
+        val list = if (saved.all { playlistOf(it) in live }) saved else saved.filter { playlistOf(it) in live }
         if (ov.isEmpty()) {
             groupOriginals = emptyMap()
             return@combine list
@@ -184,21 +203,21 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
         groupOriginals = originals
         if (renumbered) out.sortedBy { it.number } else out
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Channels and groups you've hidden, to show again from Settings. */
     data class HiddenItem(val id: String, val label: String, val isGroup: Boolean)
 
-    val hiddenItems: StateFlow<List<HiddenItem>> = combine(repo.channels, overrides) { list, ov ->
+    val hiddenItems: StateFlow<List<HiddenItem>> = combine(savedRows, overrides) { list, ov ->
         val groups = ov.values.filter { it.hidden && it.id.startsWith("grp:") }
             .map { HiddenItem(it.id, groupLabel(it.id.removePrefix("grp:")), true) }
         val channels = list.filter { ov[channelKey(it.id)]?.hidden == true }
             .map { HiddenItem(channelKey(it.id), ov[channelKey(it.id)]?.name ?: it.name, false) }
         groups.sortedBy { it.label.lowercase() } + channels.sortedBy { it.label.lowercase() }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Locked channels, groups and categories, to unlock from Settings. */
-    val lockedItems: StateFlow<List<HiddenItem>> = combine(repo.channels, overrides) { list, ov ->
+    val lockedItems: StateFlow<List<HiddenItem>> = combine(savedRows, overrides) { list, ov ->
         val names = list.associate { channelKey(it.id) to it.name }
         ov.values.filter { it.locked }.map { o ->
             when {
@@ -207,7 +226,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 else -> HiddenItem(o.id, o.name ?: names[o.id] ?: "Channel", false)
             }
         }.sortedBy { it.label.lowercase() }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private fun groupLabel(name: String) = if (name == ChannelFilter.UNGROUPED) "Other channels" else name
 
@@ -257,8 +276,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     data class OrgChannel(val channel: ChannelEntity, val hidden: Boolean, val favorite: Boolean)
 
     /** Channels of the playlists that are on, with your names – hidden ones included. */
-    private val everyChannel: StateFlow<List<ChannelEntity>> = combine(repo.channels, overrides, c.settings.flow) { saved, ov, s ->
-        val live = s.playlists.filter { it.enabled }.mapTo(HashSet()) { it.id }
+    private val everyChannel: StateFlow<List<ChannelEntity>> = combine(savedRows, overrides, enabledPlaylistIds) { saved, ov, live ->
         saved.filter { playlistOf(it) in live }.map { ch ->
             val o = ov[channelKey(ch.id)]
             ch.copy(name = o?.name ?: ch.name, number = o?.position ?: ch.number)
@@ -409,7 +427,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val lockedChannelIds: StateFlow<Set<String>> = combine(allChannels, overrides) { list, ov ->
         if (ov.values.none { it.locked }) emptySet()
         else list.filter { isLocked(it) }.map { it.id }.toSet()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     fun isLocked(ch: ChannelEntity): Boolean {
         val ov = overrides.value
@@ -450,7 +468,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     data class MenuSection(val key: String, val label: String, val filters: List<ChannelFilter>)
 
     /** With one playlist: a single untitled section. With several: "All playlists", then one per playlist. */
-    val menuSections: StateFlow<List<MenuSection>> = combine(allChannels, c.settings.flow, overrides) { list, s, _ ->
+    val menuSections: StateFlow<List<MenuSection>> = combine(allChannels, playlistList, overrides) { list, allPlaylists, _ ->
         // Playlist order, with channels that have no group collected at the very end.
         fun groupsOf(channels: List<ChannelEntity>): List<String> {
             val names = channels.map { it.groupTitle }.distinct()
@@ -460,7 +478,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             return ordered.sortedBy { ov[groupKey(originalGroup(it))]?.position ?: Int.MAX_VALUE }
         }
         val byPlaylist = list.groupBy(::playlistOf)
-        val playlists = s.playlists.filter { it.id in byPlaylist }
+        val playlists = allPlaylists.filter { it.id in byPlaylist }
         if (playlists.size <= 1) {
             listOf(MenuSection(SECTION_ALL, "", listOf(ChannelFilter.All, ChannelFilter.Favorites) + groupsOf(list).map { ChannelFilter.Group(it) }))
         } else {
@@ -473,7 +491,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Every filter in menu order (Left/Right in the channel list steps through these). */
     val filters: StateFlow<List<ChannelFilter>> = menuSections
@@ -532,12 +550,13 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val perSource = list.groupingBy(::playlistOf).eachCount()
         fs.filterIsInstance<ChannelFilter.Source>().forEach { map[it] = perSource[it.id] ?: 0 }
         map
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Channels per playlist id, for Settings. */
     val playlistCounts: StateFlow<Map<String?, Int>> = allChannels
         .map { list -> list.groupingBy { it.playlistId }.eachCount() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Where recordings are saved, and free space there. */
     val recordingsFolder: java.io.File get() = c.recorder.directory()
@@ -553,7 +572,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 is ChannelFilter.Source -> list.filter { playlistOf(it) == f.id }
             }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Wall clock, ticking every 15 s – drives progress bars and the "now" line. */
     val now: StateFlow<Long> = flow {
@@ -572,6 +591,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             repo.programs(t, t + 6 * HOUR)
         }
         .map { list -> list.groupBy { it.epgId } }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private val _guideStart = MutableStateFlow(roundDown(System.currentTimeMillis()))
@@ -580,6 +600,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val guidePrograms: StateFlow<Map<String, List<ProgramEntity>>> = _guideStart
         .flatMapLatest { start -> repo.programs(start, start + GUIDE_SPAN) }
         .map { list -> list.groupBy { it.epgId } }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private val _current = MutableStateFlow<ChannelEntity?>(null)
@@ -1188,9 +1209,10 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     showToast("Allow the VPN in Settings → Network")
                 }
             }
-            // Clean up after playlists removed in an older version (or while a reload was running).
-            runCatching { repo.dropRemovedPlaylists() }
-            if (!s.hasSource) return@launch
+            if (!s.hasSource) {
+                runCatching { repo.dropRemovedPlaylists() }
+                return@launch
+            }
             // "Turn on last channel on app start" off: open on the guide without playing.
             val autoPlay = s.playLastOnStart
             // Like TiviMate: play the channel from last time straight away, from what was saved
@@ -1198,6 +1220,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             if (autoPlay) startLastChannel(s)
             val hasChannels = repo.hasChannels()
             if (hasChannels && autoPlay) ensurePlaying()
+            // Clean up after playlists removed in an older version (or while a reload was running) –
+            // after the channel is on, so it never delays the picture.
+            runCatching { repo.dropRemovedPlaylists() }
             val stale = s.refreshHours > 0 && System.currentTimeMillis() - s.lastRefresh > s.refreshHours * HOUR
             // Give the channel a few seconds to start before the reload downloads the playlist:
             // on one-connection accounts the two would fight over the connection.

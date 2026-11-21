@@ -29,14 +29,15 @@ class App : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         val settings = SettingsStore(this)
-        // Network options (proxy, DNS, user agent) are read once here; changing them restarts the app.
-        val network = runBlocking { settings.current().network }
+        // Settings are read once here (one disk read): network options (proxy, DNS, user agent –
+        // changing them restarts the app) and the language, before the first screen draws.
+        val startup = runBlocking { settings.current() }
+        val network = startup.network
         UserAgent.apply(network.userAgent)
         container = AppContainer(this, settings, network)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        // The chosen language, before the first screen draws (English needs nothing).
         runCatching {
-            val code = kotlinx.coroutines.runBlocking { container.settings.current().language }
+            val code = startup.language
             if (code != "en") io.github.axon07.channelbox.ui.I18n.load(this, code)
         }
         scope.launch {
@@ -79,6 +80,8 @@ class App : Application(), ImageLoaderFactory {
                     .build()
             }
             .respectCacheHeaders(false)
+            // Pictures without transparency use half the memory (cheap boxes have very little).
+            .allowRgb565(true)
             .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.2).build() }
             .diskCache {
                 DiskCache.Builder()

@@ -46,8 +46,14 @@ android {
 
     buildTypes {
         release {
-            // Kept off for the first releases so nothing gets stripped by mistake.
-            isMinifyEnabled = false
+            // R8: removes unused code (a much smaller download) and optimises the rest – Compose
+            // screens and lists run noticeably faster in a minified build. Keep rules: proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Real boxes are ARM (Fire TV, Android TV, Google TV); x86 is only for emulators, which
+            // use debug builds. Halves the native libraries (VPN, FFmpeg audio, RTMP).
+            ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
             // Official releases are signed with the permanent key so in-app updates install over
             // the old version. Local/CI test builds fall back to the debug key.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
@@ -79,6 +85,9 @@ android {
             "/META-INF/versions/9/OSGI-INF/MANIFEST.MF",
             "/META-INF/DEPENDENCIES",
             "/META-INF/INDEX.LIST",
+            // BouncyCastle data SMB never uses (post-quantum tables, certificate messages): ~1.3 MB.
+            "org/bouncycastle/pqc/**",
+            "org/bouncycastle/x509/*.properties",
         )
     }
 }

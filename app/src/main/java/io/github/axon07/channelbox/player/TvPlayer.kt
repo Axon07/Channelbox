@@ -108,10 +108,42 @@ class TvPlayer(
     /** False while a recording or catch-up programme is playing. */
     val isLive: Boolean get() = !onDemand
 
-    // Assume a fast connection at the start, so streams don't open at their lowest quality.
+    /**
+     * Connection speed. Starts from the speed measured last time (kept on the device), so Auto opens
+     * a channel at the quality the connection can carry right away; on the very first run it starts
+     * modest and steps up within seconds instead of stalling on a stream that's too big.
+     */
+    private val speedPrefs = context.getSharedPreferences("player", Context.MODE_PRIVATE)
     private val bandwidthMeter = DefaultBandwidthMeter.Builder(context)
-        .setInitialBitrateEstimate(20_000_000L)
+        .setInitialBitrateEstimate(speedPrefs.getLong(KEY_SPEED, FIRST_RUN_SPEED).coerceIn(MIN_SPEED, MAX_SPEED))
         .build()
+        .also { meter ->
+            // Only the main player remembers the speed (multi-view tiles share the connection).
+            if (handleAudioFocus) {
+                var savedAt = 0L
+                meter.addEventListener(handler) { _, _, _ ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - savedAt > 30_000) {
+                        savedAt = now
+                        speedPrefs.edit().putLong(KEY_SPEED, meter.bitrateEstimate).apply()
+                    }
+                }
+            }
+        }
+
+    /**
+     * Auto quality: steps up after a few seconds of good speed (the default waits 10 s), and only
+     * steps down when the buffer is really running low.
+     */
+    private val trackSelector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(
+        context,
+        androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection.Factory(
+            /* minDurationForQualityIncreaseMs = */ 3_000,
+            /* maxDurationForQualityDecreaseMs = */ 15_000,
+            /* minDurationToRetainAfterDiscardMs = */ 15_000,
+            /* bandwidthFraction = */ 0.75f,
+        ),
+    )
 
     /** Login for playing recordings saved on an SMB share. */
     var storageSettings: () -> StorageSettings = { StorageSettings() }
@@ -183,6 +215,7 @@ class TvPlayer(
 
     val exo: ExoPlayer = ExoPlayer.Builder(context, renderers)
         .setBandwidthMeter(bandwidthMeter)
+        .setTrackSelector(trackSelector)
         .setLoadControl(loadControl(options.buffer))
         .build()
         .apply {
@@ -551,9 +584,8 @@ class TvPlayer(
     }
 
     /**
-     * Quality choice: 0 = best available, >0 = best up to that height, both held steady;
-     * [ADAPTIVE] = switch with the connection speed. Switching levels mid-stream can show green
-     * blocks on some streams, so steady is the default.
+     * Quality choice: [ADAPTIVE] (the default) = follow the connection speed; 0 = best available,
+     * >0 = best up to that height, both held steady.
      */
     fun setMaxQuality(height: Int) {
         val b = exo.trackSelectionParameters.buildUpon()
@@ -675,6 +707,11 @@ class TvPlayer(
         /** HTTP codes providers use for "refused" / "too many connections". */
         private val REFUSED = setOf(401, 403, 429, 456, 458, 509)
         const val DEFAULT_USER_AGENT = UserAgent.DEFAULT
+        private const val KEY_SPEED = "bandwidth_estimate"
+        /** First run: about 720p on most providers, then up as soon as the speed is known. */
+        private const val FIRST_RUN_SPEED = 4_000_000L
+        private const val MIN_SPEED = 1_000_000L
+        private const val MAX_SPEED = 100_000_000L
     }
 }
 
@@ -689,12 +726,15 @@ const val ADAPTIVE = -1
 private fun loadControl(size: String): androidx.media3.exoplayer.LoadControl {
     val (min, max, start, restart) = when (size) {
         "none" -> listOf(1_500, 4_000, 500, 1_000)
-        "small" -> listOf(5_000, 15_000, 1_000, 2_000)
-        "large" -> listOf(30_000, 60_000, 4_000, 8_000)
-        "xlarge" -> listOf(60_000, 120_000, 6_000, 12_000)
-        else -> listOf(15_000, 30_000, 2_000, 4_000) // medium
+        "small" -> listOf(5_000, 15_000, 750, 2_000)
+        "large" -> listOf(30_000, 60_000, 2_500, 6_000)
+        "xlarge" -> listOf(60_000, 120_000, 4_000, 10_000)
+        // Starts after 1 s of video (like a cable box: picture first), keeps up to 30 s ahead.
+        else -> listOf(15_000, 30_000, 1_000, 3_000) // medium
     }
     return androidx.media3.exoplayer.DefaultLoadControl.Builder()
         .setBufferDurationsMs(min, max, start, restart)
+        // Start as soon as the time is buffered, without also waiting for a byte target.
+        .setPrioritizeTimeOverSizeThresholds(true)
         .build()
 }

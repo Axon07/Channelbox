@@ -401,11 +401,11 @@ private fun idleLabel(seconds: Int) = when {
 }
 
 private val QUALITY_CHOICES = listOf(
+    -1 to "Automatic (follows connection speed)",
     0 to "Best available",
     1080 to "Up to 1080p",
     720 to "Up to 720p",
     480 to "Up to 480p",
-    -1 to "Automatic (follows connection speed)",
 )
 
 @Composable
@@ -420,7 +420,7 @@ private fun PlaybackSettings(settings: AppSettings, vm: TvViewModel, openPage: (
     SettingCard(
         title = "Maximum quality",
         description = "Lower it on a slow connection to avoid buffering",
-        value = QUALITY_CHOICES.firstOrNull { it.first == settings.maxQuality }?.second ?: "Best available",
+        value = QUALITY_CHOICES.firstOrNull { it.first == settings.maxQuality }?.second ?: "Automatic (follows connection speed)",
         onClick = { openPage(Page.QUALITY) },
     )
     SettingCard(

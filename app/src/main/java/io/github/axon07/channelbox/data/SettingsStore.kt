@@ -169,7 +169,7 @@ data class AppSettings(
     /** Picture size: 0 = fit, 1 = zoom (fill, crop edges), 2 = stretch. */
     val videoScale: Int = 0,
     /** Highest resolution to pick automatically (0 = no limit). */
-    val maxQuality: Int = 0,
+    val maxQuality: Int = -1, // automatic
     /** Keep playing in a small window when you press Home. */
     val pipOnLeave: Boolean = false,
     /** Seconds without a key press before the guide/menus close back to TV; 0 = never. */
@@ -313,7 +313,7 @@ class SettingsStore(private val context: Context) {
         audioPassthrough = this[Keys.PASSTHROUGH] ?: true,
         autoFrameRate = this[Keys.AFR] ?: false,
         videoScale = this[Keys.VIDEO_SCALE] ?: 0,
-        maxQuality = this[Keys.MAX_QUALITY] ?: 0,
+        maxQuality = this[Keys.MAX_QUALITY] ?: -1,
         pipOnLeave = this[Keys.PIP] ?: false,
         idleCloseSeconds = this[Keys.IDLE_CLOSE] ?: 60,
         guideDays = this[Keys.GUIDE_DAYS] ?: 3,

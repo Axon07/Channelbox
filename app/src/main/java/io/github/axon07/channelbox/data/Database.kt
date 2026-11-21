@@ -18,7 +18,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "channels")
+// Indexes: the channel list is read in number order (no sort of the whole table at start-up), and
+// the last channel is found by name when the provider's links change.
+@Entity(
+    tableName = "channels",
+    indices = [Index(value = ["number", "name"]), Index(value = ["name"]), Index(value = ["playlistId"])],
+)
 data class ChannelEntity(
     /** Stable key (the stream URL) so favourites survive a playlist refresh. */
     @PrimaryKey val id: String,
@@ -212,7 +217,7 @@ interface ProgramDao {
         ChannelEntity::class, FavoriteEntity::class, ProgramEntity::class, RecordingEntity::class,
         VodEntity::class, VodProgressEntity::class, OverrideEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -277,6 +282,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v9: channel indexes (faster start-up and reloads with big playlists). Keeps everything. */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_channels_number_name` ON `channels` (`number`, `name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_channels_name` ON `channels` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_channels_playlistId` ON `channels` (`playlistId`)")
+            }
+        }
+
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -288,7 +302,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "channelbox.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration()
                 .build()
     }
