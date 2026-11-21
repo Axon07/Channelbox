@@ -122,6 +122,16 @@ abstract class ChannelDao {
     @Query("SELECT * FROM channels ORDER BY number, name")
     abstract suspend fun getAll(): List<ChannelEntity>
 
+    /** Quick checks at start-up (without reading every channel of a huge list). */
+    @Query("SELECT EXISTS(SELECT 1 FROM channels)")
+    abstract suspend fun any(): Boolean
+
+    @Query("SELECT * FROM channels WHERE id = :id LIMIT 1")
+    abstract suspend fun byId(id: String): ChannelEntity?
+
+    @Query("SELECT * FROM channels WHERE name = :name AND IFNULL(playlistId, '') = IFNULL(:playlistId, '') LIMIT 1")
+    abstract suspend fun byName(name: String, playlistId: String?): ChannelEntity?
+
     @Query("DELETE FROM channels")
     abstract suspend fun clear()
 

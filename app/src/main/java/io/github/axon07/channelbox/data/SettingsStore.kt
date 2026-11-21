@@ -270,6 +270,7 @@ class SettingsStore(private val context: Context) {
         val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val PLAYLISTS = stringPreferencesKey("playlists")
         val SERIES_RULES = stringPreferencesKey("series_rules")
+        val LAST_CHANNEL_SNAPSHOT = stringPreferencesKey("last_channel_snapshot")
     }
 
     val flow: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -420,6 +421,43 @@ class SettingsStore(private val context: Context) {
     suspend fun setCaptionsByDefault(on: Boolean) = context.dataStore.edit { it[Keys.CAPTIONS_DEFAULT] = on }
     suspend fun setLanguage(code: String) = context.dataStore.edit { it[Keys.LANGUAGE] = code }
     suspend fun setLastChannel(id: String) = context.dataStore.edit { it[Keys.LAST_CHANNEL] = id }
+
+    /**
+     * The channel playing, saved whole, so the next start can play it straight away – before the
+     * channel list is read or the playlist reloaded (like TiviMate).
+     */
+    suspend fun setLastChannel(ch: io.github.axon07.channelbox.data.ChannelEntity) = context.dataStore.edit {
+        it[Keys.LAST_CHANNEL] = ch.id
+        it[Keys.LAST_CHANNEL_SNAPSHOT] = JsonObject(
+            listOfNotNull(
+                "id" to JsonPrimitive(ch.id), "number" to JsonPrimitive(ch.number), "name" to JsonPrimitive(ch.name),
+                "group" to JsonPrimitive(ch.groupTitle), "url" to JsonPrimitive(ch.streamUrl),
+                "catchupDays" to JsonPrimitive(ch.catchupDays),
+                ch.logoUrl?.let { v -> "logo" to JsonPrimitive(v) }, ch.epgId?.let { v -> "epg" to JsonPrimitive(v) },
+                ch.headers?.let { v -> "headers" to JsonPrimitive(v) }, ch.drmType?.let { v -> "drmType" to JsonPrimitive(v) },
+                ch.drmKey?.let { v -> "drmKey" to JsonPrimitive(v) }, ch.mimeHint?.let { v -> "mime" to JsonPrimitive(v) },
+                ch.catchupType?.let { v -> "catchupType" to JsonPrimitive(v) },
+                ch.catchupSource?.let { v -> "catchupSource" to JsonPrimitive(v) },
+                ch.playlistId?.let { v -> "playlist" to JsonPrimitive(v) },
+            ).toMap()
+        ).toString()
+    }
+
+    /** The channel saved by [setLastChannel], or null. */
+    suspend fun lastChannel(): io.github.axon07.channelbox.data.ChannelEntity? {
+        val text = context.dataStore.data.first()[Keys.LAST_CHANNEL_SNAPSHOT] ?: return null
+        return runCatching {
+            val o = Json.parseToJsonElement(text) as JsonObject
+            fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+            io.github.axon07.channelbox.data.ChannelEntity(
+                id = s("id")!!, number = s("number")?.toIntOrNull() ?: 0, name = s("name").orEmpty(),
+                groupTitle = s("group").orEmpty(), logoUrl = s("logo"), streamUrl = s("url")!!, epgId = s("epg"),
+                catchupDays = s("catchupDays")?.toIntOrNull() ?: 0, headers = s("headers"), drmType = s("drmType"),
+                drmKey = s("drmKey"), mimeHint = s("mime"), catchupType = s("catchupType"),
+                catchupSource = s("catchupSource"), playlistId = s("playlist"),
+            )
+        }.getOrNull()
+    }
     suspend fun setPlayLastOnStart(on: Boolean) = context.dataStore.edit { it[Keys.PLAY_LAST] = on }
     suspend fun setShowChannelNumbers(on: Boolean) = context.dataStore.edit { it[Keys.SHOW_NUMBERS] = on }
 

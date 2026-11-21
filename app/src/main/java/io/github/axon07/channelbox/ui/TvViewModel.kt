@@ -1175,11 +1175,17 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             // Clean up after playlists removed in an older version (or while a reload was running).
             runCatching { repo.dropRemovedPlaylists() }
             if (!s.hasSource) return@launch
-            val hasChannels = repo.allChannels().isNotEmpty()
             // "Turn on last channel on app start" off: open on the guide without playing.
             val autoPlay = s.playLastOnStart
+            // Like TiviMate: play the channel from last time straight away, from what was saved
+            // when it was tuned – before reading the channel list or reloading the playlist.
+            if (autoPlay) startLastChannel(s)
+            val hasChannels = repo.hasChannels()
             if (hasChannels && autoPlay) ensurePlaying()
             val stale = s.refreshHours > 0 && System.currentTimeMillis() - s.lastRefresh > s.refreshHours * HOUR
+            // Give the channel a few seconds to start before the reload downloads the playlist:
+            // on one-connection accounts the two would fight over the connection.
+            if (stale && hasChannels && _current.value != null) delay(10_000)
             if (!hasChannels || stale) {
                 val ready: suspend () -> Unit = {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { if (autoPlay) ensurePlaying() }
@@ -1448,7 +1454,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             previous = _current.value
             _current.value = channel
             player.play(StreamSpecs.from(channel))
-            viewModelScope.launch { c.settings.setLastChannel(channel.id) }
+            viewModelScope.launch { c.settings.setLastChannel(channel) }
         } else if (!player.isLive) {
             player.play(StreamSpecs.from(channel))
         }
@@ -1489,11 +1495,37 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         tune(p)
     }
 
+    /** Plays the channel saved last time, without waiting for anything else. */
+    private suspend fun startLastChannel(s: AppSettings) {
+        if (_current.value != null) return
+        val saved = c.settings.lastChannel() ?: return
+        // Its playlist must still be there and on.
+        if (saved.playlistId != null && s.playlists.none { it.id == saved.playlistId && it.enabled }) return
+        // With a PIN set, never start on a locked channel (no PIN prompt for whoever turns the TV on).
+        if (s.pinHash != null) {
+            val ov = repo.overrides.first().associateBy { it.id }
+            val locked = ov[channelKey(saved.id)]?.locked == true || ov[groupKey(originalGroup(saved.groupTitle))]?.locked == true
+            if (locked) return
+        }
+        tune(saved)
+    }
+
     suspend fun ensurePlaying() {
         if (_current.value != null) return
+        val s = c.settings.current()
+        // The last channel, looked up directly – by id, or by name when the provider's links changed.
+        val saved = c.settings.lastChannel()
+        val lastId = s.lastChannelId
+        if (lastId != null) {
+            val ch = repo.findChannel(lastId, saved?.name, saved?.playlistId)
+            if (ch != null && (unlocked || !isLocked(ch))) {
+                tune(ch)
+                return
+            }
+        }
         val list = repo.allChannels()
         if (list.isEmpty()) return
-        val last = c.settings.current().lastChannelId
+        val last = lastId
         // Starting up: never open on a locked channel (no PIN prompt for whoever turns the TV on).
         val usable = if (unlocked) list else list.filter { !isLocked(it) }.ifEmpty { list }
         tune(usable.firstOrNull { it.id == last } ?: usable.first())

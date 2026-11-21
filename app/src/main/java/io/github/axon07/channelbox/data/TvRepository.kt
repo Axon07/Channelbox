@@ -50,6 +50,12 @@ class TvRepository(
 
     suspend fun allChannels(): List<ChannelEntity> = db.channels().getAll()
 
+    suspend fun hasChannels(): Boolean = db.channels().any()
+
+    /** The saved channel by id, or – when the provider's links changed – by name in the same playlist. */
+    suspend fun findChannel(id: String, name: String?, playlistId: String?): ChannelEntity? =
+        db.channels().byId(id) ?: name?.let { db.channels().byName(it, playlistId) }
+
     suspend fun searchPrograms(query: String, from: Long): List<ProgramEntity> = db.programs().search(query, from)
 
     suspend fun showings(epgId: String, title: String, from: Long): List<ProgramEntity> = db.programs().showings(epgId, title, from)
