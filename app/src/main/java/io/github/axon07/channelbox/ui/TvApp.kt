@@ -1199,7 +1199,8 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            // In the guide, the space around the preview window is the guide's colour, not a black frame.
+            .background(if (mode in GUIDE_MODES && !inPip) Palette.Background else Color.Black)
             .onPreviewKeyEvent {
                 lastInput = android.os.SystemClock.uptimeMillis()
                 val native = it.nativeKeyEvent

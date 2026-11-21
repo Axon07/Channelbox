@@ -61,9 +61,10 @@ data class GuideMetrics(
 fun guideMetrics(): GuideMetrics {
     LocalGuideMetrics.current?.let { return it }
     return if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480) {
-        GuideMetrics(196.dp, 99.dp, 8.dp, 168.dp, 36.dp, compact = true)
+        // Preview windows are exactly 16:9, so TV pictures fill them without black bars.
+        GuideMetrics(176.dp, 99.dp, 8.dp, 168.dp, 36.dp, compact = true)
     } else {
-        GuideMetrics(264.dp, 135.dp, 14.dp, 220.dp, 40.dp, compact = false)
+        GuideMetrics(240.dp, 135.dp, 14.dp, 220.dp, 40.dp, compact = false)
     }
 }
 
