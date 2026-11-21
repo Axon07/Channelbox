@@ -815,7 +815,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> vm.zap(1)
                 AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> vm.zap(-1)
                 AndroidKeyEvent.KEYCODE_DPAD_LEFT -> openList()
-                // Like TiviMate: ▶ goes back to the channel you watched before (again to swap back).
+                // ▶ goes back to the channel you watched before (again to swap back).
                 AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> vm.previousChannel()
                 AndroidKeyEvent.KEYCODE_INFO -> {
                     if (bannerVisible) bannerVisible = false else vm.showBanner()

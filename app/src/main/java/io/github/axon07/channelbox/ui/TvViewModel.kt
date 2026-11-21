@@ -795,7 +795,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- Series recording (like TiviMate's "Record series") ------------------------------------
+    // ---- Series recording ("Record series") ------------------------------------
 
     /** The series rule this programme falls under, if any. */
     fun seriesRule(channelId: String, title: String): io.github.axon07.channelbox.data.SeriesRule? =
@@ -1215,7 +1215,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             }
             // "Turn on last channel on app start" off: open on the guide without playing.
             val autoPlay = s.playLastOnStart
-            // Like TiviMate: play the channel from last time straight away, from what was saved
+            // Play the channel from last time straight away, from what was saved
             // when it was tuned – before reading the channel list or reloading the playlist.
             if (autoPlay) startLastChannel(s)
             val hasChannels = repo.hasChannels()

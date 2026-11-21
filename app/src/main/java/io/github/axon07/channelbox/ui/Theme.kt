@@ -38,6 +38,10 @@ object Palette {
     val Favorite = Color(0xFFFFC94D)
     val Error = Color(0xFFFF6B6B)
     val Recording = Color(0xFFFF4D4D)
+    /** Focus: a light pill with dark text – easy to spot from the couch, calmer than a coloured outline. */
+    val Selected = Color(0xFFE9EEF4)
+    val OnSelected = Color(0xFF0E141B)
+    val OnSelectedDim = Color(0xFF4A5868)
 }
 
 @Composable

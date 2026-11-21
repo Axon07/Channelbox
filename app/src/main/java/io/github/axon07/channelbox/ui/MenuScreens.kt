@@ -147,21 +147,25 @@ private fun RailItem(
             .clip(RoundedCornerShape(10.dp))
             .background(
                 when {
-                    selected -> Color(0x33FFFFFF)
+                    selected -> Palette.Selected
                     highlighted -> Color(0x14FFFFFF)
                     else -> Color.Transparent
                 }
             )
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(10.dp))
             .tap(onClick = onClick)
             .padding(vertical = if (compact) 5.dp else 8.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AppIcon(icon, tint = if (selected || highlighted) Color.White else Color(0xFF9AA6B4), size = if (compact) 19.dp else 22.dp)
+        val tint = when {
+            selected -> Palette.OnSelected
+            highlighted -> Color.White
+            else -> Color(0xFF9AA6B4)
+        }
+        AppIcon(icon, tint = tint, size = if (compact) 19.dp else 22.dp)
         Spacer(Modifier.height(if (compact) 2.dp else 4.dp))
         Text(
             label, fontSize = 10.sp, lineHeight = 12.sp, textAlign = TextAlign.Center, maxLines = 2,
-            color = if (selected || highlighted) Color.White else Color(0xFF9AA6B4),
+            color = tint,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
@@ -180,25 +184,24 @@ private fun SectionHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = if (first) 0.dp else 8.dp, bottom = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
+            .padding(top = if (first) 0.dp else 14.dp, bottom = 2.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Palette.Selected else Color.Transparent)
             .tap(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
-            fontSize = 15.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
-            color = Palette.Text,
+            color = if (selected) Palette.OnSelected else Palette.Text,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         if (collapsible) {
-            AppIcon(if (open) AppIcons.Up else AppIcons.Down, tint = if (selected) Color.White else Palette.TextDim, size = 18.dp)
+            AppIcon(if (open) AppIcons.Up else AppIcons.Down, tint = if (selected) Palette.OnSelected else Palette.TextDim, size = 18.dp)
         }
     }
 }
@@ -218,28 +221,41 @@ private fun GroupRow(
             .padding(start = if (indented) 12.dp else 0.dp)
             .fillMaxWidth()
             .padding(vertical = 1.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0x29FFFFFF) else Color.Transparent)
-            .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Accent else Color.Transparent, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Palette.Selected else Color.Transparent)
             .tap(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (filter == ChannelFilter.Favorites) {
-            AppIcon(AppIcons.Star, tint = if (active || selected) Color(0xFFFFD27A) else Palette.TextDim, size = 15.dp)
+            AppIcon(
+                AppIcons.Star, size = 15.dp,
+                tint = when {
+                    selected -> Palette.OnSelected
+                    active -> Color(0xFFFFD27A)
+                    else -> Palette.TextDim
+                },
+            )
             Spacer(Modifier.width(8.dp))
         }
         Text(
             filter.label,
-            fontSize = 15.sp,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (active) Color(0xFF8FBBFF) else Palette.Text,
+            fontSize = 16.sp,
+            fontWeight = if (active || selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = when {
+                selected -> Palette.OnSelected
+                active -> Color(0xFF8FBBFF)
+                else -> Palette.Text.copy(alpha = 0.85f)
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         if (count != null) {
-            Text(count.toString(), fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.padding(start = 8.dp))
+            Text(
+                count.toString(), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp),
+                color = if (selected) Palette.OnSelectedDim else Palette.TextDim,
+            )
         }
     }
 }

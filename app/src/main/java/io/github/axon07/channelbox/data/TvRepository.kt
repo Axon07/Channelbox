@@ -464,7 +464,7 @@ class TvRepository(
      */
     /**
      * Most provider M3U playlists are Xtream links underneath, and the M3U doesn't say which
-     * channels the provider keeps an archive of. Like TiviMate, ask the server's API and turn on
+     * channels the provider keeps an archive of. Ask the server's API and turn on
      * catch-up (and rewinding live TV) for those channels. Anything going wrong just leaves it off.
      */
     private suspend fun addXtreamArchive(p: Playlist, lineup: Lineup, start: Int) {

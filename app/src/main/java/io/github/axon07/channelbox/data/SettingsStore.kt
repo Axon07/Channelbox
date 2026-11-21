@@ -424,7 +424,7 @@ class SettingsStore(private val context: Context) {
 
     /**
      * The channel playing, saved whole, so the next start can play it straight away – before the
-     * channel list is read or the playlist reloaded (like TiviMate).
+     * channel list is read or the playlist reloaded.
      */
     suspend fun setLastChannel(ch: io.github.axon07.channelbox.data.ChannelEntity) = context.dataStore.edit {
         it[Keys.LAST_CHANNEL] = ch.id

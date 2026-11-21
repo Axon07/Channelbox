@@ -293,28 +293,48 @@ private fun GuideRow(
     val m = guideMetrics()
     val end = guideStart + GUIDE_SPAN
     Row(Modifier.fillMaxWidth().height(m.rowHeight).padding(vertical = 2.dp)) {
+        // Channel column: no box, just logo and name on the background – the selected row gets a
+        // slim accent bar and bold text, the channel playing is shown in the accent colour.
         Row(
             Modifier
                 .width(m.channelColumn)
                 .fillMaxHeight()
-                .padding(start = 6.dp, end = 3.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (rowSelected) Palette.SurfaceLive else Palette.Surface)
-                .tap(onLongClick = { onMenu(null) }, onClick = onTune)
-                .padding(horizontal = 8.dp),
+                .tap(onLongClick = { onMenu(null) }, onClick = onTune),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                Modifier
+                    .padding(start = 4.dp, end = 8.dp)
+                    .width(3.dp)
+                    .fillMaxHeight(0.6f)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (rowSelected) Palette.Accent else Color.Transparent)
+            )
             if (LocalShowChannelNumbers.current) {
-                Text(channel.number.toString(), fontSize = 13.sp, color = Palette.TextDim, modifier = Modifier.width(34.dp))
+                Text(
+                    channel.number.toString(), fontSize = 14.sp, maxLines = 1,
+                    color = if (rowSelected) Palette.Text else Palette.TextDim,
+                    modifier = Modifier.width(36.dp),
+                )
             }
-            ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 44.dp, height = 26.dp))
-            Spacer(Modifier.width(8.dp))
+            ChannelLogo(channel.logoUrl, channel.name, Modifier.size(width = 48.dp, height = 28.dp))
+            Spacer(Modifier.width(12.dp))
             Text(
-                (if (playing) "▶ " else "") + channel.name + (if (favorite) " ★" else ""),
+                channel.name,
                 // Long names wrap onto a second line instead of being cut off.
-                fontSize = 13.sp, lineHeight = 15.sp, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontSize = 15.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontWeight = if (rowSelected) FontWeight.SemiBold else FontWeight.Normal,
+                color = when {
+                    playing -> Palette.Accent
+                    rowSelected -> Palette.Text
+                    else -> Palette.Text.copy(alpha = 0.85f)
+                },
                 modifier = Modifier.weight(1f, fill = false),
             )
+            if (favorite) {
+                Spacer(Modifier.width(5.dp))
+                Text("★", fontSize = 11.sp, color = Palette.Favorite)
+            }
             if (io.github.axon07.channelbox.data.Catchup.isAvailable(channel.catchupType, channel.catchupSource, channel.catchupDays)) {
                 Spacer(Modifier.width(5.dp))
                 AppIcon(AppIcons.History, tint = Palette.TextDim, size = 13.dp)
@@ -327,6 +347,7 @@ private fun GuideRow(
                 Spacer(Modifier.width(4.dp))
                 AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
             }
+            Spacer(Modifier.width(10.dp))
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val total = maxWidth
@@ -384,10 +405,10 @@ private fun ProgramCell(
     Box(
         modifier
             .padding(end = 3.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(
                 when {
-                    selected -> Palette.Accent
+                    selected -> Palette.Selected
                     live -> Palette.SurfaceLive
                     else -> Palette.Surface
                 }
@@ -400,13 +421,17 @@ private fun ProgramCell(
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(progress)
-                    .background(if (selected) Color(0x26FFFFFF) else Color(0x1A3D8BFD))
+                    .background(if (selected) Color(0x140E141B) else Color(0x0FFFFFFF))
             )
         }
-        Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (recording) Text("● ", fontSize = 13.sp, color = Palette.Recording)
-            if (catchup) Text("↺ ", fontSize = 13.sp, color = Palette.TextDim)
-            Text(title, fontSize = 13.sp, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (catchup) Text("↺ ", fontSize = 13.sp, color = if (selected) Palette.OnSelectedDim else Palette.TextDim)
+            Text(
+                title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (selected) Palette.OnSelected else Palette.Text,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
         }
     }
 }

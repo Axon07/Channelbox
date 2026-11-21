@@ -218,14 +218,14 @@ fun ChannelListPanel(
                         .fillMaxWidth()
                         .height(50.dp)
                         .padding(horizontal = 8.dp, vertical = 2.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (isSelected) Palette.Accent else Color.Transparent)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Palette.Selected else Color.Transparent)
                         .tap(onLongClick = { onFavorite(index) }) { onSelect(index) }
                         .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        ch.number.toString(), fontSize = 14.sp, color = Palette.Text,
+                        ch.number.toString(), fontSize = 14.sp, color = if (isSelected) Palette.OnSelected else Palette.TextDim,
                         modifier = Modifier.width(40.dp),
                     )
                     ChannelLogo(ch.logoUrl, ch.name, Modifier.size(width = 52.dp, height = 30.dp))
@@ -233,7 +233,13 @@ fun ChannelListPanel(
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                ch.name, fontSize = 14.sp, color = Palette.Text, maxLines = 1,
+                                ch.name, fontSize = 15.sp, maxLines = 1,
+                                color = when {
+                                    isSelected -> Palette.OnSelected
+                                    ch.id == playingId -> Palette.Accent
+                                    else -> Palette.Text
+                                },
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
                             if (io.github.axon07.channelbox.data.Catchup.isAvailable(ch.catchupType, ch.catchupSource, ch.catchupDays)) {
@@ -249,12 +255,11 @@ fun ChannelListPanel(
                                 AppIcon(AppIcons.Lock, tint = Palette.TextDim, size = 12.dp)
                             }
                             if (ch.id in favorites) Text(" ★", color = Palette.Favorite, fontSize = 12.sp)
-                            if (ch.id == playingId) Text("  ▶", color = Palette.Text, fontSize = 11.sp)
                         }
                         if (current != null) {
                             Text(
                                 current.title, fontSize = 12.sp,
-                                color = if (isSelected) Palette.Text else Palette.TextDim,
+                                color = if (isSelected) Palette.OnSelectedDim else Palette.TextDim,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             Spacer(Modifier.height(2.dp))
