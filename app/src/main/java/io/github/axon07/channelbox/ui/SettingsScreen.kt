@@ -169,6 +169,9 @@ fun SettingsScreen(
     // Back while moving through a section's settings goes back to the list of sections (like ◀),
     // and only Back from that list leaves Settings.
     var inContent by remember { mutableStateOf(false) }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val touch = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode == androidx.compose.ui.input.InputMode.Touch
     BackHandler(enabled = page == null && inContent) {
         runCatching { categoryFocus.getValue(category).requestFocus() }
     }
@@ -201,6 +204,11 @@ fun SettingsScreen(
                         returnTo = null
                         page = null
                         category = c
+                        // OK on a category goes into it (like the groups menu); a tap on a phone just shows it.
+                        if (!touch) scope.launch {
+                            kotlinx.coroutines.delay(80)
+                            focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
+                        }
                     },
                 )
             }

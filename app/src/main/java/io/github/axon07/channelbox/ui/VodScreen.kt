@@ -58,6 +58,7 @@ import io.github.axon07.channelbox.data.VodEntity
 import io.github.axon07.channelbox.data.VodKind
 import io.github.axon07.channelbox.data.VodProgressEntity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.conflate
 
 /** What the Movies / TV Shows screens are showing. Kept outside the screen so it survives playback. */
@@ -76,6 +77,8 @@ class VodBrowser {
     /** Item to put the focus back on (after playback, a dialog, or closing a show). */
     var focusId by mutableStateOf<String?>(null)
     var focusToken by mutableIntStateOf(0)
+    /** OK was pressed on a category: move to its first poster once the list is there. */
+    var focusFirstPoster by mutableStateOf(false)
     internal var listKey = ""
 
     fun open(kind: String) {
@@ -243,6 +246,7 @@ private fun LibraryScreen(
                             val open = {
                                 b.query = ""
                                 b.category = id
+                                b.focusFirstPoster = true
                             }
                             if (locked) vm.requirePin("Enter your PIN to open $label", action = open) else open()
                         },
@@ -289,6 +293,18 @@ private fun LibraryScreen(
                             }
                         }
                     }
+            }
+            // OK on a category: go to its first poster (like the groups menu does for channels).
+            LaunchedEffect(items, b.focusFirstPoster) {
+                val first = items?.firstOrNull()
+                if (b.focusFirstPoster && first != null) {
+                    b.focusFirstPoster = false
+                    runCatching { b.grid.scrollToItem(0) }
+                    b.focusId = first.id
+                    b.focusToken++
+                } else if (b.focusFirstPoster && items != null) {
+                    b.focusFirstPoster = false // empty category: stay on the list
+                }
             }
             when {
                 // Lists are local and normally appear at once; "Loading…" only if one takes a moment.
@@ -531,6 +547,7 @@ private fun ShowScreen(
                 Text(it, fontSize = 12.sp, color = Palette.TextDim, maxLines = 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
             }
             Spacer(Modifier.height(14.dp))
+            val seasonScope = androidx.compose.runtime.rememberCoroutineScope()
             LazyColumn(Modifier.weight(1f)) {
                 items(seasons, key = { it }) { s ->
                     CategoryEntry(
@@ -539,7 +556,13 @@ private fun ShowScreen(
                         selected = s == b.season,
                         modifier = Modifier,
                         onFocus = { b.season = s },
-                        onClick = { b.season = s },
+                        onClick = {
+                            b.season = s
+                            seasonScope.launch {
+                                delay(80)
+                                runCatching { firstEpisode.requestFocus() }
+                            }
+                        },
                     )
                 }
             }
