@@ -171,7 +171,6 @@ fun SettingsScreen(
     var inContent by remember { mutableStateOf(false) }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val touch = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode == androidx.compose.ui.input.InputMode.Touch
     BackHandler(enabled = page == null && inContent) {
         runCatching { categoryFocus.getValue(category).requestFocus() }
     }
