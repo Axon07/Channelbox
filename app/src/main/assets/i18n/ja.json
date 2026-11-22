@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "番組表 (XMLTV) の URL – 任意。空欄ならプロバイダーのものを使用",
  "TV show categories": "番組のカテゴリー",
  "Takes effect the next time Channelbox starts": "次回 Channelbox 起動時に反映されます",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "タップで選択 · ⠿ をドラッグしてチャンネルを移動 · グループに戻る",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "タップで選択 · › グループのチャンネルを開く · ⠿ をドラッグしてグループを移動",
  "Test": "テスト",
  "That programme has already finished": "その番組はすでに終了しています",
  "The PINs didn't match – try again": "PIN が一致しません – もう一度お試しください",

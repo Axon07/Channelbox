@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "URL de guía de TV (XMLTV): opcional, vacío para usar la del proveedor",
  "TV show categories": "Categorías de series",
  "Takes effect the next time Channelbox starts": "Se aplica al reiniciar Channelbox",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Toca para seleccionar · arrastra ⠿ para mover un canal · Atrás a los grupos",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Toca para seleccionar · › abre los canales del grupo · arrastra ⠿ para mover un grupo",
  "Test": "Probar",
  "That programme has already finished": "Ese programa ya ha terminado",
  "The PINs didn't match – try again": "Los PIN no coinciden: inténtalo de nuevo",

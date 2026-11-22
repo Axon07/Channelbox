@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "Ссылка на телепрограмму (XMLTV) – необязательно, пусто = от провайдера",
  "TV show categories": "Категории сериалов",
  "Takes effect the next time Channelbox starts": "Вступит в силу после перезапуска",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Нажмите, чтобы выбрать · перетащите ⠿, чтобы переместить канал · Назад к группам",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Нажмите, чтобы выбрать · › открыть каналы группы · перетащите ⠿, чтобы переместить группу",
  "Test": "Проверить",
  "That programme has already finished": "Эта передача уже закончилась",
  "The PINs didn't match – try again": "PIN не совпадают – попробуйте ещё раз",

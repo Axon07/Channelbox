@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,7 +54,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Organise channels and groups many at a time:
- * - Groups: select several (OK) and hide / show them; hold OK on one to move it (▲ ▼, OK to drop).
+ * - Groups: select several (OK) and hide / show them; hold OK on one to move it (▲ ▼, OK to drop),
+ *   or on a phone/tablet drag the ⠿ handle.
  * - ▶ (or ›) on a group opens its channels: select several to add to Favourites, or hide / show.
  * - Favourites: hold OK on a channel to move it.
  */
@@ -101,8 +104,11 @@ private fun GroupsOrganiser(vm: TvViewModel, focusToken: Int, onOpen: (String) -
     Column(Modifier.fillMaxSize()) {
         Header(
             "Organise groups",
-            if (moving != null) "▲ ▼ move · OK to put it here"
-            else "OK select · ▶ open a group's channels · hold OK to move a group",
+            when {
+                moving != null -> "▲ ▼ move · OK to put it here"
+                touchInput() -> "Tap to select · › open a group's channels · drag ⠿ to move a group"
+                else -> "OK select · ▶ open a group's channels · hold OK to move a group"
+            },
         )
         ActionBar(
             listOf(
@@ -148,13 +154,14 @@ private fun GroupsOrganiser(vm: TvViewModel, focusToken: Int, onOpen: (String) -
                         } else if (g in selected) selected.remove(g) else selected.add(g)
                     },
                     onLongClick = { moving = g },
-                    onMove = { delta ->
+                    onMove = { delta, dragging ->
                         val j = (index + delta).coerceIn(0, order.lastIndex)
                         if (j != index) {
                             order.add(j, order.removeAt(index))
-                            scope.launch { state.animateScrollToItem((j + 1 - 3).coerceAtLeast(0)) }
+                            if (!dragging) scope.launch { state.animateScrollToItem((j + 1 - 3).coerceAtLeast(0)) }
                         }
                     },
+                    onDragEnd = { vm.setGroupOrder(order.toList()) },
                     onOpen = { if (moving == null) onOpen(g) },
                 )
             }
@@ -178,6 +185,7 @@ private fun ChannelsOrganiser(vm: TvViewModel, group: String, onBack: () -> Unit
             title,
             when {
                 moving != null -> "▲ ▼ move · OK to put it here"
+                favourites && touchInput() -> "Tap to select · drag ⠿ to move a channel · Back to groups"
                 favourites -> "OK select · hold OK to move a channel · Back to groups"
                 else -> "OK select channels, then add them to Favourites or hide them · Back to groups"
             },
@@ -224,13 +232,14 @@ private fun ChannelsOrganiser(vm: TvViewModel, group: String, onBack: () -> Unit
                         } else if (id in selected) selected.remove(id) else selected.add(id)
                     },
                     onLongClick = if (favourites) ({ moving = id }) else null,
-                    onMove = { delta ->
+                    onMove = { delta, dragging ->
                         val j = (index + delta).coerceIn(0, order.lastIndex)
                         if (j != index) {
                             order.add(j, order.removeAt(index))
-                            scope.launch { state.animateScrollToItem((j - 3).coerceAtLeast(0)) }
+                            if (!dragging) scope.launch { state.animateScrollToItem((j - 3).coerceAtLeast(0)) }
                         }
                     },
+                    onDragEnd = if (favourites) ({ vm.setFavoriteOrder(order.toList()) }) else null,
                 )
             }
         }
@@ -291,10 +300,18 @@ private fun OrgRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
-    onMove: (Int) -> Unit = {},
+    /** Moves the row by ±1; dragging = moved with a finger (no auto-scroll). */
+    onMove: (Int, Boolean) -> Unit = { _, _ -> },
+    /** Reorderable rows get a drag handle on touch screens; called when the finger lets go. */
+    onDragEnd: (() -> Unit)? = null,
     onOpen: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val touch = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode == androidx.compose.ui.input.InputMode.Touch
+    val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 52.dp.toPx() }
+    // The drag gesture outlives recompositions (the row is keyed), so always call the latest lambdas.
+    val move by androidx.compose.runtime.rememberUpdatedState(onMove)
+    val dropped by androidx.compose.runtime.rememberUpdatedState(onDragEnd)
     Surface(
         onClick = onClick,
         onLongClick = onLongClick,
@@ -304,8 +321,8 @@ private fun OrgRow(
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> if (moving) { onMove(-1); true } else false
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (moving) { onMove(1); true } else false
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> if (moving) { onMove(-1, false); true } else false
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> if (moving) { onMove(1, false); true } else false
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> if (!moving && onOpen != null) { onOpen(); true } else false
                     else -> false
                 }
@@ -349,6 +366,29 @@ private fun OrgRow(
                 Spacer(Modifier.width(12.dp))
                 Text("›", fontSize = 20.sp, color = ink, modifier = Modifier.tap(onClick = onOpen).padding(horizontal = 6.dp))
             }
+            // Phones and tablets: drag the handle up or down to move the row (saved on release).
+            if (touch && onDragEnd != null) {
+                var dragged by remember { mutableStateOf(0f) }
+                Text(
+                    "⠿", fontSize = 22.sp, color = ink,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragStart = { dragged = 0f },
+                                onDragEnd = { dragged = 0f; dropped?.invoke() },
+                                onDragCancel = { dragged = 0f; dropped?.invoke() },
+                            ) { change, dy ->
+                                change.consume()
+                                dragged += dy
+                                // The row moves under the finger one place at a time.
+                                while (dragged > rowPx / 2) { move(1, true); dragged -= rowPx }
+                                while (dragged < -rowPx / 2) { move(-1, true); dragged += rowPx }
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }
@@ -367,3 +407,7 @@ private fun CheckBox(checked: Boolean, onLight: Boolean) {
         if (checked) Text("✓", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
     }
 }
+
+@Composable
+private fun touchInput(): Boolean =
+    androidx.compose.ui.platform.LocalInputModeManager.current.inputMode == androidx.compose.ui.input.InputMode.Touch

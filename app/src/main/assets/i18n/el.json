@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "URL οδηγού TV (XMLTV) – προαιρετικό, κενό = του παρόχου",
  "TV show categories": "Κατηγορίες σειρών",
  "Takes effect the next time Channelbox starts": "Ισχύει στην επόμενη εκκίνηση",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Πατήστε για επιλογή · σύρετε το ⠿ για μετακίνηση καναλιού · Πίσω στις ομάδες",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Πατήστε για επιλογή · › άνοιγμα καναλιών ομάδας · σύρετε το ⠿ για μετακίνηση ομάδας",
  "Test": "Δοκιμή",
  "That programme has already finished": "Το πρόγραμμα έχει ήδη τελειώσει",
  "The PINs didn't match – try again": "Τα PIN δεν ταιριάζουν – δοκιμάστε ξανά",

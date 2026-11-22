@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "TV rehberi (XMLTV) URL'si – isteğe bağlı, boş bırakılırsa sağlayıcınınki",
  "TV show categories": "Dizi kategorileri",
  "Takes effect the next time Channelbox starts": "Channelbox bir sonraki açılışta uygular",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Seçmek için dokunun · kanalı taşımak için ⠿ simgesini sürükleyin · Gruplara dön",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Seçmek için dokunun · › grubun kanallarını aç · grubu taşımak için ⠿ simgesini sürükleyin",
  "Test": "Test et",
  "That programme has already finished": "O program zaten bitti",
  "The PINs didn't match – try again": "PIN'ler eşleşmedi – tekrar deneyin",

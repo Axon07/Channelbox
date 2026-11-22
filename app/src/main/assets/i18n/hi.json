@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "टीवी गाइड (XMLTV) URL – वैकल्पिक, खाली छोड़ें तो प्रोवाइडर की",
  "TV show categories": "शो श्रेणियाँ",
  "Takes effect the next time Channelbox starts": "अगली बार Channelbox शुरू होने पर लागू होगा",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "चुनने के लिए टैप करें · चैनल खिसकाने के लिए ⠿ खींचें · समूहों पर वापस",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "चुनने के लिए टैप करें · › समूह के चैनल खोलें · समूह हटाने-बढ़ाने के लिए ⠿ खींचें",
  "Test": "जांचें",
  "That programme has already finished": "वह प्रोग्राम खत्म हो चुका है",
  "The PINs didn't match – try again": "PIN मेल नहीं खाए – फिर कोशिश करें",

@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "رابط دليل البرامج (XMLTV) – اختياري، اتركه فارغًا لاستخدام دليل المزود",
  "TV show categories": "فئات المسلسلات",
  "Takes effect the next time Channelbox starts": "يسري عند تشغيل Channelbox التالي",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "انقر للتحديد · اسحب ⠿ لنقل القناة · رجوع إلى المجموعات",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "انقر للتحديد · › افتح قنوات المجموعة · اسحب ⠿ لنقل المجموعة",
  "Test": "اختبار",
  "That programme has already finished": "انتهى هذا البرنامج بالفعل",
  "The PINs didn't match – try again": "الرمزان غير متطابقين – حاول مجددًا",

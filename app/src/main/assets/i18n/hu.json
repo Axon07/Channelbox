@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "Műsorújság (XMLTV) URL – nem kötelező, üresen a szolgáltatóé",
  "TV show categories": "Sorozatkategóriák",
  "Takes effect the next time Channelbox starts": "A következő indításkor lép életbe",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Koppintson a kijelöléshez · húzza a ⠿ jelet a csatorna áthelyezéséhez · Vissza a csoportokhoz",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Koppintson a kijelöléshez · › a csoport csatornái · húzza a ⠿ jelet a csoport áthelyezéséhez",
  "Test": "Teszt",
  "That programme has already finished": "Ez a műsor már véget ért",
  "The PINs didn't match – try again": "A PIN-ek nem egyeznek – próbálja újra",

@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "节目指南 (XMLTV) 网址 – 可选，留空则使用提供商的",
  "TV show categories": "剧集分类",
  "Takes effect the next time Channelbox starts": "下次启动 Channelbox 时生效",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "点按选择 · 拖动 ⠿ 移动频道 · 返回分组",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "点按选择 · › 打开分组的频道 · 拖动 ⠿ 移动分组",
  "Test": "测试",
  "That programme has already finished": "该节目已结束",
  "The PINs didn't match – try again": "两次 PIN 不一致 – 请重试",

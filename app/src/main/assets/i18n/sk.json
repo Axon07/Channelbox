@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "URL TV sprievodcu (XMLTV) – nepovinné, nechajte prázdne pre sprievodcu poskytovateľa",
  "TV show categories": "Kategórie seriálov",
  "Takes effect the next time Channelbox starts": "Prejaví sa pri ďalšom spustení Channelboxu",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Ťuknutím vyberte · potiahnutím ⠿ presuniete kanál · Späť na skupiny",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Ťuknutím vyberte · › otvorí kanály skupiny · potiahnutím ⠿ presuniete skupinu",
  "Test": "Vyskúšať",
  "That programme has already finished": "Táto relácia už skončila",
  "The PINs didn't match – try again": "PINy sa nezhodujú – skúste to znova",

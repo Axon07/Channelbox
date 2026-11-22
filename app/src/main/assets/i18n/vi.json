@@ -302,6 +302,8 @@
  "TV guide (XMLTV) URL – optional, leave empty to use the provider's": "URL lịch phát sóng (XMLTV) – tùy chọn, để trống để dùng của nhà cung cấp",
  "TV show categories": "Danh mục chương trình",
  "Takes effect the next time Channelbox starts": "Có hiệu lực ở lần mở Channelbox tiếp theo",
+ "Tap to select · drag ⠿ to move a channel · Back to groups": "Chạm để chọn · kéo ⠿ để di chuyển kênh · Quay lại nhóm",
+ "Tap to select · › open a group's channels · drag ⠿ to move a group": "Chạm để chọn · › mở kênh của nhóm · kéo ⠿ để di chuyển nhóm",
  "Test": "Kiểm tra",
  "That programme has already finished": "Chương trình đó đã kết thúc",
  "The PINs didn't match – try again": "Mã PIN không khớp – thử lại",
