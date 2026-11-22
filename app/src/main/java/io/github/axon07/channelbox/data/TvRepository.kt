@@ -5,6 +5,9 @@ import android.util.Xml
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.IOException
@@ -322,7 +326,8 @@ class TvRepository(
                         val playlist = XtreamClient(http).load(login)
                         playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
-                        guides = playlist.epgUrls
+                        // xmltv.php first; the server's own per-channel guide fills whatever it missed.
+                        guides = playlist.epgUrls + XtreamGuide.url(p.id)
                         if (loadVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
                             XtreamClient(http).loadVod(login, p.id, writer) { n ->
@@ -608,14 +613,17 @@ class TvRepository(
         replaced.clear()
         var count = 0
         // The portals' own guides go last: an XMLTV guide you added for a channel takes precedence.
-        val ordered = urls.sortedBy { StalkerLoader.isGuideUrl(it) }
+        val ordered = urls.sortedBy { StalkerLoader.isGuideUrl(it) || XtreamGuide.isUrl(it) }
         ordered.forEachIndexed { index, url ->
             _state.value = RefreshState.Running(background = true, message = 
                 if (urls.size > 1) "Loading TV guide ${index + 1} of ${urls.size}…" else "Loading TV guide…"
             )
             try {
-                count += if (StalkerLoader.isGuideUrl(url)) importStalkerGuide(StalkerLoader.guidePlaylist(url), channels, matcher, filled, keepFrom, keepTo)
-                else importOne(url, matcher, filled, keepFrom, keepTo)
+                count += when {
+                    StalkerLoader.isGuideUrl(url) -> importStalkerGuide(StalkerLoader.guidePlaylist(url), channels, matcher, filled, keepFrom, keepTo)
+                    XtreamGuide.isUrl(url) -> importXtreamGuide(XtreamGuide.playlist(url), channels, matcher, filled, keepFrom, keepTo)
+                    else -> importOne(url, matcher, filled, keepFrom, keepTo)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -634,6 +642,81 @@ class TvRepository(
         if (changed.isNotEmpty()) {
             db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }
         }
+        return count
+    }
+
+    /**
+     * An Xtream server's own guide (get_simple_data_table), for its channels that no XMLTV guide
+     * covered – xmltv.php is empty or broken on many servers, and doesn't list every channel.
+     * Channels without a guide id get one of their own, so the listings stick to them.
+     */
+    private suspend fun importXtreamGuide(
+        playlistId: String,
+        channels: List<ChannelEntity>,
+        matcher: EpgMatcher,
+        filled: MutableSet<String>,
+        keepFrom: Long,
+        keepTo: Long,
+    ): Int {
+        val p = settings.current().playlists.firstOrNull { it.id == playlistId && it.type == SourceType.XTREAM } ?: return 0
+        val login = XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass)
+        // guide id → stream id, one request per guide id, channels the XMLTV guide missed only.
+        val wanted = LinkedHashMap<String, String>()
+        val newIds = HashMap<String, String>() // channel → the guide id it gets
+        channels.asSequence().filter { it.playlistId == playlistId }.sortedBy { it.number }.forEach { ch ->
+            val stream = XtreamClient.Login.fromLiveUrl(ch.streamUrl)?.second ?: return@forEach
+            val key = matcher.assigned[ch.id] ?: ch.epgId ?: "xtream:$playlistId:$stream".also { newIds[ch.id] = it }
+            if (key !in filled && key !in wanted) wanted[key] = stream
+        }
+        if (wanted.isEmpty()) return 0
+        val client = XtreamClient(http)
+        var count = 0
+        val got = HashSet<String>()
+        val lock = Mutex()
+        val batch = ArrayList<ProgramEntity>(BATCH)
+        fun flush() {
+            if (batch.isEmpty()) return
+            db.runInTransaction {
+                val sql = db.openHelper.writableDatabase
+                batch.asSequence().map { it.epgId }.distinct().filter { replaced.add(it) }.forEach { id ->
+                    sql.execSQL("DELETE FROM programs WHERE epgId = ? AND rowId <= ?", arrayOf(id, oldProgramsUpTo))
+                }
+                db.programs().insertBlocking(batch)
+            }
+            count += batch.size
+            batch.clear()
+        }
+        suspend fun fetch(entries: List<Map.Entry<String, String>>) = coroutineScope {
+            val gate = Semaphore(6)
+            entries.map { (key, stream) ->
+                async(Dispatchers.IO) {
+                    val list = gate.withPermit {
+                        try {
+                            client.guide(login, stream)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
+                    val keep = list.filter { it.stop > keepFrom && it.start < keepTo }
+                    if (keep.isNotEmpty()) lock.withLock {
+                        got += key
+                        keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description) }
+                        if (batch.size >= BATCH) withContext(Dispatchers.IO) { flush() }
+                    }
+                }
+            }.forEach { it.await() }
+        }
+        val all = wanted.entries.toList().take(XTREAM_GUIDE_CHANNELS)
+        // A server without its own guide answers the first few with nothing: don't ask for the rest.
+        val probe = all.take(12)
+        fetch(probe)
+        if (got.isNotEmpty()) fetch(all.drop(probe.size))
+        lock.withLock { withContext(Dispatchers.IO) { flush() } }
+        filled += got
+        val stick = newIds.filterValues { it in got }
+        if (stick.isNotEmpty()) db.withTransaction { stick.forEach { (id, key) -> db.channels().setEpgId(id, key) } }
         return count
     }
 
@@ -733,6 +816,8 @@ class TvRepository(
     companion object {
         const val HOUR = 3_600_000L
         private const val BATCH = 2_000
+        /** The most channels asked one by one for an Xtream server's own guide. */
+        private const val XTREAM_GUIDE_CHANNELS = 3_000
         /** Free space inside the database worth rewriting the file for. */
         private const val COMPACT_MIN_BYTES = 64L * 1024 * 1024
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
@@ -741,3 +826,11 @@ class TvRepository(
 
 /** How often background reloads fetch movies & shows again. */
 private const val VOD_REFRESH_MS = 24 * 60 * 60 * 1000L
+
+/** Pseudo guide link for an Xtream server's own per-channel guide, imported after the XMLTV ones. */
+internal object XtreamGuide {
+    private const val SCHEME = "xtreamguide://"
+    fun url(playlistId: String) = SCHEME + playlistId
+    fun isUrl(url: String) = url.startsWith(SCHEME)
+    fun playlist(url: String) = url.removePrefix(SCHEME)
+}
