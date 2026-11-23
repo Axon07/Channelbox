@@ -638,6 +638,8 @@ class TvRepository(
         mutex.withLock {
             try {
                 settings.migrateGuides()
+                // Guides the playlists came with at their last reload are sources too.
+                settings.current().let { settings.syncProviderSources(it.playlistGuides, it.playlists) }
                 val s = settings.current()
                 val channels = db.channels().getAll()
                 if (channels.isEmpty()) return@withLock false
