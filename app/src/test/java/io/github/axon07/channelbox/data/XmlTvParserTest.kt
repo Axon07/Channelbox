@@ -48,4 +48,24 @@ class XmlTvParserTest {
         assertEquals(listOf("cbc.ca" to listOf("CBC", "CBC HD")), channels)
         assertEquals(listOf("The National"), titles)
     }
+
+    @Test
+    fun keepsWhatWasReadWhenTheFileBreaksAtTheEnd() {
+        // A merged guide with an extra </tv> at the end (seen in the wild).
+        val xml = """<?xml version="1.0"?><tv>
+            <channel id="a"><display-name>A</display-name></channel>
+            <programme start="20261116120000 +0000" stop="20261116130000 +0000" channel="a"><title>One</title></programme>
+            </tv>
+            </tv>"""
+        val parser = KXmlParser().apply { setInput(StringReader(xml)) }
+        val titles = ArrayList<String>()
+        XmlTvParser(parser).parse({ _, _ -> }, { _, _, _, title, _ -> titles += title })
+        assertEquals(listOf("One"), titles)
+    }
+
+    @Test(expected = java.io.IOException::class)
+    fun notAGuideAtAllIsAnError() {
+        val parser = KXmlParser().apply { setInput(StringReader("</tv>")) }
+        XmlTvParser(parser).parse({ _, _ -> }, { _, _, _, _, _ -> })
+    }
 }
