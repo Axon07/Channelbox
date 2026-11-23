@@ -45,10 +45,15 @@ class EpgScopeTest {
 
     @Test
     fun guideSourcesSurviveTheJsonRoundTrip() {
-        val src = EpgSource(id = "g1", name = "Local", url = "https://example.com/epg.xml.gz", enabled = false, shiftMinutes = -90, playlists = listOf("a", "b"))
+        val src = EpgSource(id = "g1", name = "Local", url = "https://example.com/epg.xml.gz", enabled = false, shiftMinutes = -90, playlists = listOf("a", "b"), provider = "a")
         assertEquals(src, EpgSource.fromJson(src.toJson()))
         assertTrue(src.usedBy("a"))
         assertFalse(src.usedBy("c"))
-        assertTrue(src.copy(playlists = emptyList()).usedBy("c"))
+        // A default source is used by every playlist.
+        assertTrue(src.copy(isDefault = true).usedBy("c"))
+        assertFalse(src.copy(playlists = emptyList()).usedBy("c"))
+        // Saved before "Default source" existed: no playlists meant every playlist.
+        val old = kotlinx.serialization.json.JsonObject(src.copy(playlists = emptyList()).toJson().filterKeys { it != "default" })
+        assertTrue(EpgSource.fromJson(old)!!.isDefault)
     }
 }
