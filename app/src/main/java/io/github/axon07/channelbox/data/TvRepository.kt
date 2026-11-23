@@ -239,11 +239,11 @@ class TvRepository(
      * Reloads every playlist, then the guide. [onChannels] runs as soon as the channels (and movies &
      * shows) are saved, so the app can go to the guide while the TV guide keeps loading behind it.
      */
-    suspend fun refresh(onChannels: suspend () -> Unit = {}, forceVod: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+    suspend fun refresh(onChannels: suspend () -> Unit = {}, forceVod: Boolean = false, only: String? = null): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             vodWritten = false
             try {
-                refreshLocked(onChannels, forceVod)
+                refreshLocked(onChannels, forceVod, only)
             } finally {
                 // Movies & shows lists re-read only when they were actually reloaded.
                 if (vodWritten) vodChanged()
@@ -256,7 +256,11 @@ class TvRepository(
 
     // Runs on an IO thread: Room's blocking calls (movies & shows are written while streaming) aren't
     // allowed on the main thread.
-    private suspend fun refreshLocked(onChannels: suspend () -> Unit, forceVod: Boolean): Boolean {
+    /**
+     * [only]: load just this playlist (one you added or edited) – the others keep their channels,
+     * movies & shows and numbers as they are, and only its guides are loaded.
+     */
+    private suspend fun refreshLocked(onChannels: suspend () -> Unit, forceVod: Boolean, only: String? = null): Boolean {
         return try {
             settings.migrateGuides()
             val s = settings.current()
@@ -287,8 +291,21 @@ class TvRepository(
             val discovered = HashMap<String, List<String>>() // playlist → the guide links it came with
             val failures = ArrayList<String>()
             val errors = HashMap<String, String>()
+            val partial = only != null && sources.any { it.id == only } && db.channels().any()
+            if (partial) _playlistErrors.value.forEach { (id, e) -> if (id != only) errors[id] = e }
             sources.forEachIndexed { index, p ->
-                val label = if (sources.size > 1) "${p.displayName} (${index + 1} of ${sources.size})" else "channels"
+                if (partial && p.id != only) {
+                    // Not the one being added or edited: keep what it has, in its place in the numbering
+                    // (one that has nothing saved yet is loaded after all).
+                    val existing = db.channels().forPlaylist(p.id)
+                    if (existing.isNotEmpty()) {
+                        existing.forEach { lineup.addExisting(it.copy(playlistId = p.id)) }
+                        s.playlistGuides[p.id]?.let { discovered[p.id] = it }
+                        return@forEachIndexed
+                    }
+                }
+                val label = if (sources.size > 1 && !partial) "${p.displayName} (${index + 1} of ${sources.size})"
+                else if (sources.size > 1) p.displayName else "channels"
                 _state.value = RefreshState.Running("Loading $label…")
                 val start = lineup.size
                 // Wanted but not due: last time's movies & shows stay as they are (none saved yet: load them).
@@ -456,7 +473,7 @@ class TvRepository(
             // Channels and movies & shows are in: usable now, even if the guide takes a while (or the
             // app is closed before it finishes – it won't redo everything on the next start).
             settings.setLastRefresh(System.currentTimeMillis())
-            if (vodDue) settings.setLastVodRefresh(System.currentTimeMillis())
+            if (vodDue && !partial) settings.setLastVodRefresh(System.currentTimeMillis())
             if (vodWritten) vodChanged()
             runCatching { onChannels() }
 
@@ -467,7 +484,13 @@ class TvRepository(
             // "Update on playlists change" off: the guide waits for its own update (unless there's none yet).
             val hasGuide = db.openHelper.readableDatabase.query("SELECT EXISTS(SELECT 1 FROM programs)").use { it.moveToFirst() && it.getInt(0) == 1 }
             if (now.guideWithPlaylists || !hasGuide) {
-                val plan = guidePlan(now)
+                // Adding or editing one playlist: only the guides it uses, only for its channels.
+                val plan = guidePlan(now).let { all ->
+                    if (!partial) all
+                    else all.mapNotNull { spec ->
+                        if (spec.playlists == null || only in spec.playlists) spec.copy(playlists = setOf(only!!)) else null
+                    }
+                }
                 if (plan.isNotEmpty()) {
                     programmes = importEpg(plan, entities, lineup.tvgNames)
                 }
@@ -586,6 +609,11 @@ class TvRepository(
                 tvgNames.remove(c.id)
             }
             next = 1
+        }
+
+        /** A channel kept from last time (a playlist that isn't being reloaded), keeping its number if free. */
+        fun addExisting(ch: ChannelEntity) {
+            if (seen.add(ch.id)) channels += ch.copy(number = number(ch.number))
         }
 
         /** Adds the last good channels of playlists that failed this time. */
@@ -719,7 +747,7 @@ class TvRepository(
         }
         matcher.scope = null
         // Shown beside each source in Settings → TV guide.
-        runCatching { settings.setEpgStatus(status) }
+        runCatching { settings.setEpgStatus(settings.current().epgStatus + status) }
 
         // Channels that got new listings had their old ones swapped out above. Channels the new
         // guide didn't cover (or a download that broke part-way) keep their old listings; only the
@@ -884,6 +912,8 @@ class TvRepository(
 
         http.download(url) { input ->
             val parser = Xml.newPullParser()
+            // Forgiving about small mistakes in hand-made or merged guide files.
+            runCatching { parser.setFeature("http://xmlpull.org/v1/doc/features.html#relaxed", true) }
             parser.setInput(maybeGunzip(input), null)
             XmlTvParser(parser).parse(
                 onChannel = { id, names -> matcher.onChannel(id, names) },

@@ -1843,11 +1843,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         e.message ?: e.javaClass.simpleName
     }
 
-    private fun reload(change: suspend () -> Unit) {
+    /** [only]: reload just that playlist (added or edited); the others stay as they are. */
+    private fun reload(only: String? = null, change: suspend () -> Unit) {
         reloadJob?.cancel()
         reloadJob = viewModelScope.launch {
             change()
-            reloadAfterSourceChange()
+            reloadAfterSourceChange(only)
         }
     }
 
@@ -1855,7 +1856,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshNow() = reload { }
 
-    fun savePlaylist(p: Playlist) = reload { c.settings.savePlaylist(p) }
+    fun savePlaylist(p: Playlist) = reload(only = p.id) { c.settings.savePlaylist(p) }
 
     fun removePlaylist(id: String) = reload {
         // Finish the clean-up even if another change (e.g. adding a playlist) starts a new reload.
@@ -1870,11 +1871,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { repo.clearSavedData() }
     }
 
-    fun setPlaylistEnabled(id: String, on: Boolean) = reload { c.settings.setPlaylistEnabled(id, on) }
+    fun setPlaylistEnabled(id: String, on: Boolean) = reload(only = if (on) id else null) { c.settings.setPlaylistEnabled(id, on) }
 
     fun movePlaylist(id: String, delta: Int) = reload { c.settings.movePlaylist(id, delta) }
 
-    private suspend fun reloadAfterSourceChange() {
+    private suspend fun reloadAfterSourceChange(only: String? = null) {
         // Runs once the channels are saved – the guide may still be loading.
         val channelsReady: suspend () -> Unit = {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -1889,7 +1890,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 ensurePlaying()
             }
         }
-        if (repo.refresh(channelsReady, forceVod = true)) ensurePlaying()
+        if (repo.refresh(channelsReady, forceVod = true, only = only)) ensurePlaying()
     }
 
     fun setStartOnBoot(on: Boolean) = viewModelScope.launch { c.settings.setStartOnBoot(on) }

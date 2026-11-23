@@ -18,16 +18,31 @@ class XmlTvParser(private val parser: XmlPullParser) {
         fun onProgramme(channelId: String, start: Long, stop: Long, title: String, description: String?)
     }
 
+    /** Entries read so far (a guide that breaks part-way keeps what came before the mistake). */
+    var read = 0
+        private set
+
+    /**
+     * Reads the whole guide. A mistake in the file (e.g. an extra `</tv>` at the end of a merged
+     * guide, or a download cut short) ends the reading but keeps everything before it; it's only
+     * an error when nothing could be read at all.
+     */
     fun parse(onChannel: ChannelCallback, onProgramme: ProgrammeCallback) {
-        var event = parser.eventType
-        while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG) {
-                when (parser.name) {
-                    "channel" -> readChannel(onChannel)
-                    "programme" -> readProgramme(onProgramme)
+        try {
+            var event = parser.eventType
+            while (event != XmlPullParser.END_DOCUMENT) {
+                if (event == XmlPullParser.START_TAG) {
+                    when (parser.name) {
+                        "channel" -> { readChannel(onChannel); read++ }
+                        "programme" -> { readProgramme(onProgramme); read++ }
+                    }
                 }
+                event = parser.next()
             }
-            event = parser.next()
+        } catch (e: org.xmlpull.v1.XmlPullParserException) {
+            if (read == 0) throw java.io.IOException("Not a valid XMLTV guide (error on line ${parser.lineNumber})")
+        } catch (e: java.io.EOFException) {
+            if (read == 0) throw e
         }
     }
 
