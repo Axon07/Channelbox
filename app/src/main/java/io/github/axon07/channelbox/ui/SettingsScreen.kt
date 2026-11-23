@@ -541,7 +541,7 @@ private fun EpgSettings(
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text.uppercase(), fontSize = 11.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold,
+        tr(text).uppercase(), fontSize = 11.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold,
         color = Color(0xFF7D8A9A), modifier = Modifier.padding(start = 18.dp, top = 16.dp, bottom = 4.dp),
     )
 }
@@ -1789,7 +1789,7 @@ private fun InfoCard(title: String, text: String) {
             .background(Rows.Rest)
             .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
-        Text(title.uppercase(), fontSize = 10.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF7D8A9A))
+        Text(tr(title).uppercase(), fontSize = 10.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF7D8A9A))
         Text(text, fontSize = 14.sp, color = Palette.Text, modifier = Modifier.padding(top = 3.dp))
     }
 }
