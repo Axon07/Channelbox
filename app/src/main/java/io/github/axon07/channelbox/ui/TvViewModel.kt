@@ -1032,6 +1032,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun networkNeedsRestart(now: NetworkSettings): Boolean {
         val start = c.startupNetwork
         return now.dns != start.dns || now.dnsCustomUrl != start.dnsCustomUrl ||
+            now.dnsControlDId != start.dnsControlDId || now.dnsBackup != start.dnsBackup || now.dnsBackupUrl != start.dnsBackupUrl ||
             now.proxyType != start.proxyType || now.proxyHost != start.proxyHost || now.proxyPort != start.proxyPort ||
             now.proxyUser != start.proxyUser || now.proxyPass != start.proxyPass
     }

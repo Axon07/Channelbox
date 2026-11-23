@@ -111,7 +111,7 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
 
 /** Sub-pages with text fields, opened from a setting card. */
 private enum class Page(val title: String) {
-    VPN("WireGuard VPN"), PROXY("Proxy"), DNS("Encrypted DNS"), USER_AGENT("User agent"),
+    VPN("WireGuard VPN"), PROXY("Proxy"), DNS("Encrypted DNS"), DNS_BACKUP("Backup DNS"), USER_AGENT("User agent"),
     SMB("Network share (SMB)"), WEBDAV("WebDAV folder"), JELLYFIN("Jellyfin"),
     // Pick-one lists
     SCALE("Picture size"), QUALITY("Maximum quality"), BUFFER("Buffer size"), REFRESH("Reload automatically"),
@@ -256,7 +256,7 @@ fun SettingsScreen(
                     Page.EPG_SOURCE -> EpgSourcePage(settings, vm, epgSourceId, epgForPlaylist, onClose = { closePage() })
                     else -> SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { p ->
                         // Playlist → TV guide sources comes back to the playlist.
-                        if (p == Page.PLAYLIST_EPG) pageBack = current
+                        if (p == Page.PLAYLIST_EPG || p == Page.DNS_BACKUP) pageBack = current
                         openPage(p)
                     }, playlistId = playlistId, onEditSource = onEditSource)
                 }
@@ -1166,6 +1166,7 @@ private fun SubPage(
         }
         Page.DNS -> {
             var url by remember { mutableStateOf(net.dnsCustomUrl) }
+            var profile by remember { mutableStateOf(net.dnsControlDId) }
             PageHeader(
                 "Encrypted DNS",
                 "Looks up server names over an encrypted connection, so your ISP can't block or redirect them. Restart to apply.",
@@ -1174,14 +1175,25 @@ private fun SubPage(
                 options = DNS_LABELS.toList(),
                 selected = net.dns,
                 onSelect = { key ->
-                    if (key == "custom") {
-                        vm.saveNetwork(net.copy(dns = "custom"))
-                    } else {
-                        vm.saveNetwork(net.copy(dns = key))
-                        onClose()
-                    }
+                    vm.saveNetwork(net.copy(dns = key))
+                    // These need an address typed below.
+                    if (key != "custom" && key != "controld_profile") onClose()
                 },
             )
+            if (net.dns == "controld_profile") {
+                Spacer(Modifier.height(12.dp))
+                TvTextField("Control D resolver ID or DNS-over-HTTPS link (e.g. abc123xyz)", profile, { profile = it }, keyboardType = KeyboardType.Uri)
+                Spacer(Modifier.height(10.dp))
+                ButtonRow(
+                    "Save" to {
+                        if (profile.isBlank()) toast("Type your resolver ID from the Control D dashboard (Endpoints)")
+                        else {
+                            vm.saveNetwork(net.copy(dns = "controld_profile", dnsControlDId = profile))
+                            onClose()
+                        }
+                    },
+                )
+            }
             if (net.dns == "custom") {
                 Spacer(Modifier.height(12.dp))
                 TvTextField("DNS-over-HTTPS address (e.g. https://dns.nextdns.io/abc123)", url, { url = it }, keyboardType = KeyboardType.Uri)
@@ -1192,6 +1204,44 @@ private fun SubPage(
                             toast("It needs to start with https://")
                         } else {
                             vm.saveNetwork(net.copy(dns = "custom", dnsCustomUrl = url))
+                            onClose()
+                        }
+                    },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            SettingCard(
+                title = "Backup DNS",
+                description = "Used when the DNS above can't answer, before your ISP's",
+                value = if (net.dnsBackup == "none") "None" else DNS_LABELS[net.dnsBackup] ?: "None",
+                onClick = { onOpen(Page.DNS_BACKUP) },
+            )
+        }
+        Page.DNS_BACKUP -> {
+            var url by remember { mutableStateOf(net.dnsBackupUrl) }
+            PageHeader(
+                "Backup DNS",
+                "A second encrypted DNS, asked when the main one can't answer – e.g. your own DNS with Control D behind it. Restart to apply.",
+            )
+            ChoiceList(
+                options = listOf("none" to "None") + DNS_LABELS.toList().filter { it.first != "system" && it.first != net.dns },
+                selected = net.dnsBackup,
+                onSelect = { key ->
+                    vm.saveNetwork(net.copy(dnsBackup = key))
+                    if (key == "controld_profile" && net.dnsControlDId.isBlank()) toast("Set your Control D resolver ID under Encrypted DNS first")
+                    if (key != "custom") onClose()
+                },
+            )
+            if (net.dnsBackup == "custom") {
+                Spacer(Modifier.height(12.dp))
+                TvTextField("DNS-over-HTTPS address (e.g. https://dns.nextdns.io/abc123)", url, { url = it }, keyboardType = KeyboardType.Uri)
+                Spacer(Modifier.height(10.dp))
+                ButtonRow(
+                    "Save" to {
+                        if (!url.trim().startsWith("https://")) {
+                            toast("It needs to start with https://")
+                        } else {
+                            vm.saveNetwork(net.copy(dnsBackup = "custom", dnsBackupUrl = url))
                             onClose()
                         }
                     },

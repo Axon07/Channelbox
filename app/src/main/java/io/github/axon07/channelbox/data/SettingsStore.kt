@@ -172,6 +172,11 @@ data class NetworkSettings(
     /** system, cloudflare, google, quad9, adguard, custom */
     val dns: String = "system",
     val dnsCustomUrl: String = "",
+    /** Your Control D resolver id (or its full DNS-over-HTTPS link), for "controld_profile". */
+    val dnsControlDId: String = "",
+    /** Backup DNS used when the main one can't answer (before the system DNS): "none" or a [dns] choice. */
+    val dnsBackup: String = "none",
+    val dnsBackupUrl: String = "",
     /** none, http, socks5 */
     val proxyType: String = "none",
     val proxyHost: String = "",
@@ -333,6 +338,9 @@ class SettingsStore(private val context: Context) {
         val PIN_SETTINGS = booleanPreferencesKey("pin_settings")
         val DNS = stringPreferencesKey("net_dns")
         val DNS_URL = stringPreferencesKey("net_dns_url")
+        val DNS_CONTROLD = stringPreferencesKey("net_dns_controld")
+        val DNS_BACKUP = stringPreferencesKey("net_dns_backup")
+        val DNS_BACKUP_URL = stringPreferencesKey("net_dns_backup_url")
         val PROXY_TYPE = stringPreferencesKey("net_proxy_type")
         val PROXY_HOST = stringPreferencesKey("net_proxy_host")
         val PROXY_PORT = intPreferencesKey("net_proxy_port")
@@ -432,6 +440,9 @@ class SettingsStore(private val context: Context) {
         network = NetworkSettings(
             dns = this[Keys.DNS] ?: "system",
             dnsCustomUrl = this[Keys.DNS_URL].orEmpty(),
+            dnsControlDId = this[Keys.DNS_CONTROLD].orEmpty(),
+            dnsBackup = this[Keys.DNS_BACKUP] ?: "none",
+            dnsBackupUrl = this[Keys.DNS_BACKUP_URL].orEmpty(),
             proxyType = this[Keys.PROXY_TYPE] ?: "none",
             proxyHost = this[Keys.PROXY_HOST].orEmpty(),
             proxyPort = this[Keys.PROXY_PORT] ?: 0,
@@ -804,6 +815,9 @@ class SettingsStore(private val context: Context) {
     suspend fun saveNetwork(n: NetworkSettings) = context.dataStore.edit {
         it[Keys.DNS] = n.dns
         it[Keys.DNS_URL] = n.dnsCustomUrl.trim()
+        it[Keys.DNS_CONTROLD] = n.dnsControlDId.trim()
+        it[Keys.DNS_BACKUP] = n.dnsBackup
+        it[Keys.DNS_BACKUP_URL] = n.dnsBackupUrl.trim()
         it[Keys.PROXY_TYPE] = n.proxyType
         it[Keys.PROXY_HOST] = n.proxyHost.trim()
         it[Keys.PROXY_PORT] = n.proxyPort

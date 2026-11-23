@@ -53,15 +53,47 @@ val DNS_PRESETS = linkedMapOf(
     "google" to ("https://dns.google/dns-query" to listOf("8.8.8.8", "8.8.4.4")),
     "quad9" to ("https://dns.quad9.net/dns-query" to listOf("9.9.9.9", "149.112.112.112")),
     "adguard" to ("https://dns.adguard-dns.com/dns-query" to listOf("94.140.14.14", "94.140.15.15")),
+    // Control D's free resolvers (no account, no logging).
+    "controld" to ("https://freedns.controld.com/p0" to CONTROLD_FREE_IPS),
+    "controld_malware" to ("https://freedns.controld.com/p1" to CONTROLD_FREE_IPS),
+    "controld_ads" to ("https://freedns.controld.com/p2" to CONTROLD_FREE_IPS),
+    "controld_social" to ("https://freedns.controld.com/p3" to CONTROLD_FREE_IPS),
+    // Your own Control D profile (its custom rules): https://dns.controld.com/<resolver id>.
+    "controld_profile" to ("" to CONTROLD_PROFILE_IPS),
     "custom" to ("" to emptyList()),
 )
 
-val DNS_LABELS = mapOf(
+private val CONTROLD_FREE_IPS get() = listOf("76.76.2.11", "76.76.10.11")
+private val CONTROLD_PROFILE_IPS get() = listOf("76.76.2.22", "76.76.10.22")
+
+/**
+ * The DNS-over-HTTPS address for [key]: a preset's, your Control D profile's (from its resolver id
+ * or full link) or your custom one. Null for "system"/"none" or a missing address.
+ */
+fun dohAddress(key: String, customUrl: String, controlDId: String): String? = when (key) {
+    "system", "none" -> null
+    "custom" -> customUrl.trim().takeIf { it.startsWith("https://") }
+    "controld_profile" -> controlDId.trim().let { id ->
+        when {
+            id.isEmpty() -> null
+            id.startsWith("https://") -> id
+            else -> "https://dns.controld.com/" + id.removePrefix("dns.controld.com/").trim('/')
+        }
+    }
+    else -> DNS_PRESETS[key]?.first?.takeIf { it.startsWith("https://") }
+}
+
+val DNS_LABELS = linkedMapOf(
     "system" to "System (your ISP)",
     "cloudflare" to "Cloudflare 1.1.1.1",
     "google" to "Google 8.8.8.8",
     "quad9" to "Quad9",
     "adguard" to "AdGuard",
+    "controld" to "Control D – unfiltered",
+    "controld_malware" to "Control D – blocks malware",
+    "controld_ads" to "Control D – blocks malware & ads",
+    "controld_social" to "Control D – blocks malware, ads & social",
+    "controld_profile" to "Control D – my own profile",
     "custom" to "Custom",
 )
 
@@ -104,29 +136,37 @@ fun createHttpClient(net: NetworkSettings = NetworkSettings()): OkHttpClient {
         }
     }
 
-    // Encrypted DNS (DNS-over-HTTPS), falling back to the system DNS if it's unreachable.
-    if (net.dns != "system") {
-        val preset = DNS_PRESETS[net.dns]
-        val url = (if (net.dns == "custom") net.dnsCustomUrl else preset?.first).orEmpty().toHttpUrlOrNull()
-        if (url != null) {
-            val bootstrap = preset?.second.orEmpty().mapNotNull { runCatching { InetAddress.getByName(it) }.getOrNull() }
-            val doh = DnsOverHttps.Builder()
-                .client(OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build())
-                .url(url)
-                .apply { if (bootstrap.isNotEmpty()) bootstrapDnsHosts(bootstrap) }
-                .includeIPv6(false)
-                .build()
-            builder.dns(object : Dns {
-                override fun lookup(hostname: String): List<InetAddress> =
+    // Encrypted DNS (DNS-over-HTTPS): the main one, then the backup one, then the system DNS.
+    val chain = listOfNotNull(
+        doh(net.dns, dohAddress(net.dns, net.dnsCustomUrl, net.dnsControlDId)),
+        doh(net.dnsBackup, dohAddress(net.dnsBackup, net.dnsBackupUrl, net.dnsControlDId)),
+    )
+    if (chain.isNotEmpty()) {
+        builder.dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                for (dns in chain) {
                     try {
-                        doh.lookup(hostname)
-                    } catch (e: Exception) {
-                        Dns.SYSTEM.lookup(hostname)
+                        return dns.lookup(hostname)
+                    } catch (_: Exception) {
+                        // Unreachable or no answer: try the next one.
                     }
-            })
-        }
+                }
+                return Dns.SYSTEM.lookup(hostname)
+            }
+        })
     }
     return builder.build()
+}
+
+private fun doh(key: String, address: String?): Dns? {
+    val url = address?.toHttpUrlOrNull() ?: return null
+    val bootstrap = DNS_PRESETS[key]?.second.orEmpty().mapNotNull { runCatching { InetAddress.getByName(it) }.getOrNull() }
+    return DnsOverHttps.Builder()
+        .client(OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build())
+        .url(url)
+        .apply { if (bootstrap.isNotEmpty()) bootstrapDnsHosts(bootstrap) }
+        .includeIPv6(false)
+        .build()
 }
 
 /**
