@@ -1006,6 +1006,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGuideOnStart(on: Boolean) = viewModelScope.launch { c.settings.setGuideOnStart(on) }
 
+    fun setGuideWithPlaylists(on: Boolean) = viewModelScope.launch { c.settings.setGuideWithPlaylists(on) }
+
+    fun setStoreDescriptions(on: Boolean) = viewModelScope.launch { c.settings.setStoreDescriptions(on) }
+
+    /** Playlist → TV guide sources: tick or untick a source for this playlist. */
+    fun assignEpgSource(sourceId: String, playlistId: String, on: Boolean) = viewModelScope.launch {
+        c.settings.assignEpgSource(sourceId, playlistId, on)
+        updateGuideNow()
+    }
+
     fun setGuidePastHours(hours: Int) = viewModelScope.launch { c.settings.setGuidePastHours(hours) }
 
     fun clearGuide() = viewModelScope.launch {

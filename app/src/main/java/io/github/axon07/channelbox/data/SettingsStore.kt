@@ -97,9 +97,10 @@ data class Playlist(
 }
 
 /**
- * A TV guide (XMLTV) source added in Settings → TV guide, like TiviMate's EPG sources. Sources are
- * used in list order (an earlier one wins for a channel), for the [playlists] they're attached to
- * (empty = every playlist). [shiftMinutes] moves all of its programmes (wrong time zone in the file).
+ * A TV guide (XMLTV) source, like TiviMate's EPG sources: ones you add, and the guide each playlist
+ * comes with (added for you, [provider] = that playlist). Sources are used in list order (an
+ * earlier one wins for a channel) for the [playlists] they're assigned to in each playlist's
+ * settings – or for every playlist when [isDefault]. [shiftMinutes] moves all of its programmes.
  */
 data class EpgSource(
     val id: String,
@@ -108,19 +109,25 @@ data class EpgSource(
     val enabled: Boolean = true,
     val shiftMinutes: Int = 0,
     val playlists: List<String> = emptyList(),
+    /** "Default source": used for every playlist. */
+    val isDefault: Boolean = false,
+    /** Playlist whose own guide this is (added automatically), or null for one you added. */
+    val provider: String? = null,
 ) {
     val displayName: String
         get() = name.trim().ifEmpty {
             runCatching { java.net.URI(url.trim()).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotBlank() } ?: "TV guide"
         }
 
-    fun usedBy(playlistId: String) = playlists.isEmpty() || playlistId in playlists
+    fun usedBy(playlistId: String) = isDefault || playlistId in playlists
 
     fun toJson() = JsonObject(
         mapOf(
             "id" to JsonPrimitive(id), "name" to JsonPrimitive(name), "url" to JsonPrimitive(url),
             "enabled" to JsonPrimitive(enabled), "shift" to JsonPrimitive(shiftMinutes),
             "playlists" to JsonArray(playlists.map { JsonPrimitive(it) }),
+            "default" to JsonPrimitive(isDefault),
+            "provider" to JsonPrimitive(provider.orEmpty()),
         )
     )
 
@@ -130,11 +137,15 @@ data class EpgSource(
         fun fromJson(o: JsonObject): EpgSource? {
             fun str(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
             val url = str("url").ifBlank { return null }
+            val playlists = (o["playlists"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList()
             return EpgSource(
                 id = str("id").ifEmpty { newId() }, name = str("name"), url = url,
                 enabled = (o["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
                 shiftMinutes = str("shift").toIntOrNull() ?: 0,
-                playlists = (o["playlists"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList(),
+                playlists = playlists,
+                // Saved before "Default source" existed: no playlists meant every playlist.
+                isDefault = (o["default"] as? JsonPrimitive)?.booleanOrNull ?: playlists.isEmpty(),
+                provider = str("provider").ifEmpty { null },
             )
         }
     }
@@ -143,7 +154,7 @@ data class EpgSource(
 /** How a guide link did at the last update: when, how many programmes and channels, or the error. */
 data class EpgStatus(val updated: Long, val programmes: Int, val channels: Int, val error: String? = null)
 
-/** Choices for "Update interval" in Settings → TV guide; 0 = together with the playlists. */
+/** Choices for "Update interval" in Settings → TV guide; 0 = off (only on the other triggers). */
 val GUIDE_REFRESH_CHOICES = listOf(0, 6, 12, 24, 48)
 
 /** Choices for "Keep past programmes" (hours). */
@@ -243,6 +254,10 @@ data class AppSettings(
     val guideRefreshHours: Int = 0,
     /** Update the guide every time the app starts. */
     val guideOnStart: Boolean = false,
+    /** Update the guide whenever the playlists reload ("Update on playlists change"). */
+    val guideWithPlaylists: Boolean = true,
+    /** Keep programme descriptions (off = smaller, faster guide). */
+    val storeDescriptions: Boolean = true,
     /** Hours of past programmes to keep (catch-up shows them). */
     val guidePastHours: Int = 6,
     val lastGuideRefresh: Long = 0L,
@@ -351,6 +366,9 @@ class SettingsStore(private val context: Context) {
         val EPG_STATUS = stringPreferencesKey("epg_status")
         val GUIDE_REFRESH = intPreferencesKey("guide_refresh_hours")
         val GUIDE_ON_START = booleanPreferencesKey("guide_on_start")
+        val GUIDE_WITH_PLAYLISTS = booleanPreferencesKey("guide_with_playlists")
+        val STORE_DESCRIPTIONS = booleanPreferencesKey("guide_descriptions")
+        val EPG_DISMISSED = stringPreferencesKey("epg_dismissed")
         val GUIDE_PAST = intPreferencesKey("guide_past_hours")
         val LAST_GUIDE_REFRESH = longPreferencesKey("last_guide_refresh")
         val LAST_CHANNEL_SNAPSHOT = stringPreferencesKey("last_channel_snapshot")
@@ -405,6 +423,8 @@ class SettingsStore(private val context: Context) {
         epgStatus = epgStatus(),
         guideRefreshHours = this[Keys.GUIDE_REFRESH] ?: 0,
         guideOnStart = this[Keys.GUIDE_ON_START] ?: false,
+        guideWithPlaylists = this[Keys.GUIDE_WITH_PLAYLISTS] ?: true,
+        storeDescriptions = this[Keys.STORE_DESCRIPTIONS] ?: true,
         guidePastHours = this[Keys.GUIDE_PAST] ?: 6,
         lastGuideRefresh = this[Keys.LAST_GUIDE_REFRESH] ?: 0L,
         pinHash = this[Keys.PIN_HASH],
@@ -514,7 +534,17 @@ class SettingsStore(private val context: Context) {
         if (i >= 0) list[i] = clean else list += clean
     }
 
-    suspend fun removeEpgSource(id: String) = editEpgSources { list -> list.removeAll { it.id == id } }
+    suspend fun removeEpgSource(id: String) = context.dataStore.edit { prefs ->
+        val list = prefs.epgSources().toMutableList()
+        val gone = list.firstOrNull { it.id == id } ?: return@edit
+        list.remove(gone)
+        list.store(prefs)
+        // A playlist's own guide you deleted isn't added back at the next reload.
+        if (gone.provider != null) {
+            val old = prefs[Keys.EPG_DISMISSED].orEmpty()
+            prefs[Keys.EPG_DISMISSED] = (old.split('\n').filter { it.isNotBlank() } + gone.url.trim()).distinct().joinToString("\n")
+        }
+    }
 
     /** Moves a source up (-1) or down (+1): earlier sources win when two have the same channel. */
     suspend fun moveEpgSource(id: String, delta: Int) = editEpgSources { list ->
@@ -538,6 +568,41 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setGuideRefreshHours(hours: Int) = context.dataStore.edit { it[Keys.GUIDE_REFRESH] = hours }
     suspend fun setGuideOnStart(on: Boolean) = context.dataStore.edit { it[Keys.GUIDE_ON_START] = on }
+    suspend fun setGuideWithPlaylists(on: Boolean) = context.dataStore.edit { it[Keys.GUIDE_WITH_PLAYLISTS] = on }
+    suspend fun setStoreDescriptions(on: Boolean) = context.dataStore.edit { it[Keys.STORE_DESCRIPTIONS] = on }
+
+    /** Assigns a source to a playlist or takes it off (Playlist → TV guide sources). */
+    suspend fun assignEpgSource(sourceId: String, playlistId: String, on: Boolean) = editEpgSources { list ->
+        val i = list.indexOfFirst { it.id == sourceId }
+        if (i >= 0) {
+            val src = list[i]
+            list[i] = src.copy(playlists = if (on) (src.playlists + playlistId).distinct() else src.playlists - playlistId)
+        }
+    }
+
+    /**
+     * The guides the playlists came with become sources, assigned to their playlist – like TiviMate
+     * adds a playlist's EPG. Ones you deleted stay deleted; a playlist's old guide link (e.g. after
+     * its login changed) is replaced.
+     */
+    suspend fun syncProviderSources(discovered: Map<String, List<String>>, playlists: List<Playlist>) = context.dataStore.edit { prefs ->
+        val list = prefs.epgSources().toMutableList()
+        val dismissed = prefs[Keys.EPG_DISMISSED]?.split('\n')?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        val names = playlists.associate { it.id to it.displayName }
+        for ((pid, urls) in discovered) {
+            val real = urls.filter { !StalkerLoader.isGuideUrl(it) && !XtreamGuide.isUrl(it) }.map { it.trim() }
+            list.removeAll { it.provider == pid && it.url.trim() !in real }
+            real.forEach { url ->
+                if (url in dismissed || list.any { it.url.trim().equals(url, ignoreCase = true) }) return@forEach
+                val host = runCatching { java.net.URI(url).host }.getOrNull()?.removePrefix("www.")
+                list += EpgSource(
+                    id = EpgSource.newId(), name = host ?: names[pid].orEmpty(), url = url,
+                    playlists = listOf(pid), provider = pid,
+                )
+            }
+        }
+        list.store(prefs)
+    }
     suspend fun setGuidePastHours(hours: Int) = context.dataStore.edit { it[Keys.GUIDE_PAST] = hours }
     suspend fun setLastGuideRefresh(time: Long) = context.dataStore.edit { it[Keys.LAST_GUIDE_REFRESH] = time }
 
@@ -564,7 +629,7 @@ class SettingsStore(private val context: Context) {
         val i = sources.indexOfFirst { it.url.trim().equals(url.trim(), ignoreCase = true) }
         if (i < 0) {
             sources += EpgSource(id = EpgSource.newId(), name = p.name.trim().takeIf { it.isNotEmpty() }?.let { "$it guide" }.orEmpty(), url = url.trim(), playlists = listOf(p.id))
-        } else if (sources[i].playlists.isNotEmpty() && p.id !in sources[i].playlists) {
+        } else if (!sources[i].isDefault && p.id !in sources[i].playlists) {
             sources[i] = sources[i].copy(playlists = sources[i].playlists + p.id)
         }
     }
@@ -606,7 +671,7 @@ class SettingsStore(private val context: Context) {
         editPlaylists { list -> list.removeAll { it.id == id } }
         // Guides added only for that playlist go with it; shared ones just stop listing it.
         editEpgSources { list ->
-            list.removeAll { it.playlists == listOf(id) }
+            list.removeAll { it.provider == id || (!it.isDefault && it.playlists == listOf(id)) }
             list.replaceAll { if (id in it.playlists) it.copy(playlists = it.playlists - id) else it }
         }
     }

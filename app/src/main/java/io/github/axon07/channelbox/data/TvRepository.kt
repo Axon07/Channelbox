@@ -462,11 +462,17 @@ class TvRepository(
 
             var programmes = 0
             settings.setPlaylistGuides(discovered)
-            val plan = guidePlan(settings.current())
-            if (plan.isNotEmpty()) {
-                programmes = importEpg(plan, entities, lineup.tvgNames)
+            settings.syncProviderSources(discovered, s.playlists)
+            val now = settings.current()
+            // "Update on playlists change" off: the guide waits for its own update (unless there's none yet).
+            val hasGuide = db.openHelper.readableDatabase.query("SELECT EXISTS(SELECT 1 FROM programs)").use { it.moveToFirst() && it.getInt(0) == 1 }
+            if (now.guideWithPlaylists || !hasGuide) {
+                val plan = guidePlan(now)
+                if (plan.isNotEmpty()) {
+                    programmes = importEpg(plan, entities, lineup.tvgNames)
+                }
+                settings.setLastGuideRefresh(System.currentTimeMillis())
             }
-            settings.setLastGuideRefresh(System.currentTimeMillis())
             settings.setLastRefresh(System.currentTimeMillis())
             compact() // only does work when a much smaller list replaced a big one
             _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
@@ -592,6 +598,8 @@ class TvRepository(
     /** Loads every guide source; a source that fails is skipped. Returns the number of programmes stored. */
     /** Highest programme row from before the current guide load; older rows are the old guide. */
     private var oldProgramsUpTo = 0L
+    /** "Store program descriptions". */
+    @Volatile private var keepDescriptions = true
     /** Guide ids whose old programmes were already swapped for new ones in this load. */
     private val replaced = HashSet<String>()
 
@@ -613,12 +621,14 @@ class TvRepository(
             else old.copy(playlists = if (old.playlists == null || spec.playlists == null) null else old.playlists + spec.playlists)
         }
         s.epgSources.filter { it.enabled && it.url.isNotBlank() }.forEach { src ->
-            val scope = if (src.playlists.isEmpty()) null else src.playlists.toSet().intersect(ids)
+            val scope = if (src.isDefault) null else src.playlists.toSet().intersect(ids)
             if (scope != null && scope.isEmpty()) return@forEach
             add(GuideSpec(src.url.trim(), src.shiftMinutes * 60_000L, scope))
         }
+        // The Xtream servers' and portals' own per-channel guides fill what the sources missed.
         enabled.filter { it.useProviderGuide }.forEach { p ->
-            s.playlistGuides[p.id].orEmpty().forEach { url -> add(GuideSpec(url, 0L, setOf(p.id))) }
+            s.playlistGuides[p.id].orEmpty().filter { StalkerLoader.isGuideUrl(it) || XtreamGuide.isUrl(it) }
+                .forEach { url -> add(GuideSpec(url, 0L, setOf(p.id))) }
         }
         return out.values.sortedBy { StalkerLoader.isGuideUrl(it.url) || XtreamGuide.isUrl(it.url) }
     }
@@ -665,6 +675,7 @@ class TvRepository(
         )
         val now = System.currentTimeMillis()
         val keepFrom = now - settings.current().guidePastHours.coerceIn(1, 24 * 14) * HOUR
+        keepDescriptions = settings.current().storeDescriptions
         val keepTo = now + settings.current().guideDays.coerceIn(1, 14) * 24 * HOUR
         val filled = HashSet<String>() // guide ids that already have programmes from an earlier source
 
@@ -779,7 +790,7 @@ class TvRepository(
                     val keep = list.filter { it.stop > keepFrom && it.start < keepTo }
                     if (keep.isNotEmpty()) lock.withLock {
                         got += key
-                        keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description) }
+                        keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description?.takeIf { keepDescriptions }) }
                         if (batch.size >= BATCH) withContext(Dispatchers.IO) { flush() }
                     }
                 }
@@ -833,7 +844,7 @@ class TvRepository(
                 if (programme.stop > keepFrom && programme.start < keepTo) {
                     got += key
                     synchronized(batch) {
-                        batch += programme
+                        batch += if (keepDescriptions) programme else programme.copy(description = null)
                         if (batch.size >= BATCH) flush()
                     }
                 }
@@ -880,7 +891,7 @@ class TvRepository(
                     val key = channelId.trim().lowercase()
                     if (stop > keepFrom && start < keepTo && key !in filled && matcher.wants(key)) {
                         fromThisSource += key
-                        batch += ProgramEntity(epgId = key, start = start, stop = stop, title = title, description = desc)
+                        batch += ProgramEntity(epgId = key, start = start, stop = stop, title = title, description = desc?.takeIf { keepDescriptions })
                         if (batch.size >= BATCH) flush()
                     }
                 },

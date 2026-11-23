@@ -118,7 +118,8 @@ private enum class Page(val title: String) {
     BACK("Back button on the groups menu"), STORAGE("Save recordings to"), IDLE("Back to TV when idle"), GUIDE_DAYS("Days of TV guide"),
     PLAYLIST("Playlist"),
     MOVIE_CATEGORIES("Movie categories"), SHOW_CATEGORIES("TV show categories"),
-    EPG_SOURCE("TV guide source"), GUIDE_REFRESH("Update interval"), GUIDE_PAST("Keep past programmes"),
+    EPG_SOURCES("TV guide sources"), EPG_SOURCE("TV guide source"), PLAYLIST_EPG("TV guide sources"),
+    GUIDE_REFRESH("Update interval"), GUIDE_PAST("Past days to keep"),
 }
 
 /**
@@ -145,6 +146,10 @@ fun SettingsScreen(
     var playlistId by rememberSaveable { mutableStateOf<String?>(null) }
     /** Source shown on the EPG_SOURCE page (null = adding a new one). */
     var epgSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    /** A new source added from a playlist's page is assigned to that playlist. */
+    var epgForPlaylist by rememberSaveable { mutableStateOf<String?>(null) }
+    /** Sub-page to go back to (a source opened from the sources list or a playlist's guides). */
+    var pageBack by remember { mutableStateOf<Page?>(null) }
     // Section to come back to when a sub-page closes. While set, stray focus doesn't switch sections.
     var returnTo by remember { mutableStateOf<SettingsCategory?>(null) }
     val categoryFocus = remember { SettingsCategory.entries.associateWith { FocusRequester() } }
@@ -172,7 +177,17 @@ fun SettingsScreen(
         if (returnTo == null) returnTo = category
         page = p
     }
-    fun closePage() { page = null }
+    fun closePage() {
+        val back = pageBack
+        pageBack = null
+        page = back
+    }
+    fun openSource(id: String?, from: Page) {
+        epgSourceId = id
+        epgForPlaylist = if (from == Page.PLAYLIST_EPG) playlistId else null
+        pageBack = from
+        page = Page.EPG_SOURCE
+    }
     // Back on a sub-page returns to the category instead of leaving Settings.
     BackHandler(enabled = page != null) { closePage() }
     // Back while moving through a section's settings goes back to the list of sections (like ◀),
@@ -234,8 +249,17 @@ fun SettingsScreen(
         ) {
             val current = page
             if (current != null) {
-                BackLink(category.title) { closePage() }
-                SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { openPage(it) }, playlistId = playlistId, onEditSource = onEditSource, epgSourceId = epgSourceId)
+                BackLink(pageBack?.title ?: category.title) { closePage() }
+                when (current) {
+                    Page.EPG_SOURCES -> EpgSourcesPage(settings) { openSource(it, Page.EPG_SOURCES) }
+                    Page.PLAYLIST_EPG -> PlaylistEpgPage(settings, vm, playlistId, onSource = { openSource(it, Page.PLAYLIST_EPG) }, onClose = { closePage() })
+                    Page.EPG_SOURCE -> EpgSourcePage(settings, vm, epgSourceId, epgForPlaylist, onClose = { closePage() })
+                    else -> SubPage(current, settings, vm, onClose = { closePage() }, onOpen = { p ->
+                        // Playlist → TV guide sources comes back to the playlist.
+                        if (p == Page.PLAYLIST_EPG) pageBack = current
+                        openPage(p)
+                    }, playlistId = playlistId, onEditSource = onEditSource)
+                }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 20.dp)) {
                     IconBadge(category.icon(), size = 40.dp)
@@ -254,13 +278,7 @@ fun SettingsScreen(
                                 openPage(Page.PLAYLIST)
                             },
                         ) { openPage(it) }
-                        SettingsCategory.EPG -> EpgSettings(
-                            settings, refreshState, vm,
-                            onSource = { id ->
-                                epgSourceId = id
-                                openPage(Page.EPG_SOURCE)
-                            },
-                        ) { openPage(it) }
+                        SettingsCategory.EPG -> EpgSettings(settings, refreshState, vm) { openPage(it) }
                         SettingsCategory.SOURCE -> GuideSettings(settings, vm, onOrganise) { openPage(it) }
                         SettingsCategory.PLAYBACK -> PlaybackSettings(settings, vm) { openPage(it) }
                         SettingsCategory.NETWORK -> NetworkSettingsList(settings, vm) { openPage(it) }
@@ -430,87 +448,29 @@ private fun GuideSettings(settings: AppSettings, vm: TvViewModel, onOrganise: ()
 private fun guideDaysLabel(days: Int) = if (days == 1) "1 day" else "$days days"
 
 /**
- * Settings → TV guide, laid out like TiviMate's EPG settings: update now, the guide sources (your
- * own, then the guides that came with each playlist), how often to update, and how much to keep.
+ * Settings → TV guide, laid out like TiviMate's EPG settings: the sources, how much to keep, then
+ * the update options and the result of the last update.
  */
 @Composable
 private fun EpgSettings(
     settings: AppSettings,
     refreshState: RefreshState,
     vm: TvViewModel,
-    onSource: (String?) -> Unit,
     openPage: (Page) -> Unit,
 ) {
-    val last = settings.lastGuideRefresh.takeIf { it > 0 }?.let { formatTime(it) }
     val running = refreshState is RefreshState.Running
+    val on = settings.epgSources.count { it.enabled }
     SettingCard(
-        title = "Update TV guide now",
-        description = when (refreshState) {
-            is RefreshState.Running -> refreshState.message
-            is RefreshState.Failed -> tr("Last update failed: {}").replace("{}", refreshState.message)
-            else -> last?.let { tr("Updated {}").replace("{}", it) } ?: tr("Not loaded yet")
-        },
-        value = if (running) "Loading…" else "Update",
-        onClick = { vm.updateGuideNow() },
-    )
-
-    SectionLabel("Sources")
-    settings.epgSources.forEachIndexed { i, src ->
-        val st = settings.epgStatus[src.url.trim()]
-        val parts = buildList {
-            add(redact(src.url))
-            add(usedByLabel(src, settings))
-            if (src.shiftMinutes != 0) add(tr("time shift {}").replace("{}", shiftLabel(src.shiftMinutes)))
-            if (src.enabled) statusLabel(st)?.let { add(it) }
-        }
-        SettingCard(
-            title = "${i + 1}. ${src.displayName}",
-            description = parts.joinToString(" · "),
-            value = if (src.enabled) "Manage" else "Off",
-            highlight = src.enabled && st?.error != null,
-            onClick = { onSource(src.id) },
-        )
-    }
-    SettingCard(
-        title = "Add TV guide source",
-        description = "An XMLTV guide link (.xml or .xml.gz) – for every playlist or only the ones you choose",
-        value = "Add",
-        onClick = { onSource(null) },
-    )
-    // The guides that come with each playlist (TiviMate: "Use EPG from playlist").
-    settings.playlists.forEach { p ->
-        val links = settings.playlistGuides[p.id].orEmpty()
-        val sts = links.mapNotNull { settings.epgStatus[it] }
-        val desc = when {
-            !p.useProviderGuide -> tr("Off – only your own sources are used for this playlist")
-            links.isEmpty() -> tr("The playlist doesn't list a guide (loaded with the playlist)")
-            sts.isEmpty() -> tr("Loaded with the playlist")
-            else -> {
-                val total = EpgStatus(sts.maxOf { it.updated }, sts.sumOf { it.programmes }, sts.sumOf { it.channels },
-                    sts.firstOrNull { it.error != null && it.programmes == 0 }?.error?.takeIf { sts.all { s -> s.programmes == 0 } })
-                statusLabel(total).orEmpty()
-            }
-        }
-        SettingCard(
-            title = tr("{} – provider's guide").replace("{}", p.displayName),
-            description = desc,
-            toggle = p.useProviderGuide,
-            onClick = { vm.setUseProviderGuide(p.id, !p.useProviderGuide) },
-        )
-    }
-
-    SectionLabel("Options")
-    SettingCard(
-        title = "Update interval",
-        description = "How often the TV guide is downloaded again in the background",
-        value = guideRefreshLabel(settings.guideRefreshHours, settings.refreshHours),
-        onClick = { openPage(Page.GUIDE_REFRESH) },
+        title = "TV guide sources",
+        description = "Your guides and the ones that came with your playlists. Choose which ones each playlist uses in its settings",
+        value = tr("{} on").replace("{}", on.toString()),
+        onClick = { openPage(Page.EPG_SOURCES) },
     )
     SettingCard(
-        title = "Update when the app starts",
-        description = "Download the TV guide again each time Channelbox opens",
-        toggle = settings.guideOnStart,
-        onClick = { vm.setGuideOnStart(!settings.guideOnStart) },
+        title = "Past days to keep",
+        description = "How far back the guide goes – catch-up channels can play these",
+        value = pastLabel(settings.guidePastHours),
+        onClick = { openPage(Page.GUIDE_PAST) },
     )
     SettingCard(
         title = "Days of TV guide",
@@ -519,10 +479,36 @@ private fun EpgSettings(
         onClick = { openPage(Page.GUIDE_DAYS) },
     )
     SettingCard(
-        title = "Keep past programmes",
-        description = "How far back the guide goes – catch-up channels can play these",
-        value = pastLabel(settings.guidePastHours),
-        onClick = { openPage(Page.GUIDE_PAST) },
+        title = "Store programme descriptions",
+        description = "Off makes very big guides load faster and use less space",
+        toggle = settings.storeDescriptions,
+        onClick = { vm.setStoreDescriptions(!settings.storeDescriptions) },
+    )
+
+    SectionLabel("Update options")
+    SettingCard(
+        title = "Update interval",
+        description = "How often the TV guide is downloaded again in the background",
+        value = if (settings.guideRefreshHours > 0) refreshLabel(settings.guideRefreshHours) else "Off",
+        onClick = { openPage(Page.GUIDE_REFRESH) },
+    )
+    SettingCard(
+        title = "Update on app start",
+        description = "Download the TV guide again each time Channelbox opens",
+        toggle = settings.guideOnStart,
+        onClick = { vm.setGuideOnStart(!settings.guideOnStart) },
+    )
+    SettingCard(
+        title = "Update on playlists change",
+        description = "Download the TV guide again whenever the playlists reload",
+        toggle = settings.guideWithPlaylists,
+        onClick = { vm.setGuideWithPlaylists(!settings.guideWithPlaylists) },
+    )
+    SettingCard(
+        title = "Update TV guide now",
+        description = if (refreshState is RefreshState.Running) refreshState.message else null,
+        value = if (running) "Loading…" else "Update",
+        onClick = { vm.updateGuideNow() },
     )
     var confirmClear by remember { mutableStateOf(false) }
     SettingCard(
@@ -536,6 +522,95 @@ private fun EpgSettings(
             } else confirmClear = true
         },
     )
+    InfoCard("Latest update status", latestStatus(settings, refreshState))
+}
+
+/** TiviMate's "Latest update status": what the last update did, or which source failed. */
+private fun latestStatus(settings: AppSettings, refreshState: RefreshState): String {
+    if (refreshState is RefreshState.Running) return refreshState.message
+    if (settings.lastGuideRefresh <= 0) return tr("Not updated yet")
+    val names = settings.epgSources.associate { it.url.trim() to it.displayName }
+    val failed = settings.epgStatus.filter { it.value.error != null }.filterKeys { it in names }
+    val time = formatTime(settings.lastGuideRefresh)
+    if (failed.isNotEmpty()) {
+        return failed.keys.joinToString("\n") { url ->
+            tr("Failed to update the TV guide from \"{}\" at {}. Make sure the link is correct and check your internet connection.")
+                .replaceFirst("{}", names[url].orEmpty()).replaceFirst("{}", time)
+        }
+    }
+    val total = settings.epgStatus.values.sumOf { it.programmes }
+    val channels = settings.epgStatus.values.sumOf { it.channels }
+    return tr("Updated {}: {} programmes for {} channels").replaceFirst("{}", time)
+        .replaceFirst("{}", "%,d".format(total)).replaceFirst("{}", "%,d".format(channels))
+}
+
+/** The list of TV guide sources (TiviMate: EPG sources). */
+@Composable
+private fun EpgSourcesPage(settings: AppSettings, onSource: (String?) -> Unit) {
+    PageHeader("TV guide sources", "Sources higher in the list are used first when two have the same channel.")
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        settings.epgSources.forEach { src ->
+            val st = settings.epgStatus[src.url.trim()]
+            SettingCard(
+                title = src.displayName + if (src.isDefault) " " + tr("(default)") else "",
+                description = listOfNotNull(redact(src.url), statusLabel(st)?.takeIf { src.enabled }).joinToString(" · "),
+                value = if (src.enabled) "✓" else "Off",
+                highlight = src.enabled && st?.error != null,
+                onClick = { onSource(src.id) },
+            )
+        }
+        SettingCard(
+            title = "Add source",
+            description = "An XMLTV guide link (.xml or .xml.gz)",
+            value = "Add",
+            onClick = { onSource(null) },
+        )
+    }
+    Text(
+        "TV guide sources are assigned to playlists in the playlist settings (Settings → Playlists → a playlist → TV guide sources).",
+        fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.padding(start = 18.dp, top = 12.dp),
+    )
+}
+
+/** Playlist → TV guide sources: tick the guides this playlist uses. */
+@Composable
+private fun PlaylistEpgPage(settings: AppSettings, vm: TvViewModel, playlistId: String?, onSource: (String?) -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val p = settings.playlists.firstOrNull { it.id == playlistId }
+    if (p == null) {
+        LaunchedEffect(Unit) { onClose() }
+        return
+    }
+    PageHeader(
+        tr("TV guide sources – {}").replace("{}", p.displayName),
+        "Tick the guides this playlist uses. Default sources are used by every playlist.",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        settings.epgSources.forEach { src ->
+            val used = src.usedBy(p.id)
+            SettingCard(
+                title = src.displayName + if (src.isDefault) " " + tr("(default)") else "",
+                description = redact(src.url) + if (!src.enabled) " · " + tr("source turned off") else "",
+                toggle = used,
+                onClick = {
+                    if (src.isDefault) Toast.makeText(context, tr("A default source is used by every playlist – turn off Default source on it to choose"), Toast.LENGTH_LONG).show()
+                    else vm.assignEpgSource(src.id, p.id, !used)
+                },
+            )
+        }
+        if (p.type == SourceType.XTREAM || p.type == SourceType.STALKER) SettingCard(
+            title = "Fill gaps from the server's guide",
+            description = "Channels the sources above don't cover get their listings from the provider's server, one channel at a time",
+            toggle = p.useProviderGuide,
+            onClick = { vm.setUseProviderGuide(p.id, !p.useProviderGuide) },
+        )
+        SettingCard(
+            title = "Add source",
+            description = "A new XMLTV guide for this playlist",
+            value = "Add",
+            onClick = { onSource(null) },
+        )
+    }
 }
 
 @Composable
@@ -558,28 +633,6 @@ private fun statusLabel(st: EpgStatus?): String? {
         tr("{} channels").replace("{}", "%,d".format(st.channels)),
         tr("updated {}").replace("{}", formatTime(st.updated)),
     ).joinToString(" · ")
-}
-
-private fun usedByLabel(src: EpgSource, settings: AppSettings): String {
-    if (src.playlists.isEmpty()) return tr("All playlists")
-    val names = settings.playlists.filter { it.id in src.playlists }.map { it.displayName }
-    return if (names.isEmpty()) tr("No playlist") else names.joinToString(", ")
-}
-
-/** "+1 h", "−30 min", "+1 h 30 min"; "None" for 0. */
-private fun shiftLabel(minutes: Int): String {
-    if (minutes == 0) return tr("None")
-    val sign = if (minutes > 0) "+" else "−"
-    val m = kotlin.math.abs(minutes)
-    val h = m / 60
-    val rest = m % 60
-    return sign + listOfNotNull(h.takeIf { it > 0 }?.let { "$it h" }, rest.takeIf { it > 0 }?.let { "$it min" }).joinToString(" ")
-}
-
-private fun guideRefreshLabel(hours: Int, playlistHours: Int): String = when {
-    hours > 0 -> refreshLabel(hours)
-    playlistHours > 0 -> tr("With the playlists ({})").replace("{}", tr(refreshLabel(playlistHours)).lowercase())
-    else -> "With the playlists"
 }
 
 private fun pastLabel(hours: Int): String = when {
@@ -1012,7 +1065,6 @@ private fun SubPage(
     onOpen: (Page) -> Unit,
     playlistId: String?,
     onEditSource: (String?) -> Unit,
-    epgSourceId: String? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1236,22 +1288,22 @@ private fun SubPage(
             )
         }
         Page.GUIDE_REFRESH -> {
-            PageHeader("Update interval", "How often the TV guide is downloaded again in the background. \"With the playlists\" updates it whenever they reload.")
+            PageHeader("Update interval", "How often the TV guide is downloaded again in the background, besides app start and playlist changes if those are on.")
             ChoiceList(
-                options = GUIDE_REFRESH_CHOICES.map { it.toString() to if (it == 0) "With the playlists" else refreshLabel(it) },
+                options = GUIDE_REFRESH_CHOICES.map { it.toString() to if (it == 0) "Off" else refreshLabel(it) },
                 selected = settings.guideRefreshHours.toString(),
                 onSelect = { vm.setGuideRefreshHours(it.toInt()); onClose() },
             )
         }
         Page.GUIDE_PAST -> {
-            PageHeader("Keep past programmes", "Programmes that have finished stay in the guide this long. Applies at the next update.")
+            PageHeader("Past days to keep", "Programmes that have finished stay in the guide this long. Applies at the next update.")
             ChoiceList(
                 options = GUIDE_PAST_CHOICES.map { it.toString() to pastLabel(it) },
                 selected = settings.guidePastHours.toString(),
                 onSelect = { vm.setGuidePastHours(it.toInt()); onClose() },
             )
         }
-        Page.EPG_SOURCE -> EpgSourcePage(settings, vm, epgSourceId, onClose)
+        Page.EPG_SOURCES, Page.EPG_SOURCE, Page.PLAYLIST_EPG -> Unit // shown by SettingsScreen
         Page.IDLE -> {
             PageHeader("Back to TV when idle", "If the guide, channel list or a menu is left open with no button pressed, go back to the channel that's playing.")
             ChoiceList(
@@ -1300,11 +1352,11 @@ private fun SubPage(
                     onClick = { vm.savePlaylist(p.copy(includeVod = !p.includeVod)) },
                 )
                 SettingCard(
-                    title = "Use the provider's TV guide",
-                    description = if (p.useProviderGuide) "The guide that comes with this playlist is loaded. Add more in Settings → TV guide"
-                    else "Off – only your own TV guide sources are used for it",
-                    toggle = p.useProviderGuide,
-                    onClick = { vm.setUseProviderGuide(p.id, !p.useProviderGuide) },
+                    title = "TV guide sources",
+                    description = settings.epgSources.filter { it.enabled && it.usedBy(p.id) }.joinToString(", ") { it.displayName }
+                        .ifEmpty { tr("None – choose the guides this playlist uses") },
+                    value = settings.epgSources.count { it.enabled && it.usedBy(p.id) }.toString(),
+                    onClick = { onOpen(Page.PLAYLIST_EPG) },
                 )
                 SettingCard(
                     title = "Edit details",
@@ -1485,9 +1537,9 @@ private fun SubPage(
     }
 }
 
-/** Add or edit one TV guide source: link, name, which playlists use it, time shift, priority. */
+/** One TV guide source (TiviMate: source name, EPG URL, time offset, default source, delete). */
 @Composable
-private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, onClose: () -> Unit) {
+private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, forPlaylist: String?, onClose: () -> Unit) {
     val context = LocalContext.current
     fun toast(text: String) = Toast.makeText(context, tr(text), Toast.LENGTH_LONG).show()
     val index = settings.epgSources.indexOfFirst { it.id == id }
@@ -1496,63 +1548,48 @@ private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, o
     var url by remember(id) { mutableStateOf(existing?.url.orEmpty()) }
     var enabled by remember(id) { mutableStateOf(existing?.enabled ?: true) }
     var shift by remember(id) { mutableStateOf(existing?.shiftMinutes ?: 0) }
-    // Empty = every playlist.
-    var playlists by remember(id) { mutableStateOf(existing?.playlists?.toSet() ?: emptySet()) }
+    // A new source added from Settings → TV guide (no playlist to assign it to) is a default one.
+    var isDefault by remember(id) { mutableStateOf(existing?.isDefault ?: (forPlaylist == null)) }
     var confirmRemove by remember(id) { mutableStateOf(false) }
 
     PageHeader(
-        if (existing == null) "Add TV guide source" else existing.displayName,
-        "An XMLTV guide link (.xml or .xml.gz). When two sources have the same channel, the one higher in the list is used.",
+        if (existing == null) "Add source" else existing.displayName,
+        if (existing?.provider != null) "This guide came with a playlist. You can rename it, shift its times, use it for other playlists or delete it."
+        else "An XMLTV guide link (.xml or .xml.gz).",
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TvTextField("Source name", name, { name = it })
         TvTextField("Guide URL (XMLTV)", url, { url = it }, keyboardType = KeyboardType.Uri)
-        TvTextField("Name – optional", name, { name = it })
     }
     Spacer(Modifier.height(10.dp))
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        InfoCard("Time offset, h:min", tr("{} – moves every programme, for a guide made for another time zone").replace("{}", offsetLabel(shift)))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(start = 18.dp, bottom = 8.dp)) {
+            PillButton("−1:00") { shift = (shift - 60).coerceAtLeast(-12 * 60) }
+            PillButton("−0:30") { shift = (shift - 30).coerceAtLeast(-12 * 60) }
+            PillButton("+0:30") { shift = (shift + 30).coerceAtMost(12 * 60) }
+            PillButton("+1:00") { shift = (shift + 60).coerceAtMost(12 * 60) }
+            PillButton("0:00") { shift = 0 }
+        }
+        SettingCard(
+            title = "Default source",
+            description = if (isDefault) "Used by every playlist" else "Used by the playlists it's ticked for in their settings",
+            toggle = isDefault,
+            onClick = { isDefault = !isDefault },
+        )
         SettingCard(
             title = "Use this source",
             description = if (enabled) "Loaded with every guide update" else "Off – kept here but not loaded",
             toggle = enabled,
             onClick = { enabled = !enabled },
         )
-        existing?.let { statusLabel(settings.epgStatus[it.url.trim()]) }?.let { InfoCard("Last update", it) }
-
-        SectionLabel("Playlists")
-        SettingCard(
-            title = "All playlists",
-            description = "Its programmes go to the channels of every playlist",
-            toggle = playlists.isEmpty(),
-            onClick = { playlists = if (playlists.isEmpty()) settings.playlists.map { it.id }.toSet() else emptySet() },
-        )
-        if (playlists.isNotEmpty()) settings.playlists.forEach { p ->
-            val on = p.id in playlists
-            SettingCard(
-                title = p.displayName,
-                description = p.summary,
-                toggle = on,
-                onClick = {
-                    playlists = when {
-                        !on -> playlists + p.id
-                        playlists.size == 1 -> playlists.also { toast("Choose at least one playlist") }
-                        else -> playlists - p.id
-                    }
-                },
-            )
+        existing?.let { src ->
+            val users = settings.playlists.filter { src.usedBy(it.id) }.joinToString(", ") { it.displayName }
+            InfoCard("Used by", users.ifEmpty { tr("No playlist – tick it in a playlist's TV guide sources") })
+            statusLabel(settings.epgStatus[src.url.trim()])?.let { InfoCard("Last update", it) }
         }
-
-        SectionLabel("Time shift")
-        InfoCard("Time shift", tr("{} – moves every programme, for a guide made for another time zone").replace("{}", shiftLabel(shift)))
     }
-    Spacer(Modifier.height(6.dp))
-    ButtonRow(
-        "−1 h" to { shift = (shift - 60).coerceAtLeast(-12 * 60) },
-        "−30 min" to { shift = (shift - 30).coerceAtLeast(-12 * 60) },
-        "+30 min" to { shift = (shift + 30).coerceAtMost(12 * 60) },
-        "+1 h" to { shift = (shift + 60).coerceAtMost(12 * 60) },
-        "Reset" to { shift = 0 },
-    )
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(12.dp))
     ButtonRow(
         "Save" to {
             val link = url.trim()
@@ -1561,12 +1598,11 @@ private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, o
                 !Regex("^(https?|file|content)://", RegexOption.IGNORE_CASE).containsMatchIn(link) -> toast("The link needs to start with http:// or https://")
                 settings.epgSources.any { it.id != existing?.id && it.url.trim().equals(link, ignoreCase = true) } -> toast("That guide is already in the list")
                 else -> {
+                    val assigned = existing?.playlists ?: listOfNotNull(forPlaylist)
                     vm.saveEpgSource(
-                        EpgSource(
-                            id = existing?.id ?: EpgSource.newId(), name = name, url = link, enabled = enabled,
-                            shiftMinutes = shift,
-                            // Keep the playlists' order.
-                            playlists = settings.playlists.map { it.id }.filter { it in playlists },
+                        (existing ?: EpgSource(id = EpgSource.newId(), url = link)).copy(
+                            name = name, url = link, enabled = enabled, shiftMinutes = shift,
+                            isDefault = isDefault, playlists = assigned,
                         )
                     )
                     toast("Saved – updating the TV guide")
@@ -1594,8 +1630,9 @@ private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, o
                 )
             }
             SettingCard(
-                title = if (confirmRemove) "Press again to remove" else "Remove source",
-                description = "Its programmes go at the next guide update",
+                title = if (confirmRemove) "Press again to delete" else "Delete source",
+                description = if (existing.provider != null) "It won't be added back when the playlist reloads"
+                else "Its programmes go at the next guide update",
                 highlight = confirmRemove,
                 onClick = {
                     if (confirmRemove) {
@@ -1606,6 +1643,13 @@ private fun EpgSourcePage(settings: AppSettings, vm: TvViewModel, id: String?, o
             )
         }
     }
+}
+
+/** "+1:30", "−0:30", "0:00". */
+private fun offsetLabel(minutes: Int): String {
+    val sign = when { minutes > 0 -> "+"; minutes < 0 -> "−"; else -> "" }
+    val m = kotlin.math.abs(minutes)
+    return "$sign${m / 60}:${"%02d".format(m % 60)}"
 }
 
 @Composable
