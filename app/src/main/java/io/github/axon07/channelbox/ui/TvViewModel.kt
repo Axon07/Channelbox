@@ -966,6 +966,54 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     fun setIdleClose(seconds: Int) = viewModelScope.launch { c.settings.setIdleClose(seconds) }
     fun setGuideDays(days: Int) = viewModelScope.launch { c.settings.setGuideDays(days) }
 
+    // ---- Settings → TV guide (EPG sources, like TiviMate) --------------------------------------
+
+    private var guideJob: kotlinx.coroutines.Job? = null
+
+    /** Loads just the TV guide again (a running guide update is replaced). */
+    fun updateGuideNow() {
+        guideJob?.cancel()
+        guideJob = viewModelScope.launch { repo.refreshGuide() }
+    }
+
+    /** Saves a source and loads the guide again with it. */
+    fun saveEpgSource(src: io.github.axon07.channelbox.data.EpgSource) = viewModelScope.launch {
+        c.settings.saveEpgSource(src)
+        updateGuideNow()
+    }
+
+    fun removeEpgSource(id: String) = viewModelScope.launch {
+        c.settings.removeEpgSource(id)
+        updateGuideNow()
+    }
+
+    fun moveEpgSource(id: String, delta: Int) = viewModelScope.launch {
+        c.settings.moveEpgSource(id, delta)
+        updateGuideNow()
+    }
+
+    /** Use (or not) the guide that came with a playlist. */
+    fun setUseProviderGuide(playlistId: String, on: Boolean) = viewModelScope.launch {
+        val p = c.settings.current().playlists.firstOrNull { it.id == playlistId } ?: return@launch
+        c.settings.updatePlaylist(p.copy(useProviderGuide = on))
+        updateGuideNow()
+    }
+
+    fun setGuideRefreshHours(hours: Int) = viewModelScope.launch {
+        c.settings.setGuideRefreshHours(hours)
+        RefreshWorker.schedule(getApplication<Application>(), c.settings.current().refreshHours, hours)
+    }
+
+    fun setGuideOnStart(on: Boolean) = viewModelScope.launch { c.settings.setGuideOnStart(on) }
+
+    fun setGuidePastHours(hours: Int) = viewModelScope.launch { c.settings.setGuidePastHours(hours) }
+
+    fun clearGuide() = viewModelScope.launch {
+        guideJob?.cancel()
+        repo.clearGuide()
+        showToast("TV guide cleared")
+    }
+
     // ---- Network: VPN, proxy, DNS, user agent ----------------------------------------------
 
     val vpnState = VpnManager.state
@@ -1359,6 +1407,13 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { if (autoPlay) ensurePlaying() }
                 }
                 if (repo.refresh(ready) && autoPlay) ensurePlaying()
+            } else {
+                // "Update when the app starts", or the guide's own interval has passed.
+                val guideStale = s.guideRefreshHours > 0 && System.currentTimeMillis() - s.lastGuideRefresh > s.guideRefreshHours * HOUR
+                if (s.guideOnStart || guideStale) {
+                    if (_current.value != null) delay(10_000)
+                    repo.refreshGuide()
+                }
             }
         }
     }
@@ -1891,7 +1946,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setRefreshHours(hours: Int) = viewModelScope.launch {
         c.settings.setRefreshHours(hours)
-        RefreshWorker.schedule(getApplication<Application>(), hours)
+        RefreshWorker.schedule(getApplication<Application>(), hours, c.settings.current().guideRefreshHours)
     }
 
     /** Steps through 6 h → 12 h → 24 h → 48 h → off. */
@@ -1899,7 +1954,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         val index = REFRESH_CHOICES.indexOf(currentHours)
         val next = REFRESH_CHOICES[(index + 1).mod(REFRESH_CHOICES.size)]
         c.settings.setRefreshHours(next)
-        RefreshWorker.schedule(getApplication<Application>(), next)
+        RefreshWorker.schedule(getApplication<Application>(), next, c.settings.current().guideRefreshHours)
     }
 
     companion object {

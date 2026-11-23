@@ -41,7 +41,7 @@ class App : Application(), ImageLoaderFactory {
             if (code != "en") io.github.axon07.channelbox.ui.I18n.load(this, code)
         }
         scope.launch {
-            RefreshWorker.schedule(this@App, container.settings.current().refreshHours)
+            container.settings.current().let { RefreshWorker.schedule(this@App, it.refreshHours, it.guideRefreshHours) }
             container.recorder.tidyUp()
         }
         // "Start when the box wakes up": the screen-on broadcast only reaches running apps, so it's

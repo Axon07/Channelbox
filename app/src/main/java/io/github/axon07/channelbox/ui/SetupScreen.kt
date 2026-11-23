@@ -197,7 +197,7 @@ fun SetupScreen(
                         }
                         else -> TvTextField("Playlist URL", m3uUrl, { m3uUrl = it }, keyboardType = KeyboardType.Uri)
                     }
-                    TvTextField("TV guide (XMLTV) URL – optional, leave empty to use the provider's", epgUrl, { epgUrl = it }, keyboardType = KeyboardType.Uri)
+                    TvTextField("Extra TV guide (XMLTV) URL – optional. Manage guides in Settings → TV guide", epgUrl, { epgUrl = it }, keyboardType = KeyboardType.Uri)
                 }
                 Spacer(Modifier.height(24.dp))
 

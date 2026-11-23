@@ -258,6 +258,7 @@ class TvRepository(
     // allowed on the main thread.
     private suspend fun refreshLocked(onChannels: suspend () -> Unit, forceVod: Boolean): Boolean {
         return try {
+            settings.migrateGuides()
             val s = settings.current()
             // Movies & shows are huge and change slowly: background reloads fetch them once a day.
             // A reload you start (or a new/changed playlist) always fetches them.
@@ -283,7 +284,7 @@ class TvRepository(
 
             val lineup = Lineup() // live channels, numbered as they arrive
             val kept = ArrayList<ChannelEntity>() // last good channels of playlists that failed this time
-            val epgUrls = ArrayList<String>()
+            val discovered = HashMap<String, List<String>>() // playlist → the guide links it came with
             val failures = ArrayList<String>()
             val errors = HashMap<String, String>()
             sources.forEachIndexed { index, p ->
@@ -402,8 +403,7 @@ class TvRepository(
                             else "no channels in the playlist"
                         )
                     }
-                    // Your own guide URLs first, then every guide the playlist lists.
-                    epgUrls += splitUrls(p.epgUrl) + guides
+                    discovered[p.id] = guides
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -421,7 +421,7 @@ class TvRepository(
                     failures += "${p.displayName}: $why"
                     errors[p.id] = why
                     kept += db.channels().forPlaylist(p.id).map { it.copy(playlistId = p.id) }
-                    epgUrls += splitUrls(p.epgUrl)
+                    s.playlistGuides[p.id]?.let { discovered[p.id] = it }
                 }
             }
             _playlistErrors.value = errors
@@ -461,10 +461,12 @@ class TvRepository(
             runCatching { onChannels() }
 
             var programmes = 0
-            val guides = epgUrls.distinct()
-            if (guides.isNotEmpty()) {
-                programmes = importEpg(guides, entities, lineup.tvgNames)
+            settings.setPlaylistGuides(discovered)
+            val plan = guidePlan(settings.current())
+            if (plan.isNotEmpty()) {
+                programmes = importEpg(plan, entities, lineup.tvgNames)
             }
+            settings.setLastGuideRefresh(System.currentTimeMillis())
             settings.setLastRefresh(System.currentTimeMillis())
             compact() // only does work when a much smaller list replaced a big one
             _state.value = if (failures.isEmpty()) RefreshState.Done(entities.size, programmes)
@@ -593,8 +595,68 @@ class TvRepository(
     /** Guide ids whose old programmes were already swapped for new ones in this load. */
     private val replaced = HashSet<String>()
 
+    /** One guide link to load: [playlists] = whose channels it may fill (null = everyone's). */
+    data class GuideSpec(val url: String, val shiftMs: Long = 0L, val playlists: Set<String>? = null)
+
+    /**
+     * The guides to load, in priority order: your TV guide sources (Settings → TV guide) in list
+     * order, then the guides the playlists came with (unless turned off for a playlist); the
+     * portals' and Xtream servers' own per-channel guides last. A link listed twice is loaded once.
+     */
+    fun guidePlan(s: AppSettings): List<GuideSpec> {
+        val enabled = s.playlists.filter { it.enabled }
+        val ids = enabled.map { it.id }.toSet()
+        val out = LinkedHashMap<String, GuideSpec>()
+        fun add(spec: GuideSpec) {
+            val old = out[spec.url]
+            out[spec.url] = if (old == null) spec
+            else old.copy(playlists = if (old.playlists == null || spec.playlists == null) null else old.playlists + spec.playlists)
+        }
+        s.epgSources.filter { it.enabled && it.url.isNotBlank() }.forEach { src ->
+            val scope = if (src.playlists.isEmpty()) null else src.playlists.toSet().intersect(ids)
+            if (scope != null && scope.isEmpty()) return@forEach
+            add(GuideSpec(src.url.trim(), src.shiftMinutes * 60_000L, scope))
+        }
+        enabled.filter { it.useProviderGuide }.forEach { p ->
+            s.playlistGuides[p.id].orEmpty().forEach { url -> add(GuideSpec(url, 0L, setOf(p.id))) }
+        }
+        return out.values.sortedBy { StalkerLoader.isGuideUrl(it.url) || XtreamGuide.isUrl(it.url) }
+    }
+
+    /** Loads just the TV guide again ("Update TV guide now", or its own update interval). */
+    suspend fun refreshGuide(): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                settings.migrateGuides()
+                val s = settings.current()
+                val channels = db.channels().getAll()
+                if (channels.isEmpty()) return@withLock false
+                _state.value = RefreshState.Running("Loading TV guide…", background = true)
+                val plan = guidePlan(s)
+                val n = if (plan.isEmpty()) 0 else importEpg(plan, channels, emptyMap())
+                settings.setLastGuideRefresh(System.currentTimeMillis())
+                _state.value = RefreshState.Done(channels.size, n)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _state.value = RefreshState.Failed(e.message ?: e.javaClass.simpleName)
+                false
+            }
+        }
+    }
+
+    /** "Clear TV guide": every programme goes; the next update loads them again. */
+    suspend fun clearGuide() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            db.programs().clear()
+            settings.setEpgStatus(emptyMap())
+            settings.setLastGuideRefresh(0L)
+        }
+    }
+
     private suspend fun importEpg(
-        urls: List<String>,
+        urls: List<GuideSpec>,
         channels: List<ChannelEntity>,
         tvgNames: Map<String, String>,
     ): Int {
@@ -602,7 +664,7 @@ class TvRepository(
             channels.map { ch -> EpgMatcher.Candidate(ch.id, ch.epgId, listOfNotNull(tvgNames[ch.id], ch.name)) }
         )
         val now = System.currentTimeMillis()
-        val keepFrom = now - 6 * HOUR
+        val keepFrom = now - settings.current().guidePastHours.coerceIn(1, 24 * 14) * HOUR
         val keepTo = now + settings.current().guideDays.coerceIn(1, 14) * 24 * HOUR
         val filled = HashSet<String>() // guide ids that already have programmes from an earlier source
 
@@ -613,23 +675,38 @@ class TvRepository(
         replaced.clear()
         var count = 0
         // The portals' own guides go last: an XMLTV guide you added for a channel takes precedence.
-        val ordered = urls.sortedBy { StalkerLoader.isGuideUrl(it) || XtreamGuide.isUrl(it) }
-        ordered.forEachIndexed { index, url ->
+        val ordered = urls.sortedBy { StalkerLoader.isGuideUrl(it.url) || XtreamGuide.isUrl(it.url) }
+        val status = HashMap<String, EpgStatus>()
+        ordered.forEachIndexed { index, spec ->
+            val url = spec.url
             _state.value = RefreshState.Running(background = true, message = 
                 if (urls.size > 1) "Loading TV guide ${index + 1} of ${urls.size}…" else "Loading TV guide…"
             )
+            // A source attached to some playlists only links and fills their channels.
+            matcher.scope = spec.playlists?.let { allowed ->
+                channels.filter { (it.playlistId ?: SettingsStore.LEGACY_ID) in allowed }.map { it.id }.toSet()
+            }
+            val before = filled.size
+            var got = 0
+            var error: String? = null
             try {
-                count += when {
+                got = when {
                     StalkerLoader.isGuideUrl(url) -> importStalkerGuide(StalkerLoader.guidePlaylist(url), channels, matcher, filled, keepFrom, keepTo)
                     XtreamGuide.isUrl(url) -> importXtreamGuide(XtreamGuide.playlist(url), channels, matcher, filled, keepFrom, keepTo)
-                    else -> importOne(url, matcher, filled, keepFrom, keepTo)
+                    else -> importOne(url, matcher, filled, keepFrom, keepTo, spec.shiftMs)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 // One broken guide shouldn't stop the others.
+                error = if (e is OutOfMemoryError) "too big for this device's memory" else e.message ?: e.javaClass.simpleName
             }
+            count += got
+            status[url] = EpgStatus(System.currentTimeMillis(), got, filled.size - before, error)
         }
+        matcher.scope = null
+        // Shown beside each source in Settings → TV guide.
+        runCatching { settings.setEpgStatus(status) }
 
         // Channels that got new listings had their old ones swapped out above. Channels the new
         // guide didn't cover (or a download that broke part-way) keep their old listings; only the
@@ -773,6 +850,7 @@ class TvRepository(
         filled: MutableSet<String>,
         keepFrom: Long,
         keepTo: Long,
+        shiftMs: Long = 0L,
     ): Int {
         var count = 0
         val fromThisSource = HashSet<String>()
@@ -796,7 +874,9 @@ class TvRepository(
             parser.setInput(maybeGunzip(input), null)
             XmlTvParser(parser).parse(
                 onChannel = { id, names -> matcher.onChannel(id, names) },
-                onProgramme = { channelId, start, stop, title, desc ->
+                onProgramme = { channelId, rawStart, rawStop, title, desc ->
+                    val start = rawStart + shiftMs
+                    val stop = rawStop + shiftMs
                     val key = channelId.trim().lowercase()
                     if (stop > keepFrom && start < keepTo && key !in filled && matcher.wants(key)) {
                         fromThisSource += key

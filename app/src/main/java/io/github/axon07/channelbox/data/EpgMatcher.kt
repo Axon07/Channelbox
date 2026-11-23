@@ -29,6 +29,19 @@ class EpgMatcher(channels: List<Candidate>) {
     /** XMLTV ids (lower-case) we want programmes for. */
     val wanted = HashSet<String>()
 
+    /**
+     * The playlist channels the guide being read may fill (null = every channel): a guide source
+     * attached to some playlists only links and fills their channels.
+     */
+    var scope: Set<String>? = null
+        set(value) {
+            field = value
+            scopedKeys.clear()
+            if (value != null) assigned.forEach { (ch, key) -> if (ch in value) scopedKeys += key }
+        }
+    private val scopedKeys = HashSet<String>()
+    private fun inScope(c: Candidate) = scope?.contains(c.channelId) ?: true
+
     fun onChannel(id: String, displayNames: List<String>) {
         val x = XmlChannel(id.trim(), displayNames)
         if (finalized) match(listOf(x)) else pending += x
@@ -37,7 +50,8 @@ class EpgMatcher(channels: List<Candidate>) {
     /** Returns true if programmes for [xmlChannelId] should be kept. */
     fun wants(xmlChannelId: String): Boolean {
         if (!finalized) finish()
-        return xmlChannelId.trim().lowercase() in wanted
+        val key = xmlChannelId.trim().lowercase()
+        return key in wanted && (scope == null || key in scopedKeys)
     }
 
     fun finish() {
@@ -49,7 +63,7 @@ class EpgMatcher(channels: List<Candidate>) {
 
     private fun match(xml: List<XmlChannel>) {
         // Id matches may also take over channels an earlier guide only linked by name.
-        val byId = unmatched.values + weak.values
+        val byId = (unmatched.values + weak.values).filter(::inScope)
 
         // Pass 1: exact id.
         val byExact = HashMap<String, MutableList<Candidate>>()
@@ -58,14 +72,14 @@ class EpgMatcher(channels: List<Candidate>) {
 
         // Pass 2: normalised id.
         val byNormId = HashMap<String, MutableList<Candidate>>()
-        (unmatched.values + weak.values).forEach { c ->
+        (unmatched.values + weak.values).filter(::inScope).forEach { c ->
             c.epgId?.let { normalizeName(it) }?.takeIf { it.isNotEmpty() }?.let { byNormId.getOrPut(it) { mutableListOf() } += c }
         }
         xml.forEach { x -> byNormId[normalizeName(x.id)]?.toList()?.forEach { assign(it, x.id, byName = false) } }
 
         // Pass 3: names (only channels nothing has claimed yet).
         val byName = HashMap<String, MutableList<Candidate>>()
-        unmatched.values.forEach { c ->
+        unmatched.values.filter(::inScope).forEach { c ->
             c.names.map { normalizeName(it) }.filter { it.isNotEmpty() }.distinct()
                 .forEach { byName.getOrPut(it) { mutableListOf() } += c }
         }
@@ -88,6 +102,7 @@ class EpgMatcher(channels: List<Candidate>) {
         }
         pending.clear()
         finalized = false
+        scope = scope // recount the keys the current scope may fill
     }
 
     private fun assign(c: Candidate, xmlId: String, byName: Boolean) {
@@ -99,6 +114,7 @@ class EpgMatcher(channels: List<Candidate>) {
         val key = xmlId.lowercase()
         assigned[c.channelId] = key
         wanted += key
+        if (scope?.contains(c.channelId) == true) scopedKeys += key
     }
 
     companion object {
