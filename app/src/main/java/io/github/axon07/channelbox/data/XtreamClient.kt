@@ -285,47 +285,6 @@ class XtreamClient(private val http: OkHttpClient) {
         }
     }
 
-    /** One programme from the server's own guide. Times are epoch millis, UTC. */
-    data class Showing(val start: Long, val stop: Long, val title: String, val description: String?)
-
-    /**
-     * The server's own guide for one live channel (player_api get_simple_data_table) – what
-     * Xtream apps fall back to when xmltv.php is empty, broken or doesn't list the channel.
-     * Titles and descriptions come base64-encoded on most servers, plain on a few.
-     */
-    suspend fun guide(login: Login, streamId: String): List<Showing> {
-        // get_short_epg with a limit: a small answer. get_simple_data_table sends every programme the
-        // server has (weeks, with the archive) – several MB per channel on some servers, too much
-        // memory on a Fire Stick when many channels are asked.
-        val root = getJson(login.api("get_short_epg", "&stream_id=" + URLEncoder.encode(streamId, "UTF-8") + "&limit=$GUIDE_LIMIT"))
-        val list = ((root as? JsonObject)?.get("epg_listings") as? JsonArray) ?: return emptyList()
-        return list.mapNotNull { e ->
-            val o = e as? JsonObject ?: return@mapNotNull null
-            val start = o.str("start_timestamp")?.toLongOrNull()?.times(1000) ?: return@mapNotNull null
-            val stop = (o.str("stop_timestamp") ?: o.str("end_timestamp"))?.toLongOrNull()?.times(1000) ?: return@mapNotNull null
-            if (stop <= start) return@mapNotNull null
-            val title = decode64(o.str("title")).takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            Showing(start, stop, title, decode64(o.str("description")).takeIf { it.isNotBlank() })
-        }
-    }
-
-    private companion object {
-        /** Programmes asked per channel (about 2–3 days of a typical channel). */
-        const val GUIDE_LIMIT = 80
-    }
-
-    private fun decode64(s: String?): String {
-        val v = s?.trim().orEmpty()
-        if (v.isEmpty()) return ""
-        if (!Regex("^[A-Za-z0-9+/=\\s]+$").matches(v)) return v
-        return runCatching {
-            val bytes = java.util.Base64.getMimeDecoder().decode(v)
-            val text = String(bytes, Charsets.UTF_8)
-            // Plain words that happen to look like base64 decode to junk: keep those as they are.
-            if (text.any { it == '\uFFFD' || (it < ' ' && it != '\n' && it != '\r' && it != '\t') }) v else text.trim()
-        }.getOrDefault(v)
-    }
-
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private suspend fun getJson(url: String): JsonElement =
         http.download(url) { Json.decodeFromStream(JsonElement.serializer(), it) }

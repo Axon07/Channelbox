@@ -340,8 +340,8 @@ class TvRepository(
                         val playlist = XtreamClient(http).load(login)
                         playlist.channels.forEach { lineup.add(p.id, it) }
                         live = playlist.channels.size
-                        // xmltv.php first; the server's own per-channel guide fills whatever it missed.
-                        guides = playlist.epgUrls + XtreamGuide.url(p.id)
+                        // Like TiviMate: the server's xmltv.php guide only.
+                        guides = playlist.epgUrls
                         if (loadVod) {
                             _state.value = RefreshState.Running("Loading movies & shows from ${p.displayName}…")
                             XtreamClient(http).loadVod(login, p.id, writer) { n ->
@@ -649,9 +649,9 @@ class TvRepository(
             if (scope != null && scope.isEmpty()) return@forEach
             add(GuideSpec(src.url.trim(), src.shiftMinutes * 60_000L, scope))
         }
-        // The Xtream servers' and portals' own per-channel guides fill what the sources missed.
+        // Stalker portals' own guide (their main guide) fills what the sources missed.
         enabled.filter { it.useProviderGuide }.forEach { p ->
-            s.playlistGuides[p.id].orEmpty().filter { StalkerLoader.isGuideUrl(it) || XtreamGuide.isUrl(it) }
+            s.playlistGuides[p.id].orEmpty().filter { StalkerLoader.isGuideUrl(it) }
                 .forEach { url -> add(GuideSpec(url, 0L, setOf(p.id))) }
         }
         return out.values.sortedBy { StalkerLoader.isGuideUrl(it.url) || XtreamGuide.isUrl(it.url) }
@@ -729,7 +729,6 @@ class TvRepository(
             try {
                 got = when {
                     StalkerLoader.isGuideUrl(url) -> importStalkerGuide(StalkerLoader.guidePlaylist(url), channels, matcher, filled, keepFrom, keepTo)
-                    XtreamGuide.isUrl(url) -> importXtreamGuide(XtreamGuide.playlist(url), channels, matcher, filled, keepFrom, keepTo)
                     else -> importOne(url, matcher, filled, keepFrom, keepTo, spec.shiftMs)
                 }
             } catch (e: CancellationException) {
@@ -756,79 +755,6 @@ class TvRepository(
         if (changed.isNotEmpty()) {
             db.withTransaction { changed.forEach { db.channels().setEpgId(it.id, matcher.assigned.getValue(it.id)) } }
         }
-        return count
-    }
-
-    /**
-     * An Xtream server's own guide (get_simple_data_table), for its channels that no XMLTV guide
-     * covered – xmltv.php is empty or broken on many servers, and doesn't list every channel.
-     * Channels without a guide id get one of their own, so the listings stick to them.
-     */
-    private suspend fun importXtreamGuide(
-        playlistId: String,
-        channels: List<ChannelEntity>,
-        matcher: EpgMatcher,
-        filled: MutableSet<String>,
-        keepFrom: Long,
-        keepTo: Long,
-    ): Int {
-        val p = settings.current().playlists.firstOrNull { it.id == playlistId && it.type == SourceType.XTREAM } ?: return 0
-        val login = XtreamClient.Login(p.xtServer, p.xtUser, p.xtPass)
-        // guide id → stream id, one request per guide id, channels the XMLTV guide missed only.
-        val wanted = LinkedHashMap<String, String>()
-        val newIds = HashMap<String, String>() // channel → the guide id it gets
-        channels.asSequence().filter { it.playlistId == playlistId }.sortedBy { it.number }.forEach { ch ->
-            val stream = XtreamClient.Login.fromLiveUrl(ch.streamUrl)?.second ?: return@forEach
-            val key = matcher.assigned[ch.id] ?: ch.epgId ?: "xtream:$playlistId:$stream".also { newIds[ch.id] = it }
-            if (key !in filled && key !in wanted) wanted[key] = stream
-        }
-        if (wanted.isEmpty()) return 0
-        val client = XtreamClient(http)
-        var count = 0
-        val got = HashSet<String>()
-        val lock = Mutex()
-        val batch = ArrayList<ProgramEntity>(BATCH)
-        fun flush() {
-            if (batch.isEmpty()) return
-            db.runInTransaction {
-                val sql = db.openHelper.writableDatabase
-                batch.asSequence().map { it.epgId }.distinct().filter { replaced.add(it) }.forEach { id ->
-                    sql.execSQL("DELETE FROM programs WHERE epgId = ? AND rowId <= ?", arrayOf(id, oldProgramsUpTo))
-                }
-                db.programs().insertBlocking(batch)
-            }
-            count += batch.size
-            batch.clear()
-        }
-        // Gently: one channel at a time with a short pause. Many providers allow one connection per
-        // account or block an IP that sends bursts of requests – a burst here cut people's streams off.
-        suspend fun fetch(entries: List<Map.Entry<String, String>>) {
-            for ((key, stream) in entries) {
-                val list = try {
-                    client.guide(login, stream)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Throwable) {
-                    emptyList()
-                }
-                val keep = list.filter { it.stop > keepFrom && it.start < keepTo }
-                if (keep.isNotEmpty()) lock.withLock {
-                    got += key
-                    keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description?.takeIf { keepDescriptions }) }
-                    if (batch.size >= BATCH) flush()
-                }
-                kotlinx.coroutines.delay(XTREAM_GUIDE_PAUSE_MS)
-            }
-        }
-        val all = wanted.entries.toList().take(XTREAM_GUIDE_CHANNELS)
-        // A server without its own guide answers the first few with nothing: don't ask for the rest.
-        val probe = all.take(8)
-        fetch(probe)
-        if (got.isNotEmpty()) fetch(all.drop(probe.size))
-        lock.withLock { flush() }
-        filled += got
-        val stick = newIds.filterValues { it in got }
-        if (stick.isNotEmpty()) db.withTransaction { stick.forEach { (id, key) -> db.channels().setEpgId(id, key) } }
         return count
     }
 
@@ -933,9 +859,6 @@ class TvRepository(
     companion object {
         const val HOUR = 3_600_000L
         private const val BATCH = 2_000
-        /** The most channels asked one by one for an Xtream server's own guide. */
-        private const val XTREAM_GUIDE_CHANNELS = 400
-        private const val XTREAM_GUIDE_PAUSE_MS = 250L
         /** Free space inside the database worth rewriting the file for. */
         private const val COMPACT_MIN_BYTES = 64L * 1024 * 1024
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)
@@ -945,7 +868,10 @@ class TvRepository(
 /** How often background reloads fetch movies & shows again. */
 private const val VOD_REFRESH_MS = 24 * 60 * 60 * 1000L
 
-/** Pseudo guide link for an Xtream server's own per-channel guide, imported after the XMLTV ones. */
+/**
+ * Pseudo guide link an earlier version used for an Xtream server's per-channel guide (removed: it
+ * sent too many requests). Kept so links saved by that version are recognised and skipped.
+ */
 internal object XtreamGuide {
     private const val SCHEME = "xtreamguide://"
     fun url(playlistId: String) = SCHEME + playlistId

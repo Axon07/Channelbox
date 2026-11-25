@@ -598,7 +598,7 @@ private fun PlaylistEpgPage(settings: AppSettings, vm: TvViewModel, playlistId: 
                 },
             )
         }
-        if (p.type == SourceType.XTREAM || p.type == SourceType.STALKER) SettingCard(
+        if (p.type == SourceType.STALKER) SettingCard(
             title = "Fill gaps from the server's guide",
             description = "Channels the sources above don't cover get their listings from the provider's server, one channel at a time",
             toggle = p.useProviderGuide,
