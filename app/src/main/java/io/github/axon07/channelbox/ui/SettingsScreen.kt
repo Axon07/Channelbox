@@ -1052,6 +1052,32 @@ private fun AboutSettings(vm: TvViewModel) {
     InfoCard("Audio decoding", "Box decoders, plus bundled FFmpeg for Dolby Digital, DD+, DTS and TrueHD")
     InfoCard("Source code", "github.com/Axon07/Channelbox · free and open source under GPL-3.0")
     InfoCard("Channels", "Channelbox is only a player – channels come from your own TV service")
+    // "It keeps closing": the last crash, to share with the developer.
+    val context = LocalContext.current
+    var crash by remember { mutableStateOf(io.github.axon07.channelbox.system.CrashLog.read(context)) }
+    crash?.let { report ->
+        SettingCard(
+            title = "Last crash",
+            description = report.lineSequence().take(6).joinToString("\n"),
+            value = "Share",
+            onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Channelbox crash report")
+                    .putExtra(android.content.Intent.EXTRA_TEXT, report)
+                runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                    .onFailure { Toast.makeText(context, tr("Nothing on this device can share text – take a photo of this screen instead"), Toast.LENGTH_LONG).show() }
+            },
+        )
+        SettingCard(
+            title = "Clear crash report",
+            description = "Remove it once it's been sent",
+            onClick = {
+                io.github.axon07.channelbox.system.CrashLog.clear(context)
+                crash = null
+            },
+        )
+    }
 }
 
 // ---- Sub-pages with text fields ---------------------------------------------------------------------

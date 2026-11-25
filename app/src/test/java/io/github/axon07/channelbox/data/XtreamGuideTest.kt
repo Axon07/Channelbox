@@ -42,7 +42,7 @@ class XtreamGuideTest {
         )
         val list = XtreamClient(http).guide(login(), "177398")
         val req = server.takeRequest()
-        assertTrue(req.path!!.contains("action=get_simple_data_table"))
+        assertTrue(req.path!!.contains("action=get_short_epg"))
         assertTrue(req.path!!.contains("stream_id=177398"))
         assertEquals(2, list.size)
         assertEquals("Evening News", list[0].title)

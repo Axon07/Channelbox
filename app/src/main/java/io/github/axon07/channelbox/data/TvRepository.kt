@@ -5,9 +5,6 @@ import android.util.Xml
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +13,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.IOException
@@ -804,34 +800,32 @@ class TvRepository(
             count += batch.size
             batch.clear()
         }
-        suspend fun fetch(entries: List<Map.Entry<String, String>>) = coroutineScope {
-            val gate = Semaphore(6)
-            entries.map { (key, stream) ->
-                async(Dispatchers.IO) {
-                    val list = gate.withPermit {
-                        try {
-                            client.guide(login, stream)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
-                    }
-                    val keep = list.filter { it.stop > keepFrom && it.start < keepTo }
-                    if (keep.isNotEmpty()) lock.withLock {
-                        got += key
-                        keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description?.takeIf { keepDescriptions }) }
-                        if (batch.size >= BATCH) withContext(Dispatchers.IO) { flush() }
-                    }
+        // Gently: one channel at a time with a short pause. Many providers allow one connection per
+        // account or block an IP that sends bursts of requests – a burst here cut people's streams off.
+        suspend fun fetch(entries: List<Map.Entry<String, String>>) {
+            for ((key, stream) in entries) {
+                val list = try {
+                    client.guide(login, stream)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    emptyList()
                 }
-            }.forEach { it.await() }
+                val keep = list.filter { it.stop > keepFrom && it.start < keepTo }
+                if (keep.isNotEmpty()) lock.withLock {
+                    got += key
+                    keep.forEach { batch += ProgramEntity(epgId = key, start = it.start, stop = it.stop, title = it.title, description = it.description?.takeIf { keepDescriptions }) }
+                    if (batch.size >= BATCH) flush()
+                }
+                kotlinx.coroutines.delay(XTREAM_GUIDE_PAUSE_MS)
+            }
         }
         val all = wanted.entries.toList().take(XTREAM_GUIDE_CHANNELS)
         // A server without its own guide answers the first few with nothing: don't ask for the rest.
-        val probe = all.take(12)
+        val probe = all.take(8)
         fetch(probe)
         if (got.isNotEmpty()) fetch(all.drop(probe.size))
-        lock.withLock { withContext(Dispatchers.IO) { flush() } }
+        lock.withLock { flush() }
         filled += got
         val stick = newIds.filterValues { it in got }
         if (stick.isNotEmpty()) db.withTransaction { stick.forEach { (id, key) -> db.channels().setEpgId(id, key) } }
@@ -940,7 +934,8 @@ class TvRepository(
         const val HOUR = 3_600_000L
         private const val BATCH = 2_000
         /** The most channels asked one by one for an Xtream server's own guide. */
-        private const val XTREAM_GUIDE_CHANNELS = 3_000
+        private const val XTREAM_GUIDE_CHANNELS = 400
+        private const val XTREAM_GUIDE_PAUSE_MS = 250L
         /** Free space inside the database worth rewriting the file for. */
         private const val COMPACT_MIN_BYTES = 64L * 1024 * 1024
         fun normalizeName(name: String): String = EpgMatcher.normalizeName(name)

@@ -294,7 +294,10 @@ class XtreamClient(private val http: OkHttpClient) {
      * Titles and descriptions come base64-encoded on most servers, plain on a few.
      */
     suspend fun guide(login: Login, streamId: String): List<Showing> {
-        val root = getJson(login.api("get_simple_data_table", "&stream_id=" + URLEncoder.encode(streamId, "UTF-8")))
+        // get_short_epg with a limit: a small answer. get_simple_data_table sends every programme the
+        // server has (weeks, with the archive) – several MB per channel on some servers, too much
+        // memory on a Fire Stick when many channels are asked.
+        val root = getJson(login.api("get_short_epg", "&stream_id=" + URLEncoder.encode(streamId, "UTF-8") + "&limit=$GUIDE_LIMIT"))
         val list = ((root as? JsonObject)?.get("epg_listings") as? JsonArray) ?: return emptyList()
         return list.mapNotNull { e ->
             val o = e as? JsonObject ?: return@mapNotNull null
@@ -304,6 +307,11 @@ class XtreamClient(private val http: OkHttpClient) {
             val title = decode64(o.str("title")).takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Showing(start, stop, title, decode64(o.str("description")).takeIf { it.isNotBlank() })
         }
+    }
+
+    private companion object {
+        /** Programmes asked per channel (about 2–3 days of a typical channel). */
+        const val GUIDE_LIMIT = 80
     }
 
     private fun decode64(s: String?): String {
