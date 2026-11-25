@@ -68,4 +68,16 @@ class StreamSpecTest {
         val master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\nhigh.m3u8\n"
         assertEquals("http://h/live/high.m3u8", Hls.bestVariant(master, "http://h/live/master.m3u8"))
     }
+
+    @Test
+    fun programGoesBeforePipeHeaders() {
+        val raw = StreamSpecs.withProgram("http://router:4022/udp/239.1.1.1:1234|User-Agent=Box", 7)
+        assertEquals("http://router:4022/udp/239.1.1.1:1234#program=7|User-Agent=Box", raw)
+        val s = StreamSpecs.parse(raw)
+        assertEquals("http://router:4022/udp/239.1.1.1:1234", s.url)
+        assertEquals(7, s.program)
+        assertEquals("Box", s.header("User-Agent"))
+        assertNull(StreamSpecs.parse("http://host/1.ts").program)
+        assertTrue(StreamSpecs.isUdp("RTP://@239.0.0.1:5000"))
+    }
 }

@@ -764,10 +764,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** Record (or stop recording) what's on the current channel now. */
-    /** Smooth Streaming channels can't be recorded yet: say so instead of adding a recording that fails. */
+    /** Smooth Streaming and udp:// / rtp:// channels can't be recorded yet: say so instead of adding a recording that fails. */
     private fun canRecord(ch: ChannelEntity): Boolean {
-        if (recorder.canRecord(StreamSpecs.from(ch))) return true
-        showToast("${ch.name} uses Smooth Streaming, which can't be recorded yet")
+        val spec = StreamSpecs.from(ch)
+        if (recorder.canRecord(spec)) return true
+        if (StreamSpecs.isUdp(spec.url)) showToast("${ch.name} is a multicast (udp/rtp) channel, which can't be recorded yet")
+        else showToast("${ch.name} uses Smooth Streaming, which can't be recorded yet")
         return false
     }
 

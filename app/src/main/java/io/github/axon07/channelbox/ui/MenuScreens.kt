@@ -512,6 +512,9 @@ fun OptionsPanel(
     onAudio: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
     onSubtitle: (io.github.axon07.channelbox.player.TrackOption) -> Unit,
     onScale: (Int) -> Unit,
+    /** Channels carried in the same stream (multicast MPTS); shown only when there are several. */
+    programs: List<io.github.axon07.channelbox.player.ProgramOption> = emptyList(),
+    onProgram: (io.github.axon07.channelbox.player.ProgramOption) -> Unit = {},
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -538,6 +541,10 @@ fun OptionsPanel(
             if (live.isNotEmpty()) {
                 Section("Live TV")
                 live.forEach { a -> OptionRow(a.label, false, Modifier.firstFocus(), onClick = a.onClick) }
+            }
+            if (programs.size > 1) {
+                Section("Channel in this stream")
+                programs.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onProgram(t) } }
             }
             Section("Subtitles")
             subtitles.forEach { t -> OptionRow(t.label, t.selected, Modifier.firstFocus()) { onSubtitle(t) } }

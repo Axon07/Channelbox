@@ -1599,6 +1599,7 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                 val audio = remember(optionsToken, tracksVersion) { vm.player.audioTracks() }
                 val subtitles = remember(optionsToken, tracksVersion) { vm.player.subtitleTracks() }
                 val quality = remember(optionsToken, tracksVersion) { vm.player.videoTracks() }
+                val programs = remember(optionsToken, tracksVersion) { vm.player.programs() }
                 OptionsPanel(
                     live = if (optionsReturn == Mode.PLAYER) buildList {
                         add(DialogAction(if (shift?.paused == true) "Resume" else "Pause live TV") {
@@ -1628,6 +1629,11 @@ private fun TvAppContent(vm: TvViewModel, settings: AppSettings) {
                         optionsToken++
                     },
                     onScale = { vm.setVideoScale(it) },
+                    programs = programs,
+                    onProgram = {
+                        vm.player.selectProgram(it)
+                        optionsToken++
+                    },
                 )
             }
             Mode.MULTIVIEW -> {

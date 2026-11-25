@@ -29,6 +29,9 @@ import androidx.media3.exoplayer.drm.UnsupportedDrmException
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.ts.TsExtractor
 import io.github.axon07.channelbox.data.StorageSettings
 import io.github.axon07.channelbox.data.StreamSpec
 import io.github.axon07.channelbox.data.StreamSpecs
@@ -67,6 +70,9 @@ data class StreamInfo(val video: String?, val audio: String?, val bitrate: Strin
 /** An audio, video or subtitle track the viewer can pick. [group] null = "Off" / "Auto". */
 data class TrackOption(val label: String, val group: Tracks.Group?, val index: Int, val selected: Boolean)
 
+/** One of several channels ("programs") carried in a single MPEG-TS stream (MPTS). */
+data class ProgramOption(val label: String, val number: Int, val selected: Boolean)
+
 /**
  * One ExoPlayer for the whole app.
  *
@@ -104,6 +110,32 @@ class TvPlayer(
     private var retries = 0
     private var widevineL3 = false
     private var onDemand = false
+
+    /**
+     * The stream may carry several channels (MPTS: udp/rtp multicast, udpxy links, recordings of
+     * those, or a playlist entry with a program). Then every program's tracks are read and the
+     * player is kept on one program; elsewhere the first program is read, as before.
+     */
+    private var multiProgram = false
+    /** Program being shown when there are several; null = not picked yet. */
+    private var program: Int? = null
+    /** Program the playlist asked for (#EXTVLCOPT:program=…). */
+    private var wantedProgram: Int? = null
+    /** Times the program was (re)applied since the stream opened – stops a loop if a program can't play. */
+    private var programApplies = 0
+
+    /** Wi-Fi drops multicast on many boxes unless an app holds this; only held while a udp/rtp channel plays. */
+    private val multicastLock = runCatching {
+        (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager)
+            .createMulticastLock("channelbox").apply { setReferenceCounted(false) }
+    }.getOrNull()
+
+    private fun multicast(on: Boolean) {
+        runCatching {
+            val lock = multicastLock ?: return
+            if (on) lock.acquire() else if (lock.isHeld) lock.release()
+        }
+    }
 
     /** False while a recording or catch-up programme is playing. */
     val isLive: Boolean get() = !onDemand
@@ -249,6 +281,7 @@ class TvPlayer(
                 override fun onPlayerError(error: PlaybackException) = handleError(error)
 
                 override fun onTracksChanged(tracks: Tracks) {
+                    keepProgram()
                     _tracksVersion.value++
                     updateFrameRate()
                 }
@@ -286,9 +319,10 @@ class TvPlayer(
         applyCaptionDefault()
         onDemand = true
         spec = null
+        programApplies = 0 // same program as live, if the channel has several
         val source = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(
             { GrowingFileDataSource(file, growing) },
-            androidx.media3.extractor.DefaultExtractorsFactory(),
+            extractors(multiProgram),
         ).createMediaSource(MediaItem.fromUri(Uri.fromFile(file)))
         exo.setMediaSource(source)
         exo.prepare()
@@ -318,6 +352,10 @@ class TvPlayer(
         applyCaptionDefault()
         this.onDemand = onDemand
         spec = stream
+        multiProgram = wantsMultiProgram(stream)
+        wantedProgram = stream.program
+        program = null
+        programApplies = 0
         val isHttp = stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true) ||
             io.github.axon07.channelbox.data.StreamResolver.needsResolving(stream.url) // a portal link becomes http(s)
         candidates = when {
@@ -354,6 +392,7 @@ class TvPlayer(
         startToken++
         handler.removeCallbacksAndMessages(null)
         exo.stop()
+        multicast(false)
         _status.value = PlayerStatus.Idle
     }
 
@@ -366,6 +405,7 @@ class TvPlayer(
         handler.removeCallbacksAndMessages(null)
         exo.pause()
         exo.stop()
+        multicast(false)
     }
 
     fun release() {
@@ -373,6 +413,7 @@ class TvPlayer(
         resolver.shutdownNow()
         handler.removeCallbacksAndMessages(null)
         exo.release()
+        multicast(false)
     }
 
     /** Portal links ("stalker://") are turned into playable ones here, off the main thread. */
@@ -403,6 +444,7 @@ class TvPlayer(
 
     private fun prepare(s: StreamSpec, mime: String?) {
         try {
+            multicast(StreamSpecs.isUdp(s.url))
             val source = buildSource(s, mime)
             if (onDemand && startPosition > 0) exo.setMediaSource(source, startPosition) else exo.setMediaSource(source)
             exo.prepare()
@@ -419,10 +461,13 @@ class TvPlayer(
         val httpSource = OkHttpDataSource.Factory(http)
             .setUserAgent(userAgent)
             .setDefaultRequestProperties(s.headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) })
-        // DefaultDataSource adds udp://, rtmp://, file:// … and uses OkHttp for http(s).
-        val dataSource = if (s.url.startsWith("smb://")) SmbDataSource.Factory(storageSettings)
-        else DefaultDataSource.Factory(context, httpSource)
-        val sources = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSource)
+        // DefaultDataSource adds rtmp://, file:// … and uses OkHttp for http(s).
+        val dataSource = when {
+            s.url.startsWith("smb://") -> SmbDataSource.Factory(storageSettings)
+            StreamSpecs.isUdp(s.url) -> MulticastDataSource.Factory() // multicast, with RTP removed
+            else -> DefaultDataSource.Factory(context, httpSource)
+        }
+        val sources = DefaultMediaSourceFactory(dataSource, extractors(multiProgram))
         val item = MediaItem.Builder().setUri(s.url)
         if (mime != null) item.setMimeType(mime)
 
@@ -551,6 +596,119 @@ class TvPlayer(
         }, delayMs)
     }
 
+    // ---- Programs: several channels in one MPEG-TS stream (MPTS) ---------------------------------
+
+    private fun wantsMultiProgram(s: StreamSpec): Boolean {
+        if (s.program != null) return true
+        val u = s.url.lowercase(Locale.ROOT)
+        return StreamSpecs.isUdp(u) ||
+            // udpxy / msd_lite / router multicast-to-HTTP gateways: http://router:4022/udp/239.1.1.1:1234
+            "/udp/" in u || "/rtp/" in u
+    }
+
+    /**
+     * Single-program mode plays the first program and starts as soon as its table arrives; it stays
+     * the default so a stream whose list names a program that never shows up still starts.
+     */
+    private fun extractors(multi: Boolean): ExtractorsFactory = DefaultExtractorsFactory()
+        .setTsExtractorMode(if (multi) TsExtractor.MODE_MULTI_PMT else TsExtractor.MODE_SINGLE_PMT)
+
+    /** Program a track belongs to: MPEG-TS track ids are "program/PID". */
+    private fun programOf(group: Tracks.Group): Int? {
+        if (!multiProgram || group.length == 0) return null
+        val id = group.getTrackFormat(0).id ?: return null
+        val slash = id.indexOf('/')
+        return if (slash > 0) id.substring(0, slash).toIntOrNull() else null
+    }
+
+    private fun inProgram(group: Tracks.Group): Boolean {
+        val n = program ?: return true
+        return programOf(group).let { it == null || it == n }
+    }
+
+    private fun programGroups(n: Int) = exo.currentTracks.groups.filter { programOf(it) == n }
+
+    /** Programs with picture or sound, in stream order. */
+    private fun programNumbers(): List<Int> = exo.currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO || it.type == C.TRACK_TYPE_AUDIO }
+        .mapNotNull { programOf(it) }
+        .distinct()
+
+    private fun wholeGroup(g: Tracks.Group) = TrackSelectionOverride(g.mediaTrackGroup, (0 until g.length).toList())
+
+    private fun rememberedProgram(): Int? =
+        spec?.url?.let { speedPrefs.getInt(KEY_PROGRAM + it, -1) }?.takeIf { it >= 0 }
+
+    /**
+     * Keeps picture, sound and subtitles on one program. Without this the player picks the best
+     * video and audio on their own, which can mix one channel's picture with another's sound.
+     */
+    private fun keepProgram() {
+        val numbers = programNumbers()
+        if (numbers.size < 2) return
+        val target = program?.takeIf { it in numbers }
+            ?: wantedProgram?.takeIf { it in numbers }
+            ?: rememberedProgram()?.takeIf { it in numbers }
+            ?: numbers.first()
+        val mixed = exo.currentTracks.groups.any {
+            it.isSelected && (it.type == C.TRACK_TYPE_VIDEO || it.type == C.TRACK_TYPE_AUDIO) && programOf(it) != target
+        }
+        if ((target != program || mixed) && programApplies < 5) {
+            programApplies++
+            applyProgram(target)
+        }
+    }
+
+    private fun applyProgram(n: Int) {
+        program = n
+        val groups = programGroups(n)
+        val lang = Locale.getDefault().language
+        fun pick(list: List<Tracks.Group>) =
+            list.firstOrNull { it.getTrackFormat(0).language?.startsWith(lang) == true } ?: list.firstOrNull()
+        val b = exo.trackSelectionParameters.buildUpon()
+        groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.let { b.setOverrideForType(wholeGroup(it)) }
+        pick(groups.filter { it.type == C.TRACK_TYPE_AUDIO })?.let { b.setOverrideForType(TrackSelectionOverride(it.mediaTrackGroup, 0)) }
+        // Subtitles: only this program's (when they're on).
+        if (C.TRACK_TYPE_TEXT !in exo.trackSelectionParameters.disabledTrackTypes) {
+            b.clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            exo.currentTracks.groups
+                .filter { it.type == C.TRACK_TYPE_TEXT && programOf(it).let { p -> p != null && p != n } }
+                .forEach { b.addOverride(TrackSelectionOverride(it.mediaTrackGroup, emptyList<Int>())) }
+            pick(groups.filter { it.type == C.TRACK_TYPE_TEXT })?.let { b.addOverride(TrackSelectionOverride(it.mediaTrackGroup, 0)) }
+        }
+        exo.trackSelectionParameters = b.build()
+    }
+
+    /** The channels in this stream when it carries more than one (empty otherwise). */
+    fun programs(): List<ProgramOption> {
+        val numbers = programNumbers()
+        if (numbers.size < 2) return emptyList()
+        val current = program ?: numbers.first()
+        return numbers.map { n ->
+            val groups = programGroups(n)
+            val video = groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.getTrackFormat(0)
+            val languages = groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+                .mapNotNull { g -> g.getTrackFormat(0).language?.takeIf { it.isNotBlank() && it != "und" } }
+                .map { Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()).ifBlank { it } }
+                .distinct()
+            val label = listOfNotNull(
+                "Program $n",
+                video?.height?.takeIf { it > 0 }?.let { "${it}p" } ?: if (video == null) "radio" else null,
+                languages.takeIf { it.isNotEmpty() }?.joinToString(", "),
+            ).joinToString(" · ")
+            ProgramOption(label, n, n == current)
+        }
+    }
+
+    /** Switches to another channel in the same stream; remembered for this link unless the playlist names one. */
+    fun selectProgram(option: ProgramOption) {
+        programApplies = 0
+        applyProgram(option.number)
+        val url = spec?.url
+        if (wantedProgram == null && url != null) speedPrefs.edit().putInt(KEY_PROGRAM + url, option.number).apply()
+        _tracksVersion.value++
+    }
+
     // ---- Audio / subtitle tracks ---------------------------------------------------------------
 
     fun audioTracks(): List<TrackOption> = tracks(C.TRACK_TYPE_AUDIO)
@@ -564,7 +722,7 @@ class TvPlayer(
 
     private fun tracks(type: Int): List<TrackOption> {
         val out = ArrayList<TrackOption>()
-        exo.currentTracks.groups.filter { it.type == type }.forEach { group ->
+        exo.currentTracks.groups.filter { it.type == type && inProgram(it) }.forEach { group ->
             for (i in 0 until group.length) {
                 if (!group.isTrackSupported(i)) continue
                 out += TrackOption(describe(group.getTrackFormat(i), out.size + 1), group, i, group.isTrackSelected(i))
@@ -576,7 +734,11 @@ class TvPlayer(
     /** Video qualities, "Auto" first. */
     fun videoTracks(): List<TrackOption> {
         val list = tracks(C.TRACK_TYPE_VIDEO)
-        val overridden = exo.trackSelectionParameters.overrides.keys.any { it.type == C.TRACK_TYPE_VIDEO }
+        val overridden = exo.trackSelectionParameters.overrides.values.any {
+            // With several programs the program's video is always set; a quality is "picked" only
+            // when it narrows that down.
+            it.type == C.TRACK_TYPE_VIDEO && (program == null || it.trackIndices.size < it.mediaTrackGroup.length)
+        }
         val playing = exo.videoFormat?.height?.takeIf { it > 0 }?.let { " (now ${it}p)" }.orEmpty()
         return listOf(TrackOption("Auto$playing", null, 0, !overridden)) +
             list.sortedByDescending { it.group?.getTrackFormat(it.index)?.height ?: 0 }
@@ -660,7 +822,9 @@ class TvPlayer(
         val builder = exo.trackSelectionParameters.buildUpon()
         val group = option.group
         if (group == null && type == C.TRACK_TYPE_VIDEO) {
-            builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+            val programVideo = program?.let { n -> programGroups(n).firstOrNull { it.type == C.TRACK_TYPE_VIDEO } }
+            if (programVideo != null) builder.setOverrideForType(wholeGroup(programVideo))
+            else builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
         } else if (group == null) {
             builder.setTrackTypeDisabled(type, true)
             if (type == C.TRACK_TYPE_TEXT) captionsWanted = false
@@ -708,6 +872,8 @@ class TvPlayer(
         private val REFUSED = setOf(401, 403, 429, 456, 458, 509)
         const val DEFAULT_USER_AGENT = UserAgent.DEFAULT
         private const val KEY_SPEED = "bandwidth_estimate"
+        /** + stream link: the program last picked in a multi-channel stream. */
+        private const val KEY_PROGRAM = "program:"
         /** First run: about 720p on most providers, then up as soon as the speed is known. */
         private const val FIRST_RUN_SPEED = 4_000_000L
         private const val MIN_SPEED = 1_000_000L
