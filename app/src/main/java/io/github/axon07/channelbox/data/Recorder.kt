@@ -278,8 +278,8 @@ class Recorder(
         onProgress = onProgress,
     )
 
-    /** True if a channel with [spec] can be recorded (everything except Smooth Streaming). */
-    fun canRecord(spec: StreamSpec): Boolean = spec.mime != StreamSpecs.MIME_SS
+    /** True if a channel with [spec] can be recorded (everything except Smooth Streaming and udp:// / rtp://). */
+    fun canRecord(spec: StreamSpec): Boolean = spec.mime != StreamSpecs.MIME_SS && !StreamSpecs.isUdp(spec.url)
 
     /** Where captured stream bytes go: a recording file, or the pause-live-TV buffer. */
     interface CaptureTarget {
@@ -288,9 +288,10 @@ class Recorder(
         suspend fun write(bytes: ByteArray, length: Int = bytes.size)
     }
 
-    /** True if [spec] can be captured (not DRM, not DASH / Smooth Streaming). */
+    /** True if [spec] can be captured (not DRM, not DASH / Smooth Streaming, not udp:// / rtp://). */
     fun canCapture(spec: StreamSpec): Boolean =
-        spec.drm == null && spec.mime != StreamSpecs.MIME_DASH && spec.mime != StreamSpecs.MIME_SS
+        spec.drm == null && spec.mime != StreamSpecs.MIME_DASH && spec.mime != StreamSpecs.MIME_SS &&
+            !StreamSpecs.isUdp(spec.url)
 
     /**
      * Captures a live TS or HLS stream into [target] while [until] is true.

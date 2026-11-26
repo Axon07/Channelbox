@@ -38,6 +38,11 @@ fun splitUrls(s: String?): List<String> =
  *   #EXTVLCOPT:http-user-agent=Mozilla/5.0
  *   http://provider/stream/123.mpd|Referer=http://site
  *
+ * Several channels sent in one stream (MPTS multicast) are listed once each, with the program:
+ *   #EXTINF:-1,CTV
+ *   #EXTVLCOPT:program=101
+ *   udp://@239.1.1.1:1234
+ *
  * #KODIPROP / #EXTVLCOPT / #EXTHTTP lines may come before or after #EXTINF;
  * they apply to the next stream URL.
  */
@@ -53,6 +58,8 @@ object M3uParser {
         var drmType: String? = null
         var drmKey: String? = null
         var manifestType: String? = null
+        /** #EXTVLCOPT:program=… – which channel of a multi-channel (MPTS) stream. */
+        var program: Int? = null
     }
 
     fun parse(reader: BufferedReader): ParsedPlaylist {
@@ -126,6 +133,7 @@ object M3uParser {
             "http-referrer", "http-referer" -> p.headers["Referer"] = value
             "http-origin" -> p.headers["Origin"] = value
             "http-cookie" -> p.headers["Cookie"] = value
+            "program" -> p.program = value.toIntOrNull()
         }
     }
 
@@ -143,7 +151,8 @@ object M3uParser {
         return ""
     }
 
-    private fun build(info: String, p: Pending, url: String, header: Map<String, String>): ParsedChannel {
+    private fun build(info: String, p: Pending, link: String, header: Map<String, String>): ParsedChannel {
+        val url = p.program?.let { StreamSpecs.withProgram(link, it) } ?: link
         val a = attributes(info)
         fun attr(vararg keys: String) = keys.firstNotNullOfOrNull { k -> a[k]?.takeIf { it.isNotBlank() } }
             ?: keys.firstNotNullOfOrNull { k -> header[k]?.takeIf { it.isNotBlank() } }

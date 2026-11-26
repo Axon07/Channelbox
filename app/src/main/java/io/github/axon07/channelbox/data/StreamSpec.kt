@@ -29,6 +29,11 @@ data class StreamSpec(
     val drm: DrmSpec?,
     /** Forced container type, or null to let the player work it out. */
     val mime: String?,
+    /**
+     * Program to show when the stream carries several channels (an MPEG-TS "MPTS", common with
+     * operator multicast). From `#EXTVLCOPT:program=…`, kept on the link as `#program=…`.
+     */
+    val program: Int? = null,
 ) {
     fun header(name: String): String? = headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 }
@@ -61,11 +66,32 @@ object StreamSpecs {
     ): StreamSpec {
         val trimmed = rawUrl.trim()
         val pipe = trimmed.indexOf('|')
-        val url = if (pipe >= 0) trimmed.substring(0, pipe).trim() else trimmed
+        val link = if (pipe >= 0) trimmed.substring(0, pipe).trim() else trimmed
+        val program = programTag.find(link)
+        val url = if (program != null) link.substring(0, program.range.first) else link
         val headers = LinkedHashMap<String, String>(extraHeaders)
         if (pipe >= 0) headers += parseHeaderString(trimmed.substring(pipe + 1))
-        return StreamSpec(url, headers, parseDrm(drmType, drmKey), detectMime(url, manifestType))
+        return StreamSpec(
+            url, headers, parseDrm(drmType, drmKey), detectMime(url, manifestType),
+            program?.groupValues?.get(1)?.toIntOrNull(),
+        )
     }
+
+    private val programTag = Regex("#program=(\\d+)$", RegexOption.IGNORE_CASE)
+
+    /**
+     * Adds the program to pick (see [StreamSpec.program]) to a playlist link, before any `|headers`.
+     * It also keeps entries that share one multicast address apart (the link is the channel's key).
+     */
+    fun withProgram(rawUrl: String, program: Int): String {
+        val pipe = rawUrl.indexOf('|')
+        return if (pipe >= 0) rawUrl.substring(0, pipe).trim() + "#program=$program" + rawUrl.substring(pipe)
+        else rawUrl.trim() + "#program=$program"
+    }
+
+    /** udp:// or rtp:// – a multicast (or plain UDP) stream received straight from the network. */
+    fun isUdp(url: String): Boolean =
+        url.startsWith("udp://", ignoreCase = true) || url.startsWith("rtp://", ignoreCase = true)
 
     /** "User-Agent=Foo&Referer=bar" (values may be URL-encoded). */
     fun parseHeaderString(s: String): Map<String, String> {

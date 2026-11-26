@@ -54,4 +54,22 @@ class M3uParserTest {
         assertEquals(TvRepository.normalizeName("CNN"), TvRepository.normalizeName("CNN HD"))
         assertEquals(TvRepository.normalizeName("TSN 1"), TvRepository.normalizeName("tsn1 fhd"))
     }
+
+    @Test
+    fun keepsMultiProgramEntriesApart() {
+        val list = """
+            #EXTM3U
+            #EXTINF:-1,CTV
+            #EXTVLCOPT:program=101
+            udp://@239.1.1.1:1234
+            #EXTINF:-1,Global
+            #EXTVLCOPT:program=102
+            udp://@239.1.1.1:1234
+        """.trimIndent()
+        val channels = M3uParser.parse(list.reader().buffered()).channels
+        assertEquals(listOf("udp://@239.1.1.1:1234#program=101", "udp://@239.1.1.1:1234#program=102"), channels.map { it.url })
+        val spec = StreamSpecs.parse(channels[1].url)
+        assertEquals("udp://@239.1.1.1:1234", spec.url)
+        assertEquals(102, spec.program)
+    }
 }
